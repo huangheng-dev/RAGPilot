@@ -1,7 +1,8 @@
 param(
   [string]$RemoteName = "origin",
   [string]$Branch = "main",
-  [switch]$SkipPreflight
+  [switch]$SkipPreflight,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +28,12 @@ if (-not $hasCommit) {
 $existingRemotes = @(& git remote)
 if (-not ($existingRemotes -contains $RemoteName)) {
   throw "Remote '$RemoteName' is not configured."
+}
+
+if ($DryRun) {
+  Write-Host "Dry run: first public push validation passed." -ForegroundColor Yellow
+  Write-Host "Dry run: would push branch '$Branch' to remote '$RemoteName'." -ForegroundColor Yellow
+  exit 0
 }
 
 if (-not $SkipPreflight) {

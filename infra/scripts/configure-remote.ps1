@@ -1,6 +1,7 @@
 param(
   [string]$RemoteUrl = "",
-  [string]$RemoteName = "origin"
+  [string]$RemoteName = "origin",
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +19,16 @@ if ([string]::IsNullOrWhiteSpace($normalizedRemoteUrl)) {
 }
 
 $existingRemotes = @(& git remote)
+
+if ($DryRun) {
+  if ($existingRemotes -contains $RemoteName) {
+    Write-Host "Dry run: would update remote '$RemoteName' to '$normalizedRemoteUrl'." -ForegroundColor Yellow
+  } else {
+    Write-Host "Dry run: would add remote '$RemoteName' with '$normalizedRemoteUrl'." -ForegroundColor Yellow
+  }
+  exit 0
+}
+
 if ($existingRemotes -contains $RemoteName) {
   Write-Host "Updating existing remote '$RemoteName'..." -ForegroundColor Cyan
   & git remote set-url $RemoteName $normalizedRemoteUrl

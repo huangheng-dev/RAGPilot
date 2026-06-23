@@ -27,6 +27,7 @@
     "release:configure-remote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/configure-remote.ps1",
     "release:first-push": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/push-first-public.ps1",
     "release:first-tag": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/create-first-tag.ps1",
-    "release:promote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-promote.ps1"
+    "release:promote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-promote.ps1",
+    "release:promote-dry-run": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-promote.ps1 -Push -CreateTag -DryRun"
   }
 }

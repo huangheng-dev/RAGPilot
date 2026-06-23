@@ -5,7 +5,8 @@ param(
   [switch]$AllowLocalBaselineCommit,
   [switch]$Push,
   [switch]$CreateTag,
-  [switch]$SkipPreflight
+  [switch]$SkipPreflight,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,10 +21,16 @@ if (-not (Test-Path ".git")) {
 Write-Host "Running RagPilot release promotion helper..." -ForegroundColor Cyan
 Write-Host ""
 
+if ($DryRun) {
+  Write-Host "Dry run mode is active. No Git remote, push, or tag mutation will be executed." -ForegroundColor Yellow
+  Write-Host ""
+}
+
 $licensePresent = (Test-Path "LICENSE") -or (Test-Path "LICENSE.md")
 $statusBranchOutput = @(& git status --short --branch)
 $hasCommit = -not ($statusBranchOutput | Where-Object { $_ -like "## No commits yet on *" })
 $existingRemotes = @(& git remote)
+$blockers = New-Object System.Collections.Generic.List[string]
 
 if (-not $hasCommit) {
   if ($licensePresent) {
@@ -48,55 +55,99 @@ if (-not $hasCommit) {
 $normalizedRemoteUrl = $RemoteUrl.Trim()
 if (-not [string]::IsNullOrWhiteSpace($normalizedRemoteUrl)) {
   Write-Host "Configuring remote..." -ForegroundColor Cyan
-  & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/configure-remote.ps1" -RemoteUrl $normalizedRemoteUrl -RemoteName $RemoteName
+  if ($DryRun) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/configure-remote.ps1" -RemoteUrl $normalizedRemoteUrl -RemoteName $RemoteName -DryRun
+  } else {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/configure-remote.ps1" -RemoteUrl $normalizedRemoteUrl -RemoteName $RemoteName
+  }
   if ($LASTEXITCODE -ne 0) {
     throw "Remote configuration failed."
   }
-  $existingRemotes = @(& git remote)
+  if (-not $DryRun) {
+    $existingRemotes = @(& git remote)
+  }
 }
 
 if ($Push) {
   if (-not $licensePresent) {
-    throw "Cannot perform the first public push without a LICENSE."
+    if ($DryRun) {
+      $blockers.Add("first public push requires a LICENSE")
+    } else {
+      throw "Cannot perform the first public push without a LICENSE."
+    }
   }
 
   if (-not $hasCommit) {
-    throw "Cannot perform the first public push without a baseline commit."
+    if ($DryRun) {
+      $blockers.Add("first public push requires a baseline commit")
+    } else {
+      throw "Cannot perform the first public push without a baseline commit."
+    }
   }
 
   if (-not ($existingRemotes -contains $RemoteName)) {
-    throw "Cannot perform the first public push because remote '$RemoteName' is not configured."
+    if ($DryRun) {
+      $blockers.Add("first public push requires remote '$RemoteName'")
+    } else {
+      throw "Cannot perform the first public push because remote '$RemoteName' is not configured."
+    }
   }
 
-  Write-Host "Running first public push..." -ForegroundColor Cyan
-  if ($SkipPreflight) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -SkipPreflight
-  } else {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName
-  }
-  if ($LASTEXITCODE -ne 0) {
-    throw "First public push failed."
+  if (-not $DryRun -or $blockers.Count -eq 0) {
+    Write-Host "Running first public push..." -ForegroundColor Cyan
+    if ($SkipPreflight -and $DryRun) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -SkipPreflight -DryRun
+    } elseif ($SkipPreflight) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -SkipPreflight
+    } elseif ($DryRun) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -DryRun
+    } else {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "First public push failed."
+    }
   }
 }
 
 if ($CreateTag) {
   if (-not ($existingRemotes -contains $RemoteName)) {
-    throw "Cannot create the first public tag because remote '$RemoteName' is not configured."
+    if ($DryRun) {
+      $blockers.Add("first public tag requires remote '$RemoteName'")
+    } else {
+      throw "Cannot create the first public tag because remote '$RemoteName' is not configured."
+    }
   }
 
   if (-not $hasCommit) {
-    throw "Cannot create the first public tag without a baseline commit."
+    if ($DryRun) {
+      $blockers.Add("first public tag requires a baseline commit")
+    } else {
+      throw "Cannot create the first public tag without a baseline commit."
+    }
   }
 
-  Write-Host "Creating first public tag..." -ForegroundColor Cyan
-  & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -RemoteName $RemoteName
-  if ($LASTEXITCODE -ne 0) {
-    throw "First public tag failed."
+  if (-not $DryRun -or $blockers.Count -eq 0) {
+    Write-Host "Creating first public tag..." -ForegroundColor Cyan
+    if ($DryRun) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -RemoteName $RemoteName -DryRun
+    } else {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -RemoteName $RemoteName
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "First public tag failed."
+    }
   }
 }
 
 Write-Host ""
 Write-Host "Release promotion helper finished." -ForegroundColor Green
+
+if ($DryRun -and $blockers.Count -gt 0) {
+  Write-Host ""
+  Write-Host "Dry run blockers:" -ForegroundColor Yellow
+  $blockers | Select-Object -Unique | ForEach-Object { Write-Host "- $_" }
+}
 
 if (-not $licensePresent) {
   Write-Warning "LICENSE is still missing."

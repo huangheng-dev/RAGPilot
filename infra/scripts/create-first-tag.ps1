@@ -1,6 +1,7 @@
 param(
   [string]$Tag = "v0.1.0",
-  [string]$RemoteName = "origin"
+  [string]$RemoteName = "origin",
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,12 @@ if (-not ($existingRemotes -contains $RemoteName)) {
 $existingTags = @(& git tag)
 if ($existingTags -contains $Tag) {
   throw "Tag '$Tag' already exists."
+}
+
+if ($DryRun) {
+  Write-Host "Dry run: first tag validation passed." -ForegroundColor Yellow
+  Write-Host "Dry run: would create and push tag '$Tag' to '$RemoteName'." -ForegroundColor Yellow
+  exit 0
 }
 
 Write-Host "Creating tag '$Tag'..." -ForegroundColor Cyan
