@@ -74,3 +74,17 @@ if ($remoteNames.Count -eq 0) {
 if ($licensePresent -and $gitDirectoryPresent -and $hasCommit -and $remoteNames.Count -gt 0) {
   Write-Host "- ready for final preflight and first public push"
 }
+
+Write-Host ""
+Write-Host "Suggested next commands:" -ForegroundColor Cyan
+if (-not $licensePresent) {
+  Write-Host "- add the chosen LICENSE file at the repository root"
+}
+if ($gitDirectoryPresent -and $hasCommit -and $remoteNames.Count -eq 0) {
+  Write-Host "- powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/configure-remote.ps1 -RemoteUrl <your-github-repository-url>"
+}
+if ($licensePresent -and $gitDirectoryPresent -and $hasCommit -and $remoteNames.Count -gt 0) {
+  Write-Host "- npm run release:preflight"
+  Write-Host "- npm run release:first-push"
+  Write-Host "- npm run release:first-tag"
+}
