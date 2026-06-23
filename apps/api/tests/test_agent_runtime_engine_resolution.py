@@ -1,0 +1,186 @@
+import inspect
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from ragpilot_api.application.agents.agent_runtime_engines import (
+    LangGraphPilotAgentRuntimeEngine,
+    NativeAgentRuntimeEngine,
+    build_agent_runtime_engine,
+    normalize_agent_runtime_engine_name,
+)
+
+
+def test_build_agent_runtime_engine_returns_native_engine_by_default() -> None:
+    settings = SimpleNamespace(agent_runtime_engine="native")
+
+    engine = build_agent_runtime_engine(settings)
+
+    assert isinstance(engine, NativeAgentRuntimeEngine)
+
+
+def test_build_agent_runtime_engine_returns_langgraph_pilot_engine() -> None:
+    settings = SimpleNamespace(agent_runtime_engine="langgraph_pilot")
+
+    engine = build_agent_runtime_engine(settings)
+
+    assert isinstance(engine, LangGraphPilotAgentRuntimeEngine)
+
+
+def test_build_agent_runtime_engine_keeps_reserved_alias_compatible() -> None:
+    settings = SimpleNamespace(agent_runtime_engine="langgraph_reserved")
+
+    engine = build_agent_runtime_engine(settings)
+
+    assert isinstance(engine, LangGraphPilotAgentRuntimeEngine)
+
+
+def test_normalize_agent_runtime_engine_name_maps_reserved_alias_to_pilot() -> None:
+    assert normalize_agent_runtime_engine_name("langgraph_reserved") == "langgraph_pilot"
+    assert normalize_agent_runtime_engine_name(" native ") == "native"
+
+
+def test_build_agent_runtime_engine_rejects_unknown_engine() -> None:
+    settings = SimpleNamespace(agent_runtime_engine="unknown")
+
+    with pytest.raises(ValueError, match="Unsupported agent runtime engine"):
+        build_agent_runtime_engine(settings)
+
+
+@pytest.mark.anyio
+async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_graph(monkeypatch) -> None:
+    class FakeCompiledGraph:
+        def __init__(self, nodes, edges, start_node) -> None:
+            self.nodes = nodes
+            self.edges = edges
+            self.start_node = start_node
+
+        async def ainvoke(self, initial_state):
+            state = dict(initial_state)
+            current_node = self.edges[self.start_node]
+            while current_node is not None:
+                node_handler = self.nodes[current_node]
+                update = node_handler(state)
+                if inspect.isawaitable(update):
+                    update = await update
+                if update:
+                    state.update(update)
+                current_node = self.edges.get(current_node)
+            return state
+
+    class FakeStateGraph:
+        def __init__(self, _state_type) -> None:
+            self.nodes = {}
+            self.edges = {}
+
+        def add_node(self, name, handler) -> None:
+            self.nodes[name] = handler
+
+        def add_edge(self, source, target) -> None:
+            self.edges[source] = target
+
+        def compile(self):
+            return FakeCompiledGraph(self.nodes, self.edges, "__start__")
+
+    fake_graph_module = SimpleNamespace(
+        StateGraph=FakeStateGraph,
+        START="__start__",
+    )
+
+    monkeypatch.setattr(
+        "ragpilot_api.application.agents.agent_runtime_engines.importlib.import_module",
+        lambda module_name: fake_graph_module if module_name == "langgraph.graph" else None,
+    )
+
+    engine = LangGraphPilotAgentRuntimeEngine()
+    service = SimpleNamespace(
+        collect_workflow_recovery_context=AsyncMock(
+            return_value=(
+                {
+                    "failed_runs": 2,
+                    "queued_runs": 1,
+                    "retry_runs": 3,
+                },
+                [
+                    SimpleNamespace(
+                        id="run-1",
+                        workflow_type="document_ingestion",
+                        workflow_status="failed",
+                        subject_type="document",
+                        subject_id="doc-1",
+                        error_message="Failure one",
+                    ),
+                    SimpleNamespace(
+                        id="run-2",
+                        workflow_type="document_ingestion",
+                        workflow_status="failed",
+                        subject_type="document",
+                        subject_id="doc-2",
+                        error_message="Failure two",
+                    ),
+                ],
+            )
+        ),
+        build_workflow_recovery_result_from_context=lambda **kwargs: (
+            "Workflow recovery graph completed.",
+            {
+                "execution_lane": "workflow_recovery",
+                "recommended_actions": ["Review failed queue."],
+                **(kwargs.get("runtime_metadata") or {}),
+            },
+        ),
+    )
+    agent_definition = SimpleNamespace(
+        agent_mode="workflow_recovery",
+        name="Workflow Recovery Coordinator",
+    )
+
+    summary, payload = await engine.execute(
+        service=service,
+        agent_definition=agent_definition,
+        resolved_scope=SimpleNamespace(),
+        execution_input="Review workflow pressure.",
+        runtime_binding=None,
+        tool_runtime_summary=None,
+    )
+
+    assert summary == "Workflow recovery graph completed."
+    assert payload["agent_runtime_engine"] == "langgraph_pilot"
+    assert payload["agent_runtime_resolution"]["fallback_applied"] is False
+    assert payload["agent_runtime_graph"]["engine"] == "langgraph_pilot"
+    assert payload["agent_runtime_graph"]["workflow"] == "workflow_recovery"
+    trace = payload["agent_runtime_graph"]["trace"]
+    assert [entry["step"] for entry in trace] == [
+        "collect_workflow_metrics",
+        "collect_failed_runs",
+        "compose_workflow_summary",
+    ]
+
+
+@pytest.mark.anyio
+async def test_langgraph_pilot_agent_runtime_falls_back_to_native_for_other_modes(monkeypatch) -> None:
+    engine = LangGraphPilotAgentRuntimeEngine()
+
+    async def fake_native(**kwargs):
+        return "Native fallback", {"execution_lane": "grounded_chat"}
+
+    service = SimpleNamespace(
+        build_native_execution_result=fake_native,
+    )
+
+    summary, payload = await engine.execute(
+        service=service,
+        agent_definition=SimpleNamespace(agent_mode="grounded_chat"),
+        resolved_scope=SimpleNamespace(),
+        execution_input="Question",
+        runtime_binding=None,
+        tool_runtime_summary=None,
+    )
+
+    assert summary == "Native fallback"
+    assert payload["execution_lane"] == "grounded_chat"
+    assert payload["agent_runtime_engine"] == "native"
+    assert payload["agent_runtime_resolution"]["configured_engine"] == "langgraph_pilot"
+    assert payload["agent_runtime_resolution"]["executed_engine"] == "native"
+    assert payload["agent_runtime_resolution"]["fallback_applied"] is True

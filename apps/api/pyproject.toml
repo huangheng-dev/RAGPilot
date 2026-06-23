@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragpilot-api"
+version = "0.1.0"
+description = "FastAPI gateway for RagPilot"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "alembic>=1.14.0",
+  "fastapi>=0.115.0",
+  "minio>=7.2.12",
+  "pgvector>=0.3.6",
+  "python-multipart>=0.0.17",
+  "uvicorn[standard]>=0.32.0",
+  "pydantic-settings>=2.6.1",
+  "sqlalchemy>=2.0.36",
+  "asyncpg>=0.30.0",
+  "redis>=5.2.0",
+  "httpx>=0.27.2",
+  "temporalio>=1.9.0",
+]
+
+[project.optional-dependencies]
+retrieval-llamaindex = [
+  "llama-index-core>=0.14.22",
+]
+agent-langgraph = [
+  "langgraph",
+]
+
+[tool.setuptools.packages.find]
+include = ["ragpilot_api*"]

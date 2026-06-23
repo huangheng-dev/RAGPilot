@@ -1,0 +1,38 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+Set-Location $repoRoot
+
+Write-Host "RagPilot release commands" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "1. Check current release state"
+Write-Host "   npm run release:status"
+Write-Host ""
+Write-Host "2. Run release validation"
+Write-Host "   npm run release:preflight"
+Write-Host ""
+Write-Host "3. Audit the public candidate file set"
+Write-Host "   npm run release:candidate-audit"
+Write-Host ""
+Write-Host "4. Create the first baseline commit"
+Write-Host "   npm run release:baseline-commit"
+Write-Host ""
+Write-Host "4b. Create a local-only baseline commit before LICENSE is chosen"
+Write-Host "   npm run release:baseline-commit-local"
+Write-Host ""
+Write-Host "5. Configure the public remote"
+Write-Host "   powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/configure-remote.ps1 -RemoteUrl <your-github-repository-url>"
+Write-Host ""
+Write-Host "6. Push the default branch"
+Write-Host "   npm run release:first-push"
+Write-Host ""
+Write-Host "7. Create the first public tag"
+Write-Host "   npm run release:first-tag"
+Write-Host ""
+Write-Host "8. Use the promotion helper when you want one entry point"
+Write-Host "   npm run release:promote"
+Write-Host ""
+Write-Host "Current expected blockers before the first public push:" -ForegroundColor Cyan
+Write-Host "- final LICENSE"
+Write-Host "- first baseline commit"
+Write-Host "- configured Git remote"

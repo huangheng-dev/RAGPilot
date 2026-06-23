@@ -1,0 +1,29 @@
+changelog:
+  categories:
+    - title: Product surfaces
+      labels:
+        - enhancement
+        - ui
+    - title: API and backend
+      labels:
+        - api
+        - backend
+    - title: Retrieval and runtime
+      labels:
+        - retrieval
+        - runtime
+    - title: Governance and operations
+      labels:
+        - governance
+        - operations
+    - title: Engineering and release
+      labels:
+        - ci
+        - infra
+        - release
+    - title: Fixes
+      labels:
+        - bug
+    - title: Other changes
+      labels:
+        - "*"

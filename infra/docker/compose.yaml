@@ -1,0 +1,154 @@
+name: ragpilot
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ragpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ragpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpilot}
+    ports:
+      - "${RAGPILOT_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${RAGPILOT_REDIS_PORT:-6380}:6379"
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ragpilot}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ragpilot123}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${RAGPILOT_MINIO_API_PORT:-9002}:9000"
+      - "${RAGPILOT_MINIO_CONSOLE_PORT:-9003}:9001"
+    volumes:
+      - minio-data:/data
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ports:
+      - "${RAGPILOT_ELASTICSEARCH_PORT:-9201}:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    restart: unless-stopped
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-ragpilot}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-ragpilot}
+      POSTGRES_SEEDS: postgres
+    depends_on:
+      - postgres
+    ports:
+      - "${RAGPILOT_TEMPORAL_PORT:-7234}:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:${RAGPILOT_WEB_PORT:-3001}
+    depends_on:
+      - temporal
+    ports:
+      - "${RAGPILOT_TEMPORAL_UI_PORT:-8081}:8080"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ../otel/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "${RAGPILOT_OTEL_GRPC_PORT:-14317}:4317"
+      - "${RAGPILOT_OTEL_HTTP_PORT:-14318}:4318"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      args:
+        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-}
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: ${NODE_ENV:-development}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ragpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ragpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpilot}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
+      RETRIEVAL_ENGINE: ${RETRIEVAL_ENGINE:-native}
+      CHAT_MODEL_PROVIDER: ${CHAT_MODEL_PROVIDER:-deterministic}
+      CHAT_MODEL_NAME: ${CHAT_MODEL_NAME:-ragpilot-grounded-template}
+      CHAT_MODEL_API_BASE_URL: ${CHAT_MODEL_API_BASE_URL:-}
+      CHAT_MODEL_API_KEY: ${CHAT_MODEL_API_KEY:-}
+      CHAT_MODEL_REQUEST_TIMEOUT_SECONDS: ${CHAT_MODEL_REQUEST_TIMEOUT_SECONDS:-60}
+    depends_on:
+      - postgres
+      - redis
+      - temporal
+    ports:
+      - "${RAGPILOT_API_PORT:-18000}:8000"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ragpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ragpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpilot}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ragpilot}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ragpilot123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ragpilot-documents}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ragpilot-dev-1536}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1536}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+    depends_on:
+      - temporal
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${RAGPILOT_API_PORT:-18000}
+    depends_on:
+      - api
+    ports:
+      - "${RAGPILOT_WEB_PORT:-3001}:3000"
+
+volumes:
+  postgres-data:
+  minio-data:
+  elasticsearch-data:

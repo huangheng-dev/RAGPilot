@@ -1,0 +1,32 @@
+{
+  "name": "ragpilot",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/mcp-server",
+    "packages/*"
+  ],
+  "scripts": {
+    "web:dev": "npm --workspace @ragpilot/web run dev",
+    "web:serve": "npm --workspace @ragpilot/web run serve:stable",
+    "web:build": "npm --workspace @ragpilot/web run build",
+    "mcp:dev": "npm --workspace @ragpilot/mcp-server run dev",
+    "compose:up": "docker compose -f infra/docker/compose.yaml up --build",
+    "compose:up:detached": "docker compose -f infra/docker/compose.yaml up -d --build",
+    "compose:down": "docker compose -f infra/docker/compose.yaml down",
+    "compose:config": "docker compose -f infra/docker/compose.yaml config",
+    "api:migrate": "powershell -NoProfile -Command \"$env:POSTGRES_HOST='localhost'; $env:POSTGRES_PORT='5433'; Set-Location apps/api; .\\.venv\\Scripts\\alembic.exe upgrade head\"",
+    "release:help": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-help.ps1",
+    "release:status": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-status.ps1",
+    "release:candidate-audit": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-candidate-audit.ps1",
+    "release:secret-scan": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/secret-scan.ps1",
+    "release:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-preflight.ps1",
+    "release:baseline-commit": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/create-baseline-commit.ps1",
+    "release:baseline-commit-local": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/create-baseline-commit.ps1 -SkipLicenseCheck",
+    "release:configure-remote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/configure-remote.ps1",
+    "release:first-push": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/push-first-public.ps1",
+    "release:first-tag": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/create-first-tag.ps1",
+    "release:promote": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-promote.ps1"
+  }
+}
