@@ -39,7 +39,7 @@ def build_grounded_chat_messages(
         {
             "role": "system",
             "content": (
-                "You are RagPilot. Answer only from the provided knowledge base context. "
+                "You are RAGPilot. Answer only from the provided knowledge base context. "
                 "If the context is insufficient, say that clearly. "
                 "When agent context is provided, follow its objective and instructions without inventing facts beyond the retrieved evidence."
             ),

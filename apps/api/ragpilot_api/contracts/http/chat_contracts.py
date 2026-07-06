@@ -2,10 +2,12 @@ from typing import Literal
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConversationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     workspace_id: UUID
     knowledge_base_id: UUID | None = None
@@ -27,6 +29,8 @@ class ConversationResponse(BaseModel):
 
 
 class ConversationUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=240)
 
 
@@ -56,9 +60,18 @@ class MessageCitationResponse(BaseModel):
 
 MessageAnswerQuality = Literal["helpful", "partially_helpful", "not_helpful"]
 MessageCitationQuality = Literal["grounded", "partial", "broken"]
+MessageFeedbackFollowUpActionKey = Literal[
+    "review_knowledge_base_governance",
+    "review_retrieval_profile_governance",
+    "rerun_retrieval_comparison",
+    "validate_in_chat",
+]
+MessageFeedbackFollowUpActionCategory = Literal["governance", "analysis", "validation"]
 
 
 class MessageFeedbackCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     answer_quality: MessageAnswerQuality
     citation_quality: MessageCitationQuality
     issue_labels: list[str] = Field(default_factory=list, max_length=8)
@@ -77,11 +90,23 @@ class MessageFeedbackResponse(BaseModel):
     updated_at: datetime
 
 
+class MessageFeedbackFollowUpActionResponse(BaseModel):
+    action_key: MessageFeedbackFollowUpActionKey
+    action_category: MessageFeedbackFollowUpActionCategory
+    action_label: str
+    action_reason: str
+
+
 class MessageFeedbackSummaryItemResponse(MessageFeedbackResponse):
     conversation_id: UUID
     conversation_title: str
     assistant_excerpt: str
+    knowledge_base_id: UUID | None = None
     latest_user_question: str | None = None
+    retrieval_profile_id: UUID | None = None
+    retrieval_profile_name: str | None = None
+    follow_up_status: Literal["pending", "resolved"] = "pending"
+    recommended_actions: list[MessageFeedbackFollowUpActionResponse] = Field(default_factory=list)
 
 
 class MessageFeedbackSummaryResponse(BaseModel):
@@ -108,6 +133,8 @@ class MessageResponse(BaseModel):
 
 
 class ChatAskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     workspace_id: UUID
     knowledge_base_id: UUID

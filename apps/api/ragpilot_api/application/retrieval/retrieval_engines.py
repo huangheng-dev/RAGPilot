@@ -159,11 +159,11 @@ def run_llamaindex_pilot_postprocessing(
 
 
 def build_llamaindex_pilot_postprocessor(runtime: LlamaIndexRuntime) -> Any:
-    class RagPilotPassthroughPostprocessor(runtime.base_postprocessor_cls):
+    class RAGPilotPassthroughPostprocessor(runtime.base_postprocessor_cls):
         def _postprocess_nodes(self, nodes: list[Any], query_bundle: Any | None = None) -> list[Any]:
             return nodes
 
-    return RagPilotPassthroughPostprocessor()
+    return RAGPilotPassthroughPostprocessor()
 
 
 def normalize_retrieval_engine_name(engine_name: str | None) -> str:

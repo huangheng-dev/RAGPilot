@@ -14,12 +14,15 @@ from ragpilot_api.contracts.http.knowledge_base_contracts import (
 from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
+from ragpilot_api.infrastructure.database.repositories.workspace_repository import WorkspaceRepository
 from ragpilot_api.infrastructure.database.session import get_database_session
 from ragpilot_api.presentation.http.request_actor import (
     RequestActor,
     get_request_actor,
-    require_actor_capability,
     require_actor_capability_from_policy,
+    require_authenticated_actor,
+    require_actor_knowledge_base_access,
+    require_actor_workspace_access,
 )
 
 
@@ -39,7 +42,18 @@ async def create_knowledge_base(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> KnowledgeBaseResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    resolved_tenant_id = await require_actor_workspace_access(
+        actor,
+        request.workspace_id,
+        WorkspaceRepository(session),
+    )
+    if resolved_tenant_id is not None and resolved_tenant_id != request.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant and workspace scope do not match.",
+        )
     try:
         return await build_knowledge_base_service(session).create_knowledge_base(request)
     except ResourceConflictError as error:
@@ -52,8 +66,12 @@ async def create_knowledge_base(
 async def list_knowledge_bases(
     workspace_id: UUID = Query(...),
     publication_status: str | None = Query(default=None, pattern=r"^(draft|published)$"),
+    actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[KnowledgeBaseResponse]:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "access_home", RolePermissionRepository(session))
+    await require_actor_workspace_access(actor, workspace_id, WorkspaceRepository(session))
     return await build_knowledge_base_service(session).list_knowledge_bases(
         workspace_id=workspace_id,
         publication_status=publication_status,
@@ -68,7 +86,10 @@ async def update_knowledge_base(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> KnowledgeBaseResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    await require_actor_workspace_access(actor, workspace_id, WorkspaceRepository(session))
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     try:
         knowledge_base = await build_knowledge_base_service(session).update_knowledge_base(
             knowledge_base_id=knowledge_base_id,
@@ -94,7 +115,10 @@ async def set_knowledge_base_publication(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> KnowledgeBaseResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    await require_actor_workspace_access(actor, workspace_id, WorkspaceRepository(session))
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     knowledge_base = await build_knowledge_base_service(session).set_publication_status(
         knowledge_base_id=knowledge_base_id,
         workspace_id=workspace_id,

@@ -16,8 +16,10 @@ from ragpilot_api.contracts.http.document_contracts import (
     DocumentRestoreResponse,
     DocumentUploadResponse,
     DocumentWorkflowActionResponse,
+    WebPageImportRequest,
 )
 from ragpilot_api.infrastructure.database.repositories.document_repository import DocumentRepository
+from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
 from ragpilot_api.infrastructure.database.repositories.workflow_repository import WorkflowRepository
 from ragpilot_api.infrastructure.database.session import get_database_session
@@ -25,6 +27,8 @@ from ragpilot_api.presentation.http.request_actor import (
     RequestActor,
     get_request_actor,
     require_actor_capability_from_policy,
+    require_authenticated_actor,
+    require_actor_knowledge_base_access,
 )
 
 
@@ -44,11 +48,19 @@ async def create_document(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "manage_documents",
         RolePermissionRepository(session),
     )
+    resolved_tenant_id = await require_actor_knowledge_base_access(
+        actor,
+        request.knowledge_base_id,
+        KnowledgeBaseRepository(session),
+    )
+    if resolved_tenant_id is not None and resolved_tenant_id != request.tenant_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant and knowledge base scope do not match.")
     try:
         return await build_document_service(session).create_document(request)
     except ResourceConflictError as error:
@@ -63,6 +75,7 @@ async def list_documents(
     knowledge_base_id: UUID = Query(...),
     query: str | None = Query(default=None, min_length=1, max_length=240),
     status_filter: str | None = Query(default=None, alias="status"),
+    source_kind_filter: Literal["all", "file", "web", "other"] = Query(default="all", alias="source_kind"),
     lifecycle_filter: Literal["active", "deleted", "all"] = Query(default="active", alias="lifecycle"),
     sort_order: Literal[
         "updated-desc",
@@ -77,15 +90,18 @@ async def list_documents(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[DocumentResponse]:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     documents, total_count = await build_document_service(session).list_documents(
         knowledge_base_id=knowledge_base_id,
         query=query,
         status_filter=status_filter,
+        source_kind_filter=source_kind_filter,
         lifecycle_filter=lifecycle_filter,
         sort_order=sort_order,
         limit=limit,
@@ -104,11 +120,13 @@ async def get_document_metrics(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentMetricsResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     return await build_document_service(session).get_document_metrics(knowledge_base_id=knowledge_base_id)
 
 
@@ -121,11 +139,13 @@ async def get_document_detail(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentDetailResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     detail = await build_document_service(session).get_document_detail(
         document_id=document_id,
         knowledge_base_id=knowledge_base_id,
@@ -145,11 +165,13 @@ async def get_document_activity(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentActivityResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     activity = await build_document_service(session).get_document_activity(
         document_id=document_id,
         knowledge_base_id=knowledge_base_id,
@@ -167,11 +189,13 @@ async def reindex_document(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentWorkflowActionResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "manage_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     try:
         return await build_document_service(session).reindex_document(
             document_id=document_id,
@@ -190,11 +214,13 @@ async def delete_document(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentDeleteResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "manage_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     try:
         return await build_document_service(session).delete_document(
             document_id=document_id,
@@ -211,11 +237,13 @@ async def restore_document(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentRestoreResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "manage_documents",
         RolePermissionRepository(session),
     )
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     try:
         return await build_document_service(session).restore_document(
             document_id=document_id,
@@ -234,12 +262,20 @@ async def upload_document(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DocumentUploadResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "manage_documents",
         RolePermissionRepository(session),
     )
     try:
+        resolved_tenant_id = await require_actor_knowledge_base_access(
+            actor,
+            knowledge_base_id,
+            KnowledgeBaseRepository(session),
+        )
+        if resolved_tenant_id is not None and resolved_tenant_id != tenant_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant and knowledge base scope do not match.")
         content = await file.read()
         return await build_document_service(session).upload_document(
             tenant_id=tenant_id,
@@ -249,6 +285,33 @@ async def upload_document(
             content_type=file.content_type,
             content=content,
         )
+    except ResourceConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/import-webpage", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+async def import_webpage_document(
+    request: WebPageImportRequest,
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> DocumentUploadResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(
+        actor,
+        "manage_documents",
+        RolePermissionRepository(session),
+    )
+    try:
+        resolved_tenant_id = await require_actor_knowledge_base_access(
+            actor,
+            request.knowledge_base_id,
+            KnowledgeBaseRepository(session),
+        )
+        if resolved_tenant_id is not None and resolved_tenant_id != request.tenant_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant and knowledge base scope do not match.")
+        return await build_document_service(session).import_web_page(request)
     except ResourceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:

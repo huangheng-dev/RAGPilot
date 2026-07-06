@@ -7,6 +7,8 @@ class WorkerSettings(BaseSettings):
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "ragpilot-ingestion"
+    temporal_connect_max_attempts: int = 30
+    temporal_connect_retry_seconds: float = 2.0
     postgres_host: str = "postgres"
     postgres_port: int = 5432
     postgres_db: str = "ragpilot"

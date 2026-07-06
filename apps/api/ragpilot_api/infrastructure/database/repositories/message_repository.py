@@ -54,6 +54,7 @@ class MessageFeedbackSummaryRecord:
     message_id: UUID
     conversation_id: UUID
     conversation_title: str
+    knowledge_base_id: UUID | None
     submitted_by_user_id: UUID
     answer_quality: str
     citation_quality: str
@@ -63,6 +64,8 @@ class MessageFeedbackSummaryRecord:
     updated_at: datetime
     assistant_excerpt: str
     latest_user_question: str | None
+    retrieval_profile_id: UUID | None
+    retrieval_profile_name: str | None
 
 
 class MessageRepository:
@@ -289,6 +292,7 @@ class MessageRepository:
                 MessageFeedbackEntry.message_id,
                 Message.conversation_id,
                 Conversation.title.label("conversation_title"),
+                Conversation.knowledge_base_id,
                 MessageFeedbackEntry.submitted_by_user_id,
                 MessageFeedbackEntry.answer_quality,
                 MessageFeedbackEntry.citation_quality,
@@ -297,6 +301,7 @@ class MessageRepository:
                 MessageFeedbackEntry.created_at,
                 MessageFeedbackEntry.updated_at,
                 Message.content.label("assistant_excerpt"),
+                Message.usage_json,
                 (
                     select(preceding_user_message.content)
                     .where(
@@ -336,6 +341,7 @@ class MessageRepository:
                 message_id=row.message_id,
                 conversation_id=row.conversation_id,
                 conversation_title=row.conversation_title,
+                knowledge_base_id=row.knowledge_base_id,
                 submitted_by_user_id=row.submitted_by_user_id,
                 answer_quality=row.answer_quality,
                 citation_quality=row.citation_quality,
@@ -345,10 +351,28 @@ class MessageRepository:
                 updated_at=row.updated_at,
                 assistant_excerpt=(row.assistant_excerpt or "")[:240],
                 latest_user_question=(row.latest_user_question or "")[:240] or None,
+                retrieval_profile_id=_parse_uuid_value((row.usage_json or {}).get("retrieval_profile_id")),
+                retrieval_profile_name=_parse_string_value((row.usage_json or {}).get("retrieval_profile_name")),
             )
             for row in recent_result.all()
         ]
         return counts, recent_feedback
+
+
+def _parse_uuid_value(value: object) -> UUID | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
+
+
+def _parse_string_value(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def build_message_feedback_record(entry: MessageFeedbackEntry) -> MessageFeedbackRecord:

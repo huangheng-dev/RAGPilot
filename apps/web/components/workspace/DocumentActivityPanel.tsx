@@ -53,6 +53,9 @@ export function DocumentActivityPanel({
     if (eventType === "workflow_failed") {
       return t("workspace.documentActivity.workflowFailed");
     }
+    if (eventType === "workflow_cancelled") {
+      return t("workspace.documentActivity.workflowCancelled");
+    }
     return t("workspace.documentActivity.ingestionWorkflowStarted");
   }
 

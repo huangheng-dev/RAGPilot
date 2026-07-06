@@ -38,6 +38,7 @@ def test_workspace_list_route_exposes_archive_filter(monkeypatch) -> None:
     response = client.get(
         "/api/v1/workspaces",
         params={"tenant_id": str(uuid4()), "is_archived": "true"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -76,6 +77,7 @@ def test_knowledge_base_list_route_exposes_publication_filter(monkeypatch) -> No
     response = client.get(
         "/api/v1/knowledge-bases",
         params={"workspace_id": str(uuid4()), "publication_status": "published"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()

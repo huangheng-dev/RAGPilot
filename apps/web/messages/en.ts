@@ -19,7 +19,7 @@ const en = {
       workspace: "Workspace",
       operations: "Operations",
       admin: "Admin Console",
-      settings: "Settings",
+      settings: "System Settings",
       signIn: "Sign In",
       signOut: "Sign Out",
       rolePrefix: "Role:",
@@ -35,12 +35,12 @@ const en = {
       editable: "Editable",
       readOnly: "Read-only"
     },
-    title: "Agents | RagPilot",
+    title: "Agents | RAGPilot",
     header: {
       eyebrow: "Agent Studio",
       title: "Agent design workspace",
       description:
-        "Define agent configurations, tool access boundaries, and execution control policies in alignment with the built RagPilot platform surfaces."
+        "Define agent configurations, tool access boundaries, and execution control policies in alignment with the built RAGPilot platform surfaces."
     },
     status: {
       loading: "Loading agent definitions...",
@@ -218,7 +218,7 @@ const en = {
     architecture: {
       title: "Agent operating lanes",
       description:
-        "Map agent drafts into the built RagPilot runtime surfaces so chat, document intake, recovery, and governance stay inside one platform path.",
+        "Map agent drafts into the built RAGPilot runtime surfaces so chat, document intake, recovery, and governance stay inside one platform path.",
       lane: "Operating lane",
       openLane: "Open lane",
       groundedChat: {
@@ -249,12 +249,14 @@ const en = {
       readiness: "Readiness posture",
       issue: "Governance issue",
       modelEndpoint: "Runtime model",
+      modelProvider: "Model provider",
       toolRegistration: "Registered tool",
       allStatuses: "All statuses",
       allModes: "All modes",
       allReadiness: "All readiness",
       allIssues: "All issues",
       allModelEndpoints: "All runtime models",
+      allModelProviders: "All model providers",
       allToolRegistrations: "All registered tools",
       searchPlaceholder: "Search by name, slug, scope, or instructions"
     },
@@ -326,7 +328,7 @@ const en = {
     },
     connectivity: {
       title: "Connected surfaces",
-      description: "The surfaces below already exist in RagPilot and can serve as the operational base for future agent delivery.",
+      description: "The surfaces below already exist in RAGPilot and can serve as the operational base for future agent delivery.",
       enabled: "Enabled",
       disabled: "Disabled",
       openSurface: "Open Surface",
@@ -397,9 +399,27 @@ const en = {
       description: "Inspect the resolved model contract and the exact registered tools that will be carried into future runtime execution.",
       resolvedModelTitle: "Resolved model contract",
       noResolvedModel: "No resolved model endpoint",
+      modelRuntimeReady: "Runtime ready",
+      modelRuntimeNeedsReview: "Runtime needs review",
+      modelRuntimeIssues: {
+        missing_base_url: "This model endpoint still needs a base URL before runtime execution should depend on it.",
+        missing_credential_hint: "This model endpoint still needs an environment credential hint before runtime execution should depend on it.",
+        managed_reserved: "This model endpoint still depends on a managed reserved credential mode, so it is not runtime-ready yet."
+      },
       modelProvider: "Provider: {value}",
       modelCapabilities: "Capabilities: {value}",
       modelStrategy: "Strategy: {value}",
+      providerLaneTitle: "Provider lane posture",
+      providerLaneMetrics: {
+        runtimeReady: "Runtime-ready endpoints",
+        activeAgents: "Active agents",
+        attentionAgents: "Attention agents"
+      },
+      providerLaneBaseUrlHint: "Expected base URL pattern: {value}",
+      providerLaneBaseUrlRequired: "This provider still requires an explicit base URL before operators should rely on it.",
+      providerLaneBaseUrlNotRequired: "This provider does not require a base URL.",
+      openModelSettings: "Open model settings",
+      openProviderAttention: "Open runtime attention",
       retrievalProfileTitle: "Resolved retrieval profile",
       noRetrievalProfile: "No retrieval profile resolved",
       noRetrievalProfileDescription: "No governed retrieval profile is available for the current knowledge scope yet.",
@@ -437,6 +457,25 @@ const en = {
       noPrompt: "No launch prompt was attached to this run.",
       noHandoffIntent: "General handoff",
       openRoute: "Open recorded route",
+      latestPacket: {
+        title: "Latest handoff packet",
+        emptyDetail: "No runtime handoff has been recorded yet. Launch the selected definition into a built surface first.",
+        emptyObjective: "No delivery objective is attached yet because no recorded handoff exists.",
+        launchedDetail: "The latest handoff is still active on {surface}. Continue there before opening a new operator lane.",
+        completedDetail: "The latest handoff into {surface} completed. Re-enter the recorded route or move back into governance closure.",
+        failedDetail: "The latest handoff into {surface} failed. Reopen the recorded route or return to the governed definition before retrying.",
+        cancelledDetail: "The latest handoff into {surface} was cancelled. Review the route context before launching again.",
+        openDefinitions: "Open definition",
+        openSettings: "Open settings",
+        openAdmin: "Open admin",
+        fields: {
+          status: "Run status",
+          surface: "Target surface",
+          source: "Launch source",
+          intent: "Handoff intent",
+          scope: "Scope"
+        }
+      },
       metrics: {
         total: "Total runs",
         chat: "Chat launches",
@@ -471,6 +510,26 @@ const en = {
       pendingSummary: "Execution is still processing or waiting for a terminal result.",
       executionInput: "Execution input",
       answerPreview: "Answer preview",
+      latestPacket: {
+        title: "Latest execution packet",
+        emptyDetail: "No execution task has been recorded yet. Execute the selected runtime-ready definition to create a governed result trail.",
+        emptyObjective: "No execution objective is attached yet because no result has been recorded.",
+        emptyPrompt: "No execution input is attached yet.",
+        completedDetail: "The latest execution completed and already exposes follow-up actions back into the built product surfaces.",
+        failedDetail: "The latest execution failed. Use the follow-up actions below to recover runtime, evidence, or downstream handoff.",
+        runningDetail: "The latest execution is still running. Stay on the governed result trail until the output and follow-up posture settle.",
+        queuedDetail: "The latest execution is queued. Re-open the governed follow-up surface once runtime starts producing output.",
+        cancelledDetail: "The latest execution was cancelled. Review the runtime lane and reopen the right built surface before retrying.",
+        openDefinitions: "Open definition",
+        openSettings: "Open settings",
+        fields: {
+          status: "Execution status",
+          stage: "Runtime stage",
+          scope: "Scope",
+          outputs: "Outputs",
+          followUps: "Follow-up actions"
+        }
+      },
       runtimeBinding: "Runtime binding",
       runtimeEngine: "Runtime {value}",
       configuredRuntimeEngine: "Configured {value}",
@@ -480,7 +539,46 @@ const en = {
       runtimeBindingGoverned: "Governed endpoint",
       runtimeBindingDefault: "Service default",
       runtimeTrace: "Runtime trace",
+      durationSeconds: "{value}s",
+      outputCount: "{count} outputs",
+      followUpCount: "{count} follow-up actions",
+      toolTraceCount: "{count} tool traces",
+      runtimeFallbackReasonWithTarget: "{reason}. Execution fell back to {target}.",
+      runtimeFallbackTargets: {
+        default_model_endpoint: "the platform default model endpoint",
+        settings: "the service default runtime"
+      },
+      runtimeFallbackReasons: {
+        configured_model_endpoint_missing: "Configured model endpoint could not be resolved",
+        model_endpoint_disabled: "Configured model endpoint is disabled",
+        model_endpoint_missing_chat_capability: "Configured model endpoint does not support chat generation",
+        model_endpoint_not_runtime_ready: "Configured model endpoint is enabled, but its runtime configuration is incomplete",
+        model_endpoint_unsupported_credential_mode: "Configured model endpoint uses an unsupported credential posture",
+        model_endpoint_unavailable: "Configured model endpoint is currently unavailable",
+        unknown: "Configured model endpoint required a runtime fallback"
+      },
       followUpTitle: "Next actions",
+      stageLabels: {
+        queued_for_execution: "Queued for execution",
+        running_execution: "Execution in progress",
+        grounded_answer_ready: "Grounded answer ready",
+        intake_review_ready: "Intake review ready",
+        recovery_brief_ready: "Recovery brief ready",
+        execution_failed: "Execution failed",
+        execution_completed: "Execution completed"
+      },
+      outputKinds: {
+        answer_preview: "Answer preview",
+        retrieval_evidence: "Evidence coverage",
+        document_intake: "Document intake",
+        workflow_recovery: "Workflow recovery",
+        tool_runtime: "Tool runtime"
+      },
+      outputStatuses: {
+        ready: "Ready",
+        attention: "Attention",
+        pending: "Pending"
+      },
       retrievalResults: "{count} retrieved chunks",
       evidenceSources: "Evidence sources",
       unknownSourceDocument: "Untitled source document",
@@ -603,6 +701,7 @@ const en = {
       issueLabels: {
         model_missing: "Missing model",
         model_disabled: "Disabled model",
+        model_runtime_unconfigured: "Unconfigured model runtime",
         retrieval_profile_missing: "Missing retrieval profile",
         retrieval_profile_disabled: "Disabled retrieval profile",
         scope_missing: "Missing scope",
@@ -616,6 +715,7 @@ const en = {
       issues: {
         model_missing: "No runtime model is available",
         model_disabled: "Bound model endpoint is disabled",
+        model_runtime_unconfigured: "Bound model endpoint is enabled, but its runtime configuration is incomplete",
         retrieval_profile_missing: "No governed retrieval profile resolves for the scoped knowledge base",
         retrieval_profile_disabled: "The scoped knowledge base is bound to a disabled retrieval profile",
         scope_missing: "Knowledge scope is missing",
@@ -647,7 +747,7 @@ const en = {
       retryEnabled: "Retry enabled",
       readOnly: "Read-only retries"
     },
-    title: "Operations | RagPilot",
+    title: "Operations | RAGPilot",
     header: {
       eyebrow: "Execution Control",
       title: "Operations console",
@@ -666,6 +766,9 @@ const en = {
       retryQueued: "Workflow retry queued.",
       retryQueuedFocused: "Workflow retry queued and the operations console is now focused on the retry lane.",
       retryFailed: "Workflow retry failed.",
+      savingWorkflowNotes: "Saving workflow notes...",
+      workflowNotesSaved: "Workflow notes saved.",
+      workflowNotesSaveFailed: "Workflow notes failed to save.",
       lastRefreshed: "Last refreshed {value}"
     },
     actions: {
@@ -766,6 +869,13 @@ const en = {
       knowledgeBase: "Knowledge base",
       retryOf: "Retry of",
       temporalWorkflowId: "Temporal workflow id",
+      operatorNotes: "Operator notes",
+      operatorNotesDescription: "Capture the operator decision, retry guardrail, or source-context finding that should stay attached to this run.",
+      operatorNotesPlaceholder: "Add a durable operator note for this workflow run...",
+      operatorNotesEmpty: "No operator notes are saved for this workflow run yet.",
+      operatorNotesSaved: "Operator notes are attached to this workflow run.",
+      saveOperatorNotes: "Save notes",
+      savingOperatorNotes: "Saving notes...",
       steps: "Execution steps",
       noSteps: "No execution steps are currently recorded.",
       attemptCount: "{count} attempts",
@@ -792,11 +902,17 @@ const en = {
       openRuntimeSettings: "Open runtime settings",
       openImpactedDefinitions: "Open impacted definitions",
       disabledModel: "Disabled model {name}",
+      unconfiguredModel: "Runtime setup required for {name}",
       disabledTool: "Disabled tool {name}",
       reservedMcpTool: "Reserved MCP tool {name}",
       pendingMcpTool: "Pending MCP connector {name}",
       disabledRetrieval: "Disabled retrieval {name}",
       approvalTool: "Approval tool {name}",
+      lastToolPreview: "Latest tool preview: {status} · {value}",
+      lastConnectorPreview: "Latest connector preview: {status} · {value}",
+      providerLane: "Provider lane",
+      providerUnknown: "Unknown provider",
+      providerLaneReady: "{runtimeReady} runtime-ready endpoints, {activeAgents} active agents, {attentionAgents} still under attention.",
       openAgents: "Open recovery agents",
       openFailedQueue: "Open failed queue"
     },
@@ -809,7 +925,7 @@ const en = {
       intakeDetail: "No active recovery run needs attention right now. Return to document intake and wait for the next execution to enter supervision.",
       activeDetail: "Keep the selected execution inside supervised workflow follow-up until queue posture and retry eligibility are clear.",
       completedDetail: "This execution finished and can now be validated in downstream grounded chat or document review.",
-      failedDetail: "This failed execution should move with its workflow and source context together before another retry is attempted.",
+      failedDetail: "This recovery-sensitive execution should stay attached to its workflow and source context before another retry is attempted.",
       agentOnlyDetail: "A recovery agent is selected, but no workflow run is focused yet. Keep governance, prompts, and scope ready.",
       noObjective: "No formal recovery objective is attached yet.",
       noPrompt: "No recovery launch prompt is available yet.",
@@ -859,6 +975,8 @@ const en = {
       total: "Execution tasks",
       completed: "Completed tasks",
       failed: "Failed tasks",
+      openRuntimeSettings: "Open runtime settings",
+      openImpactedAgents: "Open impacted agents",
       pending: "Execution is still processing or waiting for the final summary.",
       empty: "No workflow-recovery execution tasks are visible in the current scope yet."
     },
@@ -872,10 +990,10 @@ const en = {
       },
       recovery: {
         title: "Recovery packet",
-        metric: "Failed runs in scope",
-        failedDetail: "{count} failed workflow runs currently need active recovery handling in this tenant scope.",
-        healthyDetail: "No failed workflow pressure is visible right now for this tenant.",
-        primaryAction: "Open failed lane",
+        metric: "Recovery runs in scope",
+        failedDetail: "{count} workflow recovery runs currently need active handling in this tenant scope.",
+        healthyDetail: "No workflow recovery pressure is visible right now for this tenant.",
+        primaryAction: "Open recovery lane",
         secondaryDocuments: "Open failed documents",
         secondaryAdmin: "Open governance"
       },
@@ -923,7 +1041,7 @@ const en = {
     }
   },
   settings: {
-    title: "Settings | RagPilot",
+    title: "Settings | RAGPilot",
     header: {
       eyebrow: "Operator Settings",
       title: "Session and platform settings",
@@ -932,7 +1050,7 @@ const en = {
     },
     sections: {
       sessionTitle: "Current session",
-      sessionDescription: "This local session controls access to protected RagPilot routes in the browser.",
+      sessionDescription: "This local session controls access to protected RAGPilot routes in the browser.",
       roleTitle: "Experience and access",
       roleDescription: "Adjust language, appearance, and pending access posture for this local operator environment.",
       accessTitle: "Access activity",
@@ -942,13 +1060,15 @@ const en = {
     },
     fields: {
       name: "Display name",
+      noActiveSession: "No active session",
       email: "Email",
       role: "Role",
-      roleManaged: "Use the local sign-in flow when you need to switch the mock session role.",
+      roleManaged: "Role is managed by the member directory and current access policy.",
       directoryLinked: "Linked to persisted member directory",
-      directoryUnlinked: "Local session only",
       memberships: "Tenant memberships",
       noMemberships: "No persisted tenant memberships are linked to this session yet.",
+      password: "Password",
+      passwordHint: "Rotate the sign-in password for this member without leaving the current session.",
       membershipAccess: "Membership access",
       membershipAccessReady: "Ready",
       membershipAccessBlocked: "Blocked",
@@ -982,19 +1102,30 @@ const en = {
       runtimeUnavailable: "Unavailable"
     },
     status: {
-      profileSaved: "Local session updated.",
+      profileSaved: "Profile updated.",
       profileSaveFailed: "Profile save failed.",
+      profileSaveUnavailable: "A valid signed-in member session is required before the profile can be updated.",
+      passwordChanged: "Password updated.",
+      passwordChangeFailed: "Password update failed.",
+      passwordConfirmationMismatch: "New password and confirmation do not match.",
+      passwordChangeUnavailable: "Password management is not available for the current sign-in mode.",
       accessEventsFailed: "Access activity could not be loaded.",
+      activeSessionsFailed: "Active sessions could not be loaded.",
       sessionRefreshFailed: "Session refresh failed.",
       runtimeHealthFailed: "Runtime health could not be loaded."
     },
     actions: {
       saveProfile: "Save Session",
       savingProfile: "Saving...",
+      changePassword: "Change Password",
       refreshSession: "Refresh Session",
       refreshingSession: "Refreshing session...",
+      refreshSessions: "Refresh Sessions",
+      refreshingSessions: "Refreshing sessions...",
       refreshActivity: "Refresh Activity",
       refreshingActivity: "Refreshing...",
+      revokeSession: "Revoke",
+      revokingSession: "Revoking...",
       openHome: "Open Home",
       openChat: "Open Chat",
       openAdmin: "Open Admin",
@@ -1012,6 +1143,10 @@ const en = {
       localOnly: "Persisted access activity appears after signing in through the member directory.",
       scopedToCurrentUser: "Only the current signed-in member can see this event feed.",
       eventFeed: "Recent access events",
+      filter: "Event filter",
+      allEvents: "All events",
+      search: "Search activity",
+      searchPlaceholder: "Search by actor, tenant, event, or reason",
       empty: "No access events have been recorded for this member yet.",
       notAvailable: "Not available",
       noTenant: "Platform scope",
@@ -1019,17 +1154,66 @@ const en = {
       issuedBy: "Issued by",
       membershipStatus: "Membership",
       loginMode: "Login mode",
+      revocationScope: "Revocation scope",
+      revocationScopeSelf: "Self service",
+      revocationScopeAdmin: "Administrator action",
+      sessionId: "Session ID",
+      signOutReason: "Current member signed out from Settings.",
+      currentSessionRevokeReason: "Current member revoked the active session from Settings.",
+      otherSessionRevokeReason: "Current member revoked another active session from Settings.",
       invitationIssueCount: "Invitation issues",
       reason: "Reason",
       loginModeBootstrap: "Initial bootstrap",
       loginModeDirectory: "Directory sign-in",
       loginModeInvitationActivation: "Invitation activation"
     },
+    sessions: {
+      title: "Active sessions",
+      description: "Review the bearer sessions currently still valid for this signed-in member.",
+      current: "Current",
+      other: "Other session",
+      startedAt: "Started",
+      expiresAt: "Expires",
+      deviceLabel: "Device",
+      ipAddress: "IP",
+      empty: "No active backend sessions are visible for this member right now.",
+      summary: {
+        total: "Active sessions",
+        totalHint: "All backend sessions still valid for this signed-in member.",
+        other: "Other sessions",
+        otherHint: "Additional sessions beyond the current browser session.",
+        expiring: "Expiring soon",
+        expiringHint: "Sessions that will expire within the next 24 hours.",
+        currentExpiry: "Current expiry",
+        currentExpiryHint: "When the current browser-backed session will need renewal.",
+        devices: "Devices",
+        devicesHint: "Distinct device labels seen across active backend sessions.",
+        ips: "IPs",
+        ipsHint: "Distinct source IP addresses still represented by active sessions."
+      }
+    },
+    passwordDialog: {
+      title: "Change password",
+      description: "Update the password used by the current signed-in member.",
+      currentPassword: "Current password",
+      currentPasswordPlaceholder: "Enter current password",
+      newPassword: "New password",
+      newPasswordPlaceholder: "Enter new password",
+      confirmPassword: "Confirm password",
+      confirmPasswordPlaceholder: "Re-enter new password",
+      cancel: "Cancel",
+      submit: "Update Password",
+      saving: "Updating..."
+    },
     posture: {
       activeMemberships: "Active memberships",
       activeMembershipsHint: "Tenant memberships currently able to open protected operator routes.",
       invitedMemberships: "Invited memberships",
       invitedMembershipsHint: "Tenant memberships that still depend on invitation activation.",
+      recentFailedSignIns: "Failed sign-ins",
+      recentFailedSignInsHint: "Failed sign-in attempts recorded inside the active review window.",
+      failedInvitationActivations: "Failed invitation activations",
+      failedInvitationActivationsHint: "Invitation activation attempts that failed inside the active review window.",
       expiringInvitations: "Invitation risk",
       expiringInvitationsHint: "Invitations already expired or expiring within the next 72 hours.",
       sensitiveEvents: "Sensitive events",
@@ -1038,6 +1222,31 @@ const en = {
     governance: {
       title: "Runtime governance",
       description: "Persisted model endpoints, tool registrations, and retrieval profiles that future chat, agent, and execution lanes can build on.",
+      overview: {
+        title: "Governance focus",
+        loading: "Loading governed runtime overview...",
+        empty: "No governed runtime issues are visible right now.",
+        applying: "Applying...",
+        primaryFocus: "Primary focus",
+        lastPreview: "Last preview: {status}",
+        metrics: {
+          attentionItems: "Attention items",
+          reviewItems: "Review items",
+          governedDefaultModels: "Governed defaults",
+          approvalTools: "Approval tools",
+          pendingMcpTools: "Pending MCP tools",
+          blockedConnectors: "Blocked connectors"
+        },
+        reasons: {
+          stable: "Governed runtime posture is currently stable across models, tools, and connectors.",
+          unconfigured_model_endpoint: "One or more enabled model endpoints still need runtime configuration before delivery stays fully governed.",
+          disabled_bound_model_endpoint: "At least one bound model endpoint is disabled and should be restored before delivery continues.",
+          approval_required_tool: "A bound tool still sits behind an approval boundary and should be reviewed before operators rely on it.",
+          mcp_integration_pending_tool: "A reserved MCP tool is still waiting for connector handoff and should be completed before runtime rollout expands.",
+          integration_blocked_connector: "At least one MCP connector is blocking downstream tool delivery and should be remediated first."
+        }
+      },
+      returnToValidation: "Return to validation",
       counts: "{models} models / {tools} tools / {retrievalProfiles} retrieval profiles",
       loaded: "Loaded {models} model endpoints and {tools} tool registrations.",
       loading: "Loading runtime governance...",
@@ -1079,6 +1288,18 @@ const en = {
         openAttentionAgents: "Open attention agents",
         openAdminOverview: "Open admin overview",
         openActiveAgents: "Open active agents"
+      },
+      events: {
+        title: "Recent runtime governance events",
+        description: "The latest persisted governance actions across models, tools, MCP connectors, and retrieval profiles.",
+        empty: "No runtime governance events have been recorded yet.",
+        systemActor: "System actor",
+        resources: {
+          modelEndpoint: "Model endpoint",
+          toolRegistration: "Tool registration",
+          mcpConnector: "MCP connector",
+          retrievalProfile: "Retrieval profile"
+        }
       }
     },
     models: {
@@ -1091,11 +1312,40 @@ const en = {
           localVllm: "{count} vLLM endpoints",
           missingBaseUrl: "Missing base URL",
           envCredential: "{count} environment-credential endpoints",
-        managedReserved: "Managed reserved",
-        enabledDefaults: "{count} enabled defaults"
+          governedDefault: "Governed default route",
+          settingsFallbackExposed: "Settings fallback is currently carrying the default chat path.",
+          settingsFallbackCovered: "A runtime-ready governed default is covering the default chat path."
+        },
+        compatibility: {
+          title: "Provider compatibility",
+          description: "Review the governed runtime contract for each provider before expanding local or private model coverage.",
+          postureStatuses: {
+            ready: "Ready",
+            attention: "Needs review",
+            setup_required: "Setup required"
+          },
+          runtimeReadyEndpoints: "Runtime-ready endpoints",
+          activeAgents: "Active agents",
+          attentionAgents: "Attention agents",
+          baseUrl: "Base URL",
+          baseUrlRequired: "Required",
+          baseUrlNotRequired: "Not required",
+          baseUrlRequiredHint: "Required, for example {value}",
+          credentials: "Credential modes",
+          preview: "Live preview",
+          previewAvailable: "Available",
+          previewUnavailable: "Unavailable",
+          openProviderModels: "Open provider models",
+          openRuntimeAttention: "Open runtime attention",
+          routingStyles: {
+            builtin: "Built-in",
+            native_http: "Native HTTP",
+            openai_compatible: "OpenAI-compatible"
+          }
         },
       filters: {
         all: "All models",
+        allProviders: "All providers",
         runtimeReady: "Runtime ready",
         disabledBound: "Disabled bound",
         missingBaseUrl: "Missing base URL",
@@ -1129,15 +1379,16 @@ const en = {
       deleteConfirm: "Delete model endpoint {name}?",
       deleted: "{name} deleted.",
       deleteFailed: "Model endpoint delete failed.",
+      governanceActionFailed: "Model endpoint governance action failed.",
       default: "Default",
       name: "Name",
       slug: "Slug",
       provider: "Provider",
         modelName: "Model name",
         baseUrl: "Base URL",
-        ollamaHint: "RagPilot calls Ollama through its native /api/chat interface. Use a base URL such as http://127.0.0.1:11434.",
+        ollamaHint: "RAGPilot calls Ollama through its native /api/chat interface. Use a base URL such as http://127.0.0.1:11434.",
         vllmHint:
-          "RagPilot calls vLLM through its OpenAI-compatible /v1/chat/completions interface. Use a base URL such as http://127.0.0.1:8001/v1.",
+          "RAGPilot calls vLLM through its OpenAI-compatible /v1/chat/completions interface. Use a base URL such as http://127.0.0.1:8001/v1.",
         credentialMode: "Credential mode",
       credentialKeyHint: "Credential key hint",
       capabilities: "Capabilities",
@@ -1154,6 +1405,11 @@ const en = {
         none: "No credential",
         environment: "Environment variable",
         managed_reserved: "Managed reserved"
+      },
+      actions: {
+        enable: "Enable endpoint",
+        disable: "Disable endpoint",
+        promoteDefault: "Promote default"
       },
       openBoundAgents: "Open affected agents",
       openImpactedAgents: "Open disabled-model agents",
@@ -1174,6 +1430,7 @@ const en = {
         mcpBoundAgents: "{count} bound reserved tools",
         integrationPending: "{count} integration-pending",
         connectorConfigured: "{count} connector-configured",
+        connectorUnhealthy: "{count} connector-unhealthy",
         runtimeReady: "{count} runtime-ready"
       },
       filters: {
@@ -1184,6 +1441,7 @@ const en = {
         boundMcp: "Bound MCP",
         integrationPending: "Integration pending",
         connectorConfigured: "Connector configured",
+        connectorUnhealthy: "Connector unhealthy",
         empty: "No tool registrations match the current governance filter."
       },
       new: "New tool",
@@ -1347,6 +1605,7 @@ const en = {
       deleteConfirm: "Delete MCP connector {name}?",
       deleted: "{name} deleted.",
       deleteFailed: "MCP connector delete failed.",
+      governanceActionFailed: "MCP connector governance action failed.",
       name: "Name",
       slug: "Slug",
       connectorType: "Connector type",
@@ -1357,6 +1616,7 @@ const en = {
       filters: {
         all: "All connectors",
         referenced: "Referenced",
+        integrationBlocked: "Integration blocked",
         runtimeReady: "Runtime ready",
         missingBaseUrl: "Missing base URL",
         managedReserved: "Managed reserved",
@@ -1367,9 +1627,10 @@ const en = {
         referenced: "{count} referenced",
         runtimeReadyLabel: "Runtime ready",
         integrationReady: "{count} integration-ready references",
+        integrationBlockedLabel: "Integration blocked",
         missingBaseUrlLabel: "Missing base URL",
         missingCredentialHint: "{count} missing credential hints",
-        managedReservedLabel: "Managed reserved",
+        managedReserved: "{count} managed reserved",
         enabled: "{count} enabled"
       },
       types: {
@@ -1414,6 +1675,10 @@ const en = {
         openBoundAgents: "Open affected agents",
         openPendingAgents: "Open pending agents",
         openReservedAgents: "Open reserved agents"
+      },
+      actions: {
+        enable: "Enable connector",
+        disable: "Disable connector"
       }
     },
     retrievalProfiles: {
@@ -1427,6 +1692,7 @@ const en = {
       deleteConfirm: "Delete retrieval profile {name}?",
       deleted: "{name} deleted.",
       deleteFailed: "Retrieval profile delete failed.",
+      governanceActionFailed: "Retrieval profile governance action failed.",
       default: "Default",
       name: "Name",
       slug: "Slug",
@@ -1443,10 +1709,17 @@ const en = {
         hybrid: "Hybrid",
         vector: "Vector",
         lexical: "Lexical"
+      },
+      actions: {
+        enable: "Enable profile",
+        disable: "Disable profile",
+        promoteDefault: "Promote default"
       }
     },
     eventTypes: {
       signInSucceeded: "Sign-in succeeded",
+      signOutSucceeded: "Sign-out succeeded",
+      sessionRevoked: "Session revoked",
       invitationIssued: "Invitation issued",
       invitationActivated: "Invitation activated",
       invitationRevoked: "Invitation revoked",
@@ -1456,10 +1729,10 @@ const en = {
     }
   },
   home: {
-    title: "Home | RagPilot",
+    title: "Home | RAGPilot",
     entry: {
       eyebrow: "Internal access",
-      title: "RagPilot internal entry",
+      title: "RAGPilot internal entry",
       description: "This deployment is intended for internal operators. Use the local sign-in flow to enter the console.",
       openLogin: "Open Sign In",
       openConsole: "Open Console",
@@ -1470,9 +1743,10 @@ const en = {
       eyebrow: "Open-source AI knowledge platform",
       title: "The production-facing entry point for knowledge and agent operations.",
       description:
-        "RagPilot unifies grounded chat, document operations, agent design, and platform governance in one professional operating surface.",
+        "RAGPilot unifies grounded chat, document operations, agent design, and platform governance in one professional operating surface.",
       openChat: "Open Chat",
       openDocuments: "Open Documents",
+      openWorkflows: "Open Workflows",
       openOperations: "Open Operations",
       openIntake: "Open intake lane",
       openMonitoring: "Open monitoring",
@@ -1519,9 +1793,21 @@ const en = {
       messages: "Messages",
       agentRuns: "Agent runs"
     },
+    overview: {
+      chats: "Chats",
+      documents: "Documents",
+      agents: "Agents",
+      nextStep: "Next step",
+      viewMore: "View more",
+      emptyChats: "No chat threads are available in the current scope yet.",
+      emptyDocuments: "No documents are available in the current scope yet.",
+      emptyAgents: "No active agents are available in the current scope yet.",
+      messageCount: "{count} messages",
+      noAgentObjective: "No business objective has been recorded for this agent yet."
+    },
     architecture: {
       title: "Operating architecture",
-      description: "Follow the actual RagPilot business path from governance and knowledge preparation into execution, grounded answers, and future automation.",
+      description: "Follow the actual RAGPilot business path from governance and knowledge preparation into execution, grounded answers, and future automation.",
       stage: "Stage {index}",
       openStage: "Open stage",
       govern: {
@@ -1605,16 +1891,50 @@ const en = {
     core: {
       title: "Core workspace entry",
       description: "Home only keeps the three primary product lanes so you can move straight into chat, documents, or workflows.",
+      flowStateEmpty: "Empty",
+      flowStatePending: "Pending",
+      flowStateMonitoring: "Monitoring",
+      flowStateRecovery: "Recovery",
+      flowStateReady: "Ready",
+      flowStateActive: "Active",
       chatsTitle: "Chats",
       chatsMetric: "Conversation count",
       chatsDetail: "{messageCount} messages persisted. Latest activity {activity}.",
+      chatsScopePending: "Select a live knowledge scope first so grounded chat can open on the right tenant, workspace, and knowledge base.",
+      chatsDocumentsPending: "Grounded chat is waiting for retrieval-ready documents. Finish intake first, then return here to validate cited answers.",
+      chatsReadyToStart: "The knowledge scope is ready. Start the first grounded thread and use citations to validate the current source set.",
       documentsTitle: "Documents",
       documentsMetric: "Document count",
       documentsDetail: "{total} documents in scope, {ready} ready, {failed} failed.",
+      documentsEmpty: "No documents are registered in the current knowledge scope yet. Open documents first and ingest the initial source set.",
+      documentsRecovery: "{failed} documents still need recovery before this scope is fully reliable for grounded answers.",
+      documentsMonitoring: "{active} documents are still moving through ingestion or indexing. Keep the intake lane open until processing settles.",
+      documentsReady: "{ready} documents are retrieval-ready in the current scope and can now support grounded validation.",
       workflowsTitle: "Workflows",
       workflowsMetric: "Workflow count",
-      workflowsDetail: "{total} runs in scope, {active} active, {failed} failed.",
+      workflowsDetail: "{total} runs in scope, {active} active, {failed} failed, {cancelled} cancelled.",
+      workflowsEmpty: "No workflow runs have been recorded in the current scope yet. Workflow supervision will become active as soon as document intake starts moving.",
+      workflowsRecovery: "{failed} failed runs and {cancelled} cancelled runs still need closure before this operator lane is stable again.",
+      workflowsMonitoring: "{active} active, {queued} queued, and {running} running workflow lanes are still in motion for the current scope.",
+      workflowsReady: "{total} completed workflow runs already provide a stable validation lane for the current scope.",
+      executionOutputCount: "{count} outputs",
+      executionFollowUpCount: "{count} follow-up actions",
       noActivity: "No activity yet"
+    },
+    runtime: {
+      title: "Model runtime attention",
+      description: "Keep runtime provider closure visible on the product entry surface whenever the default lane or the selected tenant still needs model follow-up.",
+      openSettings: "Open model settings",
+      openAgents: "Open impacted agents",
+      providerAttentionTitle: "{provider} runtime lane needs closure",
+      providerAttentionDetail: "{runtimeReady} runtime-ready endpoints, {activeAgents} active agents, {attentionAgents} active agents still under attention.",
+      defaultAttentionTitle: "Default runtime lane needs closure",
+      defaultAttentionDetail: "No runtime-ready default model endpoint is currently exposed for the platform entry path.",
+      defaultReadyLabel: "Runtime-ready defaults",
+      defaultReadyHint: "Platform-wide default model endpoints ready for execution.",
+      tenantAttentionLabel: "Tenant runtime attention",
+      tenantAttentionHint: "Active agents in the selected tenant still bound to incomplete model runtime lanes.",
+      statusAttention: "Attention"
     },
     capabilities: {
       title: "Core platform surfaces",
@@ -1662,7 +1982,7 @@ const en = {
       openConversation: "Open Conversation",
       failedDocuments: "Failed documents",
       noFailedDocuments: "No failed documents in the active knowledge base scope.",
-      failedWorkflows: "Failed workflows",
+      failedWorkflows: "Recovery workflows",
       noFailedWorkflows: "No failed workflow runs in the active tenant scope.",
       agentRuns: "Agent runtime",
       agentRunsDetail: "{count} launches recorded, latest at {value}",
@@ -1810,9 +2130,13 @@ const en = {
       compareCandidateOnly: "{count} llamaindex only",
       topResultMatches: "Top result matches",
       topResultDiffers: "Top result differs",
-      recentEvaluationsTitle: "Recent evaluations",
-      recentEvaluationsEmpty: "No persisted retrieval evaluations exist in the current scope yet.",
-      tuningCandidatesTitle: "Tuning candidates",
+        recentEvaluationsTitle: "Recent evaluations",
+        recentEvaluationsEmpty: "No persisted retrieval evaluations exist in the current scope yet.",
+        selectedEvaluationTitle: "Selected evaluation",
+        selectedEvaluationDescription: "Re-open one persisted evaluation as a direct follow-up packet for governance, replay, or grounded validation.",
+        selectedEvaluationEmpty: "Select a recent evaluation to inspect its saved follow-up context.",
+        selectedEvaluationNoSources: "No source documents were preserved for this evaluation.",
+        tuningCandidatesTitle: "Tuning candidates",
       tuningCandidatesEmpty: "No repeated review candidates exist in the current scope yet.",
       queryCount: "{count} queries",
       evaluationCount: "{count} evaluations",
@@ -1822,6 +2146,9 @@ const en = {
       summaryHold: "{count} hold",
       summaryFailed: "{count} failed",
       summaryEmpty: "{count} empty",
+      recommendedNextStep: "Recommended next step",
+      reviewSourceScope: "Review source scope",
+      reviewRetrievalProfile: "Review retrieval profile",
       inspectAgain: "Inspect again",
       compareAgain: "Compare again",
       openKnowledgeBaseGovernance: "Open knowledge base governance",
@@ -1856,7 +2183,7 @@ const en = {
       fullAccess: "Full access",
       readOnly: "Read-only governance"
     },
-    title: "Admin | RagPilot",
+    title: "Admin | RAGPilot",
     header: {
       eyebrow: "Governance command",
       title: "Platform administration",
@@ -1888,6 +2215,9 @@ const en = {
       updatingMember: "Updating member...",
       memberUpdated: "Member {name} updated.",
       memberUpdateFailed: "Member update failed.",
+      memberPasswordResetting: "Resetting member password...",
+      memberPasswordReset: "Password reset for {name}.",
+      memberPasswordResetFailed: "Member password reset failed.",
       invitingMemberToTenant: "Sending tenant invitation...",
       memberInvitedToTenant: "Tenant invitation queued for {name}.",
       memberAddFailed: "Member tenant assignment failed.",
@@ -1909,7 +2239,9 @@ const en = {
       membershipUpdateFailed: "Membership update failed.",
       removingMembership: "Removing membership from tenant scope...",
       membershipRemoved: "Membership removed for {name}.",
-      membershipRemoveFailed: "Membership removal failed."
+      membershipRemoveFailed: "Membership removal failed.",
+      memberSessionRevoked: "Member session revoked.",
+      memberSessionRevokeFailed: "Member session revocation failed."
     },
     filters: {
       tenantScope: "Select tenant scope",
@@ -1927,6 +2259,7 @@ const en = {
       disabledAssignedRetrievalProfile: "Disabled profile assignments",
       publishedOnly: "Published only",
       draftOnly: "Draft only",
+      returnToValidation: "Return to validation",
       refreshDirectory: "Refresh directory",
       refreshingDirectory: "Refreshing..."
     },
@@ -1937,6 +2270,8 @@ const en = {
       createKnowledgeBase: "Create Knowledge Base",
       createMember: "Create Member",
       saveMember: "Save Member",
+      resetMemberPassword: "Reset Password",
+      resettingMemberPassword: "Resetting...",
       archive: "Archive",
       archiving: "Archiving...",
       restore: "Restore",
@@ -2023,7 +2358,11 @@ const en = {
       suspendedMemberships: "Suspended memberships",
       suspendedMembershipsHint: "Tenant relationships currently held out of active access.",
       auditEvents: "Recent events",
-      auditEventsHint: "Access events currently visible in the latest governance window."
+      auditEventsHint: "Access events currently visible in the latest governance window.",
+      eventBreakdownTitle: "Audit distribution",
+      eventBreakdownDescription: "Backend-counted event totals across the selected admin scope, beyond the latest visible event list.",
+      eventBreakdownEmpty: "No access-event distribution is available in this scope yet.",
+      openAuditSlice: "Open audit slice"
     },
     securitySummary: {
       title: "Security posture",
@@ -2034,8 +2373,8 @@ const en = {
       dormantAccountsHint: "Active accounts with no sign-in or no sign-in in the last 30 days.",
       expiringInvitations: "Invitation risk",
       expiringInvitationsHint: "Invitations already expired or approaching expiration within 72 hours.",
-      sensitiveEvents: "Sensitive events",
-      sensitiveEventsHint: "Recent revocations, suspensions, and membership removals in the current scope."
+      failedSignIns: "Failed sign-ins",
+      failedSignInsHint: "Failed sign-in attempts recorded inside the active lockout review window."
     },
     securityWatch: {
       title: "Security review queue",
@@ -2049,12 +2388,22 @@ const en = {
       dormantAccounts: "Dormant accounts",
       dormantAccountsDetail: "{count} active accounts have not signed in recently enough for healthy operational posture.",
       dormantAccountsHealthy: "Active accounts in scope still show recent sign-in posture.",
+      failedSignInPressure: "Failed sign-in pressure",
+      failedSignInPressureDetail: "{count} members are currently hitting the failed sign-in lockout threshold.",
+      failedSignInPressureHealthy: "No members are currently under failed sign-in lockout pressure.",
+      invitationActivationPressure: "Invitation activation pressure",
+      invitationActivationPressureDetail: "{count} invited members recently failed invitation activation and may need onboarding follow-up.",
+      invitationActivationPressureHealthy: "No recent invitation activation failures need follow-up in the current scope.",
+      sessionSpreadPressure: "Session spread pressure",
+      sessionSpreadPressureDetail: "{count} members currently exceed the reviewed session or device spread threshold.",
+      sessionSpreadPressureHealthy: "No members currently exceed the reviewed session or device spread threshold.",
       suspendedMemberships: "Suspended memberships",
       suspendedMembershipsDetail: "{count} tenant relationships are currently suspended and may need follow-up.",
       suspendedMembershipsHealthy: "No suspended memberships need review in the current scope.",
       reviewInvitations: "Review invitations",
       reviewAccounts: "Review accounts",
-      reviewSuspended: "Review suspended"
+      reviewSuspended: "Review suspended",
+      reviewFailedSignIns: "Review lockouts"
     },
     currentActorSecurity: {
       title: "Current actor posture",
@@ -2141,8 +2490,18 @@ const en = {
       createDescription: "Create a persisted member record and optionally attach the initial tenant membership from the admin surface.",
       editTitle: "Edit member",
       editDescription: "Update the persisted member profile and account state without leaving the admin scope.",
+      passwordResetTitle: "Password reset",
+      passwordResetDescription: "Issue a new sign-in password for this member when the backend is running in password-managed local sign-in mode.",
+      passwordResetNewPassword: "New password",
+      passwordResetNewPasswordPlaceholder: "Enter a new password",
+      passwordResetConfirmPassword: "Confirm password",
+      passwordResetConfirmPasswordPlaceholder: "Re-enter the new password",
+      passwordResetReason: "Reset note",
+      passwordResetReasonPlaceholder: "Optional governance note for this reset",
+      passwordResetValidation: "Enter and confirm the replacement password before resetting it.",
+      passwordResetMismatch: "The replacement password and confirmation do not match.",
       displayName: "Display name",
-      displayNamePlaceholder: "RagPilot Operator",
+      displayNamePlaceholder: "Workspace Operator",
       email: "Email",
       emailPlaceholder: "operator@ragpilot.local",
       role: "Role",
@@ -2152,6 +2511,35 @@ const en = {
       invitationIssueCount: "Issued {value} times",
       invitationExpiresAt: "Expires {value}",
       invitationExpired: "Expired",
+      accessPostureTitle: "Access posture",
+      accessPostureDescription: "Review the selected member's latest access activity, membership pressure, and session posture before changing directory state.",
+      accessPostureEmpty: "Access posture is not available for this member yet.",
+      accessEventsTitle: "Member access events",
+      accessEventsDescription: "Inspect the selected member's recent sign-in, invitation, membership, and session-governance events from the same admin workflow.",
+      accessEventsSearch: "Search activity",
+      accessEventsSearchPlaceholder: "Search by actor, tenant, event, or reason",
+      accessEventsEmpty: "No recent access events are visible for this member right now.",
+      accessEventAt: "Recorded",
+      auditEventsSuffix: "audit events",
+      sessionsTitle: "Member sessions",
+      sessionsDescription: "Review backend sessions for this member and revoke stale access without leaving the directory workflow.",
+      sessionsExpiringHint: "{count} expiring within 24 hours",
+      sessionsCurrent: "Current session",
+      sessionsOther: "Other session",
+      sessionsStartedAt: "Started",
+      sessionsExpiresAt: "Expires",
+      sessionsDeviceLabel: "Device",
+      sessionsIpAddress: "IP",
+      sessionsEmpty: "No active backend sessions are visible for this member right now.",
+      sessionsLoadFailed: "Member sessions could not be loaded.",
+      sessionSummary: {
+        total: "Active sessions",
+        other: "Other sessions",
+        expiring: "Expiring soon",
+        currentExpiry: "Current expiry",
+        devices: "Devices",
+        ips: "IPs"
+      },
       activationQueue: {
         title: "Pending activation queue",
         description: "Bring invited members into the foreground so issuance, activation, and revocation can be completed from one access-control lane.",
@@ -2170,9 +2558,19 @@ const en = {
       allEvents: "All events",
       empty: "No access events have been recorded in this scope yet.",
       actor: "Actor {value}",
+      defaultSessionRevokeReason: "Session revoked from Admin Console.",
+      revocationScope: "Revocation scope {value}",
+      revocationScopeSelf: "Self service",
+      revocationScopeAdmin: "Administrator action",
       reasonLabel: "Governance note",
       eventTypes: {
+        signInFailed: "Sign-in failed",
         signInSucceeded: "Sign-in succeeded",
+        invitationActivationFailed: "Invitation activation failed",
+        signOutSucceeded: "Sign-out succeeded",
+        sessionRevoked: "Session revoked",
+        passwordChanged: "Password changed",
+        passwordReset: "Password reset",
         invitationIssued: "Invitation issued",
         invitationActivated: "Invitation activated",
         invitationRevoked: "Invitation revoked",
@@ -2208,7 +2606,7 @@ const en = {
       noScopedWorkspace: "No scoped workspace",
       noScopedKnowledgeBase: "No scoped knowledge base",
       failedDocuments: "Failed documents",
-      failedWorkflows: "Failed workflows"
+      failedWorkflows: "Recovery workflows"
     },
     chatScope: {
       title: "Chat activity scope",
@@ -2270,16 +2668,16 @@ const en = {
       tenantsWithQueuePressure: "Tenants with queue pressure",
       tenantsWithRetries: "Tenants with retries",
       tenantBreakdown: "Tenant execution breakdown",
-      failedRunCount: "{count} failed runs",
+      failedRunCount: "{count} recovery runs",
       queuePressureCount: "{count} queued or running",
       retryRunCount: "{count} retry runs",
-      openFailedLane: "Open failed lane",
+      openFailedLane: "Open recovery lane",
       openQueueLane: "Open queue lane",
       openWorkflowSurface: "Open workflow surface",
       noTenantPressure: "No execution pressure is visible in the current governance scope.",
       metrics: {
-        failed: "Failed runs",
-        failedHint: "Failed workflow runs that still need recovery handling in the current governance scope.",
+        failed: "Recovery runs",
+        failedHint: "Failed or cancelled workflow runs that still need recovery handling in the current governance scope.",
         queued: "Queued runs",
         queuedHint: "Workflow runs currently waiting on execution capacity.",
         running: "Running runs",
@@ -2323,11 +2721,22 @@ const en = {
       activeAgentsWithoutScope: "Active agents without scope",
       missingModelBindings: "Missing model bindings",
       disabledModelBindings: "Disabled model bindings",
+      unconfiguredModelBindings: "Unconfigured model runtimes",
       missingRetrievalBindings: "Missing retrieval bindings",
       disabledRetrievalBindings: "Disabled retrieval bindings",
       disabledToolBindings: "Disabled tool bindings",
       disabledRetrievalAssignments: "Knowledge bases on disabled retrieval profiles",
       explicitRetrievalBindings: "Knowledge bases with explicit retrieval bindings",
+      providerLanes: "Provider lanes",
+      providerMetrics: {
+        runtimeReady: "Runtime-ready",
+        activeAgents: "Active agents",
+        attentionAgents: "Attention agents",
+        previewFailures: "Preview failures"
+      },
+      providerPreviewStatus: "Last preview {status} at {value}",
+      providerPreviewEmpty: "No recent preview has been recorded for this provider lane.",
+      openProviderModels: "Open provider models",
       openAttentionAgents: "Open attention agents",
       openSettings: "Open settings",
       openActiveAgents: "Open active agents",
@@ -2346,6 +2755,65 @@ const en = {
         disabledBoundRetrievalProfilesHint: "Retrieval profiles disabled while still assigned to governed knowledge bases.",
         defaultFallbackKnowledgeBases: "Default-fallback knowledge bases",
         defaultFallbackKnowledgeBasesHint: "Knowledge bases still inheriting the platform default retrieval profile."
+      }
+    },
+    runtimeQueue: {
+      title: "Runtime governance queue",
+      description: "Pull model runtime gaps, approval queues, MCP integration, and recent governance changes into one lighter admin worklist.",
+      refresh: "Refresh queue",
+      worklistTitle: "Open queue",
+      eventsTitle: "Recent changes",
+      emptyWorklist: "No queued runtime-governance follow-up is visible right now.",
+      emptyEvents: "No recent runtime-governance change is visible right now.",
+      systemActor: "System",
+      boundAgents: "{count} bound agents",
+      integrationReadyTools: "{count} integration-ready tools",
+      lastModelPreview: "Latest model preview {status} · {value}",
+      lastToolPreview: "Latest tool preview {status} · {value}",
+      lastConnectorPreview: "Latest connector preview {status} · {value}",
+      previewFailures: "{count} preview failures",
+      filters: {
+        category: "Category",
+        severity: "Severity",
+        resource: "Resource",
+        action: "Action",
+        actor: "Actor",
+        searchPlaceholder: "Search runtime items, providers, connectors, or actions",
+        allCategories: "All categories",
+        allSeverities: "All severities",
+        allResources: "All resources",
+        allActions: "All actions",
+        allActors: "All actors"
+      },
+      metrics: {
+        total: "Queued items",
+        unconfiguredModels: "Unconfigured models",
+        disabledBoundModels: "Disabled bound models",
+        approvalRequiredTools: "Approval tools",
+        integrationPendingTools: "Pending MCP tools",
+        blockedConnectors: "Blocked connectors"
+      },
+      categories: {
+        unconfiguredModelEndpoint: "Unconfigured model endpoint",
+        disabledBoundModelEndpoint: "Disabled bound model endpoint",
+        approvalRequiredTool: "Approval required tool",
+        mcpIntegrationPendingTool: "MCP integration pending tool",
+        integrationBlockedConnector: "Blocked MCP connector"
+      },
+      actions: {
+        completeModelRuntime: "Complete model runtime",
+        restoreModelRuntime: "Restore model runtime",
+        enableModelEndpoint: "Enable model endpoint",
+        enableToolRegistration: "Enable tool registration",
+        allowDirectToolUse: "Allow direct tool use",
+        readyMcpIntegration: "Mark MCP integration ready",
+        enableMcpConnector: "Enable MCP connector",
+        restoreConnectorRuntime: "Restore connector runtime",
+        reviewToolBoundary: "Review tool boundary",
+        completeMcpIntegration: "Complete MCP integration",
+        openSettings: "Open settings",
+        openAgents: "Open agents",
+        applyFailed: "Runtime governance action failed."
       }
     },
     retrievalProfiles: {
@@ -2377,7 +2845,7 @@ const en = {
       noChatActivity: "No persisted chat activity yet.",
       openTenantChat: "Open tenant chat",
       failedDocs: "Failed docs",
-      failedWorkflows: "Failed workflows",
+      failedWorkflows: "Recovery workflows",
       governance: "Governance",
       noTenantActivity: "No tenant activity is visible in the current governance scope."
     },
@@ -2407,7 +2875,7 @@ const en = {
       workspaceLifecycleHealthy: "All visible workspaces remain active.",
       reviewArchived: "Review archived",
       workflowRecoveryPressure: "Workflow recovery pressure",
-      workflowRecoveryPressureDetail: "{count} failed workflow runs across {tenantCount} tenants still need recovery governance follow-up.",
+      workflowRecoveryPressureDetail: "{count} workflow recovery runs across {tenantCount} tenants still need governance follow-up.",
       workflowRecoveryHealthy: "No failed workflow recovery pressure is visible in the current governance scope.",
       reviewWorkflowPressure: "Review recovery pressure",
       documentRecoveryPressure: "Document recovery pressure",
@@ -2557,16 +3025,16 @@ const en = {
     }
   },
   auth: {
-    title: "Sign In | RagPilot",
+    title: "Sign In",
+    eyebrow: "RAGPilot",
     badge: "Local Access",
-    heading: "Sign in to RagPilot",
-    description:
-      "Use the persisted member directory to open the operator console. Role and tenant access now resolve from the directory instead of a self-selected local session.",
+    heading: "Sign in",
+    description: "Use your directory account to enter the console.",
     hero: {
       eyebrow: "Operator Access",
       title: "Secure knowledge operations access",
       description:
-        "Open RagPilot through the directory-backed access layer and keep operator, governance, and workflow supervision inside one controlled console path.",
+        "Open RAGPilot through the directory-backed access layer and keep operator, governance, and workflow supervision inside one controlled console path.",
       groundedChatTitle: "Grounded chat",
       groundedChatDescription: "Persist citation-backed answers against the active knowledge base scope.",
       documentOpsTitle: "Document operations",
@@ -2581,17 +3049,24 @@ const en = {
         bootstrapClosed: "Directory bootstrap is already sealed and invitation-based access is active.",
         returnTo: "Return target {value}"
       },
-    submit: "Create Local Session",
-    submitting: "Creating Session...",
-    localModeTitle: "Development mode",
+    submit: "Sign in",
+    submitting: "Signing in...",
+    localModeTitle: "Local session",
     localModeDescription: "This browser still stores the local session, but role and tenant access now follow the persisted directory record.",
     fields: {
+      profile: "Sign-in profile",
       displayName: "Display name",
-      displayNamePlaceholder: "RagPilot Operator",
+      displayNamePlaceholder: "Workspace Operator",
       email: "Email",
       emailPlaceholder: "operator@ragpilot.local",
+      password: "Password",
+      passwordPlaceholder: "Enter your password",
       invitationToken: "Invitation code",
       invitationTokenPlaceholder: "RP-AB12CD34"
+    },
+    profiles: {
+      admin: "Admin",
+      operator: "User"
     },
     roles: {
       superAdmin: "Super Admin",
@@ -2601,11 +3076,28 @@ const en = {
     bootstrap: {
       firstAdmin: "First sign-in will become the initial Super Admin"
     },
+    modes: {
+      directory_local: "Directory local sign-in",
+      password_local: "Password sign-in",
+      oidc: "OIDC sign-in",
+      saml: "SAML sign-in"
+    },
+    modeFacts: {
+      directory: "Directory governed",
+      invitation: "Invitation activation"
+    },
     invitation: {
       title: "Invitation ready",
       description: "This member is still in an invited state. Activate the invited tenant access before entering the protected console.",
       activate: "Activate invited access",
       activating: "Activating invited access..."
+    },
+    providerManaged: {
+      title: "Provider-managed sign-in",
+      description: "This environment is configured for redirected identity-provider access. The local member form is intentionally unavailable in this mode.",
+      defaultProvider: "Identity provider",
+      continue: "Continue with {provider}",
+      unavailable: "The redirected sign-in entry is not configured yet. Contact an administrator."
     },
     assessment: {
       title: "Directory access posture",
@@ -2627,7 +3119,14 @@ const en = {
     },
     errors: {
       requiredFields: "Display name and email are required.",
+      invalidCredentials: "Email or password is incorrect.",
+      passwordRequired: "Enter the password before continuing.",
+      signInRateLimited: "Too many failed sign-in attempts. Try again shortly.",
+      noInvitedMemberships: "No invited memberships are available to activate.",
+      invalidInvitationToken: "Invitation code is not valid for this member.",
+      expiredInvitationToken: "Invitation code has expired. Ask an administrator to issue a new one.",
       directorySyncFailed: "Directory sync failed during sign-in.",
+      providerManagedOnly: "This environment requires provider-managed sign-in. The local member form is disabled for the current authentication mode.",
       inactiveAccount: "This member account is inactive. Ask an administrator to reactivate it before signing in.",
       invitedMembership: "This member only has invited tenant access right now. Activate the invitation to continue.",
       invitationTokenRequired: "Enter the invitation code before activating tenant access.",
@@ -2642,9 +3141,9 @@ const en = {
       restoringDescription: "Checking the browser session before opening protected operator routes.",
       restoringStatus: "Restoring saved operator session...",
       redirectingTitle: "Redirecting to sign in",
-      redirectingDescription: "This route is protected. We are sending you to local sign-in first.",
-      redirectingStatus: "Redirecting to local sign-in...",
-      unauthorizedPageTitle: "Access Restricted | RagPilot",
+      redirectingDescription: "This route is protected. We are sending you to sign in first.",
+      redirectingStatus: "Redirecting to sign-in...",
+      unauthorizedPageTitle: "Access Restricted | RAGPilot",
       unauthorizedTitle: "Access restricted",
       unauthorizedDescription:
         "Your current local session does not have permission to open this operator surface. Use an allowed role or continue from the workspace.",
@@ -2652,24 +3151,24 @@ const en = {
     }
   },
   workspace: {
-    title: "Workspace | RagPilot",
+    title: "Workspace | RAGPilot",
     routePage: {
       chat: {
-        browserTitle: "Chat | RagPilot",
+        browserTitle: "Chat | RAGPilot",
         eyebrow: "Grounded Chat",
         title: "Knowledge chat console",
         description:
           "Ask scoped questions, review citations, and continue persisted conversations against the active knowledge base."
       },
       documents: {
-        browserTitle: "Documents | RagPilot",
+        browserTitle: "Documents | RAGPilot",
         eyebrow: "Document Operations",
         title: "Document registry and ingestion controls",
         description:
           "Track ingestion state, manage document lifecycle, and inspect retrieval-ready assets inside the active knowledge base."
       },
       operations: {
-        browserTitle: "Operations | RagPilot",
+        browserTitle: "Operations | RAGPilot",
         eyebrow: "Workflow Operations",
         title: "Workflow supervision and recovery",
         description:
@@ -2753,7 +3252,7 @@ const en = {
         subject: "Current subject",
         readyDocuments: "Ready documents",
         activeWorkflows: "Active workflows",
-        failedWorkflows: "Failed workflows",
+        failedWorkflows: "Recovery workflows",
         conversations: "Conversations",
         validation: "Validation state",
         validatedHits: "Validated hits",
@@ -2785,7 +3284,7 @@ const en = {
         ingestDetail: "Keep document intake in one lane so new uploads, reindex actions, and source checks stay grounded in the same scope.",
         uploadFollowUp: "Continue intake review",
         monitorTitle: "Monitor execution health",
-        monitorFailureDetail: "A failed queue is present. Review workflow pressure and recovery state before reopening validation.",
+        monitorFailureDetail: "A recovery queue is present. Review workflow pressure and recovery state before reopening validation.",
         monitorActiveDetail: "Some ingestion work is still running. Stay on workflow supervision until the active queue settles.",
         monitorHealthyDetail: "No active failures are blocking the current scope. Workflow supervision can now be treated as a checkpoint instead of a blocker.",
         reviewFailedDocuments: "Review failed documents",
@@ -2841,6 +3340,10 @@ const en = {
       contextSwitched: "Context switched to {name}. Upload a document and ask your first question.",
       agentContextActivated: "Agent context switched to {name}.",
       agentContextActivatedForView: "Agent {name} is now active in {view}.",
+      executingRecommendedAgent: "Running {name} for the current workspace context...",
+      agentExecutionCompletedForDocuments: "{name} finished its intake review. Documents is now focused on the next follow-up lane.",
+      agentExecutionCompletedForWorkflows: "{name} finished its recovery review. Workflows is now focused on the next supervision lane.",
+      recommendedAgentExecutionFailed: "The recommended agent execution failed.",
       loadingConversations: "Workspace ready. Loading conversations...",
       initializationFailed: "Workspace initialization failed.",
       documentIndexedReady: "Document indexed and ready for grounded chat.",
@@ -2898,6 +3401,7 @@ const en = {
       messageFeedbackSavedReview: "Answer flagged for review.",
       messageFeedbackFailed: "Saving answer feedback failed.",
       uploadingAndStartingIngestion: "Uploading document and starting ingestion...",
+      importingWebPageAndStartingIngestion: "Importing web page and starting ingestion...",
       retrievalQueryPreparedInChat: "Retrieval query loaded into chat composer.",
       sourceChunkLoadedInChat: "Source chunk {index} loaded in the chat sidebar.",
       sourceDocumentLoadedInChat: "Source document loaded in the chat sidebar.",
@@ -2909,6 +3413,7 @@ const en = {
       startingDocumentReindex: "Starting document reindex...",
       restoringSelectedDocument: "Restoring selected document...",
       deletingSelectedDocument: "Deleting selected document...",
+      webImportFailed: "Web page import failed.",
       queueingReindexSelectedDocuments: "Queueing reindex for {count} selected documents...",
       restoringSelectedDocuments: "Restoring {count} selected documents...",
       recommendationPrompts: {
@@ -2928,10 +3433,16 @@ const en = {
       documentReindexFailed: "Document reindex failed.",
       workflowRetryUnavailable: "Workflow retry is unavailable.",
       retryingWorkflow: "Retrying failed workflow run...",
+      cancellingWorkflow: "Cancelling workflow run...",
       workflowRetryQueued: "Workflow retry queued.",
       workflowRetryQueuedMonitoring: "Workflow retry queued. Workflow supervision is now focused on the retry run.",
       workflowRetryFinished: "Workflow retry finished with status: {status}.",
       workflowRetryFailed: "Workflow retry failed.",
+      workflowCancelFinished: "Workflow run cancelled.",
+      workflowCancelFailed: "Workflow cancellation failed.",
+      savingWorkflowNotes: "Saving workflow notes...",
+      workflowNotesSaved: "Workflow notes saved.",
+      workflowNotesSaveFailed: "Workflow notes failed to save.",
       conversationDraftTitle: "New Conversation {timestamp}",
       operationsLoadFailed: "Workspace operations failed to load.",
       deepLinkApplyFailed: "Workspace deep link failed to apply.",
@@ -2946,6 +3457,33 @@ const en = {
     retrievalInspector: {
       title: "Retrieval diagnostics",
       description: "Run live retrieval checks against the active knowledge base and move directly into grounded chat or document review.",
+      filtersTitle: "Evaluation filters",
+      filtersDescription: "Narrow persisted retrieval evaluations and tuning candidates by mode, validation status, or query text.",
+      modeFilterLabel: "Evaluation mode",
+      followUpFilterLabel: "Follow-up status",
+      statusFilterLabel: "Validation status",
+      queryFilterLabel: "Query filter",
+      queryFilterPlaceholder: "Filter saved evaluation queries...",
+      filterAllModes: "All modes",
+      filterAllFollowUpStatuses: "All follow-up statuses",
+      filterAllStatuses: "All statuses",
+      filterStatusReady: "Ready",
+      filterStatusReview: "Review",
+      filterStatusHold: "Hold",
+      filterStatusEmpty: "Empty",
+      filterStatusFailed: "Failed",
+      followUpPending: "Pending",
+      followUpResolved: "Resolved",
+      followUpUpdating: "Updating...",
+      markFollowUpResolved: "Mark handled",
+      reopenFollowUp: "Reopen follow-up",
+      resolveCandidate: "Resolve candidate",
+      reopenCandidate: "Reopen candidate",
+      followUpUpdateFailed: "Follow-up status update failed.",
+      followUpResolvedToast: "Evaluation follow-up marked resolved.",
+      followUpReopenedToast: "Evaluation follow-up reopened.",
+      candidateResolvedToast: "Candidate queue marked resolved.",
+      candidateReopenedToast: "Candidate queue reopened.",
       queryTitle: "Validate retrieval behavior",
       queryDescription: "Test the exact query path the operator is about to use before closing the execution loop.",
       quickFillTitle: "Quick fill",
@@ -2977,9 +3515,13 @@ const en = {
       compareCandidateOnly: "{count} llamaindex only",
       topResultMatches: "Top result matches",
       topResultDiffers: "Top result differs",
-      recentEvaluationsTitle: "Recent evaluations",
-      recentEvaluationsEmpty: "No persisted retrieval evaluations exist in the current scope yet.",
-      tuningCandidatesTitle: "Tuning candidates",
+        recentEvaluationsTitle: "Recent evaluations",
+        recentEvaluationsEmpty: "No persisted retrieval evaluations exist in the current scope yet.",
+        selectedEvaluationTitle: "Selected evaluation",
+        selectedEvaluationDescription: "Re-open one persisted evaluation as a direct follow-up packet for governance, replay, or grounded validation.",
+        selectedEvaluationEmpty: "Select a recent evaluation to inspect its saved follow-up context.",
+        selectedEvaluationNoSources: "No source documents were preserved for this evaluation.",
+        tuningCandidatesTitle: "Tuning candidates",
       tuningCandidatesEmpty: "No repeated review candidates exist in the current scope yet.",
       queryCount: "{count} queries",
       evaluationCount: "{count} evaluations",
@@ -2989,6 +3531,9 @@ const en = {
       summaryHold: "{count} hold",
       summaryFailed: "{count} failed",
       summaryEmpty: "{count} empty",
+      summaryFollowUpPending: "{count} pending",
+      summaryFollowUpResolved: "{count} resolved",
+      recommendedNextStep: "Recommended next step",
       inspectAgain: "Inspect again",
       compareAgain: "Compare again",
       openKnowledgeBaseGovernance: "Open knowledge base governance",
@@ -3098,7 +3643,8 @@ const en = {
         home: "Home",
         admin: "Admin",
         operations: "Operations",
-        agents: "Agents"
+        agents: "Agents",
+        workspace: "Workspace"
       },
       searchConversations: "Search conversations",
       startConversationPlaceholder: "Start a new conversation",
@@ -3140,6 +3686,29 @@ const en = {
     chatView: {
       workspaceConversations: "Workspace conversations",
       activeInScope: "{count} active in current workspace scope",
+      flowStateEmpty: "No knowledge ready",
+      flowStateRecovery: "Recovery first",
+      flowStateReview: "Review evidence",
+      flowStateReady: "Ready to validate",
+      flowStateConversation: "Conversation setup",
+      flowStateEmptyTitle: "Grounded chat is waiting for indexed knowledge.",
+      flowStateEmptyDescription:
+        "Open documents first, ingest source material, and return to chat only after the knowledge base has retrieval-ready content.",
+      flowStateRecoveryTitle: "Recovery work still needs to close before this chat lane is trustworthy.",
+      flowStateRecoveryDescription:
+        "A failed or cancelled workflow is still attached to this scope. Clear the workflow lane first, then return here for grounded validation.",
+      flowStateReviewTitle: "The latest retrieval posture still needs review before final grounded answers.",
+      flowStateReviewDescription:
+        "Inspect the source documents or workflow evidence first, then rerun validation so chat answers are based on stable citations.",
+      flowStateReadyTitle: "This chat scope is ready to validate grounded answers.",
+      flowStateReadyDescription:
+        "Use the suggested validation prompt or start a fresh thread now that the selected knowledge scope has usable retrieval context.",
+      flowStateValidatedTitle: "This chat scope is validated and ready for direct grounded answers.",
+      flowStateValidatedDescription:
+        "Recent retrieval validation already passed in this scope. Continue asking scoped questions while keeping citations and source review close at hand.",
+      flowStateConversationTitle: "The chat lane is ready, but the active conversation has not started yet.",
+      flowStateConversationDescription:
+        "Create the next grounded thread from this scope, then move through cited answers without leaving the current workspace context.",
       workspaceMessages: "Workspace messages",
       latestActivity: "Latest activity {timestamp}",
       noPersistedActivity: "No persisted activity yet",
@@ -3160,10 +3729,14 @@ const en = {
       noConversationSelected: "No conversation is selected.",
       noConversationSelectedDescription:
         "Start a new chat thread for the current knowledge base, then ask a grounded question to persist a real conversation with citations.",
+      streamPlaceholderNoConversation:
+        "Use the flow state above to start the next grounded thread. The stream will populate after the first persisted turn.",
       startConversation: "Start conversation",
       firstTurnReady: "This conversation is ready for its first grounded turn.",
       firstTurnReadyDescription:
-        "Ask a question against the selected knowledge base. RagPilot will retrieve evidence, generate an answer, and persist both messages with citations.",
+        "Ask a question against the selected knowledge base. RAGPilot will retrieve evidence, generate an answer, and persist both messages with citations.",
+      streamPlaceholderFirstTurn:
+        "The active thread is still empty. Use the flow state above to start validation or ask the first grounded question for this scope.",
       noIndexedDocumentsWarning:
         "No indexed documents are available in this knowledge base yet. Upload content first so grounded answers have retrieval context.",
       citations: "Citations",
@@ -3182,6 +3755,7 @@ const en = {
       retrievalEngine: "Engine {value}",
       runtimeModelBadge: "Runtime {model}",
       runtimeSource: "Source {source}",
+      runtimeEndpoint: "Endpoint {value}",
       runtimeFallbackBadge: "Fallback applied",
       runtimeSources: {
         model_endpoint: "model endpoint",
@@ -3191,10 +3765,8 @@ const en = {
       },
       answerReviewQueue: "Answer review",
       answerReviewTitle: "Answer feedback queue",
-      feedbackHelpfulMetric: "Helpful",
-      feedbackReviewMetric: "Needs review",
-      feedbackCitationMetric: "Citation issues",
-      feedbackTotalMetric: "Total feedback",
+      feedbackPendingMetric: "Pending follow-up",
+      feedbackResolvedMetric: "Resolved follow-up",
       feedbackHelpful: "Mark helpful",
       feedbackReview: "Needs review",
       feedbackSubmitting: "Saving...",
@@ -3204,8 +3776,20 @@ const en = {
       feedbackQueueEmpty: "No answer feedback needs follow-up in the current scope.",
       feedbackNoExcerpt: "No persisted answer excerpt is available for this feedback item.",
       feedbackSourceQuestion: "Source question",
-      feedbackUseValidationQuery: "Use as validation query",
-      feedbackRunComparison: "Run compare check",
+      followUpPending: "Pending",
+      followUpResolved: "Resolved",
+      resolveFollowUp: "Resolve follow-up",
+      reopenFollowUp: "Reopen follow-up",
+      tuningCandidatesTitle: "Retrieval candidates",
+      tuningCandidatesEmpty: "No repeated retrieval candidates are waiting in the current scope.",
+      candidatePendingMetric: "Pending queries",
+      candidateResolvedMetric: "Resolved queries",
+      resolveCandidate: "Resolve candidate",
+      reopenCandidate: "Reopen candidate",
+      evaluationModes: {
+        inspect: "Inspect",
+        compare: "Compare"
+      },
       feedbackAnswerQuality: "Answer {value}",
       feedbackCitationQuality: "Citations {value}",
       openFeedbackThread: "Open thread",
@@ -3246,6 +3830,16 @@ const en = {
         empty: "No evidence found",
         failed: "Validation failed"
       },
+      retrievalIntelligenceTitle: "Retrieval intelligence",
+      retrievalIntelligenceEvaluations: "Evaluations",
+      retrievalIntelligenceQueries: "Queries",
+      retrievalIntelligencePending: "Pending follow-up",
+      retrievalIntelligencePrimaryQuery: "Priority query {value}",
+      retrievalIntelligenceStatuses: {
+        stable: "Stable",
+        review: "Review",
+        hold: "Hold"
+      },
       startOrSelectConversation: "Start or select a conversation to begin grounded chat...",
       uploadContentBeforeAsk: "Upload indexed content before asking a grounded question...",
       askGroundedQuestion: "Ask a grounded question about the indexed content...",
@@ -3281,6 +3875,10 @@ const en = {
     documentsView: {
       documents: "Documents",
       documentsDescription: "Indexed assets in the active knowledge base.",
+      flowStateEmpty: "Empty registry",
+      flowStateRecovery: "Recovery lane",
+      flowStateMonitoring: "Monitoring lane",
+      flowStateReady: "Ready for validation",
       completed: "Completed",
       completedDescription: "Documents ready for knowledge retrieval.",
       inProgress: "In Progress",
@@ -3302,6 +3900,15 @@ const en = {
       emptyRegistryTitle: "No documents are registered in this knowledge base yet.",
       emptyRegistryDescription:
         "Open the context controls to upload the first source file, then return here to inspect chunks, retries, and retrieval readiness.",
+      recoveryStateTitle: "Some documents still need recovery before chat can trust this scope.",
+      recoveryStateDescription:
+        "Keep failed documents and their workflow runs in the same operating lane, clear the blocked items first, then return to grounded validation.",
+      monitoringStateTitle: "Document processing is still moving through ingestion and indexing.",
+      monitoringStateDescription:
+        "Stay close to workflow supervision until the active uploads settle. When processing completes, return to chat for grounded validation.",
+      validationStateTitle: "The document lane is ready to validate grounded answers.",
+      validationStateDescription:
+        "Use chat to confirm citations against the latest indexed sources, or open workflow supervision if you want to review the last execution path first.",
       openContextControls: "Open context controls",
       uploadFollowUpBadge: "Upload follow-up",
       uploadFollowUpTitle: "{title} received",
@@ -3324,6 +3931,10 @@ const en = {
     workflowsView: {
       workflowRuns: "Workflow Runs",
       workflowRunsDescription: "Tracked automation runs in the active tenant.",
+      flowStateEmpty: "No active queue",
+      flowStateRecovery: "Recovery queue",
+      flowStateMonitoring: "Execution in motion",
+      flowStateReady: "Ready for validation",
       active: "Active",
       activeDescription: "Pending, queued, or currently running work.",
       queued: "Queued",
@@ -3366,6 +3977,12 @@ const en = {
       emptyQueueTitle: "No workflow runs exist in the current scope yet.",
       emptyQueueDescription:
         "Start from document intake first. Workflow supervision becomes useful as soon as uploads, indexing, or retries begin to move.",
+      recoveryStateTitle: "Workflow recovery is the current priority in this scope.",
+      recoveryStateDescription:
+        "One or more runs still need intervention, retry, or cancellation review. Clear the failure lane first, then return to documents or chat.",
+      monitoringStateTitle: "Execution is still active across queued or running workflow lanes.",
+      monitoringStateDescription:
+        "Keep the active queue in view until the current runs settle. Once the lane stabilizes, continue into chat validation or document review.",
       healthyQueueTitle: "The workflow lane is currently stable.",
       healthyQueueDescription:
         "No failed or active runs are blocking this scope right now. Continue in chat to validate grounded answers, or return to documents for source review.",
@@ -3407,6 +4024,11 @@ const en = {
       chooseFile: "Choose a text, Markdown, HTML, CSV, JSON, PDF, DOCX, or XLSX file to index",
       indexingDocument: "Indexing document...",
       uploadAndIndex: "Upload and Index",
+      webImportTitle: "Single-page Web Import",
+      webImportUrlPlaceholder: "https://example.com/reference-page",
+      webImportDocumentTitlePlaceholder: "Optional document title",
+      importWebPage: "Import Web Page",
+      importingWebPage: "Importing web page...",
       demoWorkspaceDescription: "Local workspace for grounded chat and document operations.",
       demoKnowledgeBaseDescription: "Default knowledge base for the local operator workspace.",
       sectionTenant: "Tenant",
@@ -3472,6 +4094,11 @@ const en = {
       lifecycleAll: "All documents",
       status: "Status",
       allStatuses: "All statuses",
+      sourceType: "Source type",
+      allSources: "All sources",
+      sourceFile: "File",
+      sourceWeb: "Web page",
+      sourceOther: "Other",
       completed: "Completed",
       running: "Running",
       queued: "Queued",
@@ -3554,6 +4181,7 @@ const en = {
       openFailedQueue: "Open failed queue",
       openWorkflowSupervision: "Open workflow supervision",
       latestWorkflow: "Latest Workflow",
+      operatorHandoff: "Operator handoff",
       inspectLatestRun: "Inspect Latest Run",
       noWorkflowRuns: "No workflow runs recorded yet for this document.",
       recentVersions: "Recent Versions",
@@ -3631,6 +4259,11 @@ const en = {
       completedFollowUpDescription:
         "This run has completed. Continue into chat or document operations to validate what is now retrieval-ready for the current scope.",
       checkingRetry: "Checking Retry...",
+      cancelledFollowUpTitle: "Cancellation follow-up",
+      cancelledFollowUpDescription:
+        "This run was cancelled before reaching completion. Review the source scope and the runtime context before you relaunch ingestion.",
+      cancellingRun: "Cancelling...",
+      cancelRun: "Cancel Run",
       retryRun: "Retry Run",
       retryOf: "Retry Of",
       workflowLineage: "Workflow Lineage",
@@ -3646,6 +4279,21 @@ const en = {
       started: "Started",
       completed: "Completed",
       runtime: "Runtime",
+      summary: {
+        retryDepth: "Retry Depth",
+        remainingRetries: "Retry Budget",
+        childRetries: "Child Retries",
+        failedSteps: "Failed Steps",
+        recoveryEvents: "Recovery Events",
+        activeRetry: "Active Retry",
+        activeRetryRunning: "Active",
+        none: "None",
+        latestRecoveryActivity: "Latest Recovery Activity",
+        latestFailedStep: "Latest Failed Step",
+        latestActiveStep: "Latest Active Step",
+        latestCompletedStep: "Latest Completed Step",
+        highestAttemptStep: "Highest Retry Step"
+      },
       unbound: "unbound",
       notStarted: "Not started",
       notCompleted: "Not completed",
@@ -3654,6 +4302,56 @@ const en = {
       startedValue: "started {value}",
       completedValue: "completed {value}",
       workflowInput: "Workflow Input",
+      operatorNotes: "Operator notes",
+      operatorNotesDescription: "Capture the operator decision, retry guardrail, or source-context finding that should stay attached to this run.",
+      operatorNotesPlaceholder: "Add a durable operator note for this workflow run...",
+      operatorNotesEmpty: "No operator notes are saved for this workflow run yet.",
+      operatorNotesSaved: "Operator notes are attached to this workflow run.",
+      saveOperatorNotes: "Save Notes",
+      savingOperatorNotes: "Saving Notes...",
+      failureFocus: {
+        title: "Failure Focus",
+        step: "Focused step: {value}",
+        attempts: "Retry pressure: {value} attempts",
+        nextAction: "Suggested next action: {value}",
+        categories: {
+          sourceDeleted: "The source document is no longer active in the knowledge base.",
+          sourceMissing: "The source document can no longer be resolved from the current scope.",
+          parserFailure: "The failure is concentrated in document parsing or content preparation.",
+          embeddingFailure: "The failure is concentrated in embedding or vectorization.",
+          indexingFailure: "The failure is concentrated in indexing or search write-back.",
+          runtimeTimeout: "The workflow looks blocked by a runtime timeout.",
+          runtimeCapacity: "The workflow looks blocked by model or service capacity pressure.",
+          unknown: "The failure needs manual workflow inspection."
+        },
+        actions: {
+          reviewDocumentSource: "Review document source",
+          reviewParserPath: "Review parser path",
+          reviewRuntime: "Review runtime health",
+          reviewIndexing: "Review indexing path",
+          retryWhenReady: "Retry when runtime recovers",
+          inspectWorkflow: "Inspect workflow detail"
+        }
+      },
+      events: {
+        title: "Recovery Events",
+        description: "Track the latest operator actions and recovery checkpoints for this workflow run.",
+        empty: "No recovery events are attached to this workflow run yet.",
+        systemActor: "system",
+        retryRequested: "Retry requested",
+        retryRequestedDetail: "A retry run was requested and routed into {value}.",
+        retryRequestedFallback: "A retry request was recorded for this workflow run.",
+        retryBlocked: "Retry blocked",
+        retryBlockedFallback: "A retry attempt was blocked for this workflow run.",
+        retrySpawned: "Retry spawned",
+        retrySpawnedDetail: "This retry run was spawned from {value}.",
+        retrySpawnedFallback: "This workflow run was created as a retry.",
+        cancelRequested: "Cancellation recorded",
+        cancelRequestedFallback: "This workflow run was cancelled by an operator.",
+        operatorNotesUpdated: "Operator notes updated",
+        operatorNotesUpdatedDetail: "Latest note: {value}",
+        operatorNotesUpdatedFallback: "The operator notes were updated for this workflow run."
+      },
       packet: {
         pendingState: "No workflow execution state is currently attached.",
         pendingDescription: "Select a workflow run to assemble a routed execution packet.",
@@ -3662,11 +4360,14 @@ const en = {
         activeState: "This run is still progressing through the execution lane.",
         activeDescription: "Stay close to workflow supervision while queue progress, retries, and downstream readiness are still in motion.",
         completedState: "This run has completed and is ready for downstream handoff.",
-        completedDescription: "Move into chat or document validation to confirm what is now ready in the current scope."
+        completedDescription: "Move into chat or document validation to confirm what is now ready in the current scope.",
+        cancelledState: "This run was cancelled and now needs a clean recovery review.",
+        cancelledDescription: "Inspect the source scope and runtime context before deciding whether to relaunch ingestion or leave the run closed."
       }
     },
     recentWorkflowRuns: {
       title: "Recent Workflow Runs",
+      operatorNotes: "Operator notes",
       workflowFallback: "workflow"
     },
     workflowTimeline: {
@@ -3684,6 +4385,7 @@ const en = {
       originalOnly: "Original runs only",
       completed: "Completed",
       failed: "Failed",
+      cancelled: "Cancelled",
       running: "Running",
       queued: "Queued",
       pending: "Pending",
@@ -3712,6 +4414,7 @@ const en = {
       workflowExecutionStarted: "Workflow Execution Started",
       workflowCompleted: "Workflow Completed",
       workflowFailed: "Workflow Failed",
+      workflowCancelled: "Workflow Cancelled",
       retryOf: "retry of {id}",
       versionSnapshot: "v{version} · {parser} · {chunkCount} chunks · {tokenCount} tokens",
       versions: "Versions",

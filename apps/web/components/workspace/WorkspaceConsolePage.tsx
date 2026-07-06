@@ -3,31 +3,63 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, MessageSquareText, Waypoints } from "lucide-react";
-import { ConsoleActionPacketCard } from "@/components/console/ConsoleActionPacketCard";
-import { ConsoleRuntimeTaskPacket } from "@/components/console/ConsoleRuntimeTaskPacket";
-import { ConsolePageHeader, ConsoleSurface, ConsoleSurfaceHeader } from "@/components/console/ConsolePrimitives";
+import type { UrlObject } from "url";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
-import { Button } from "@/components/ui/button";
-import { MetricSummaryCard } from "@/components/workspace/MetricSummaryCard";
+import { ConsolePage } from "@/components/console/ConsolePrimitives";
 import { WorkspaceChatView } from "@/components/workspace/WorkspaceChatView";
 import { WorkspaceHeaderBar } from "@/components/workspace/WorkspaceHeaderBar";
 import { WorkspaceDocumentsView } from "@/components/workspace/WorkspaceDocumentsView";
-import { WorkspaceRetrievalInspectorPanel } from "@/components/workspace/WorkspaceRetrievalInspectorPanel";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { WorkspaceWorkflowsView } from "@/components/workspace/WorkspaceWorkflowsView";
+import { createAgentExecution, readAgentExecutionEvidenceSummary } from "@/lib/agent-executions";
+import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
 import type { AgentRunRecordInput } from "@/lib/agent-runs";
-import { formatOperatorErrorMessage, readApiErrorMessage } from "@/lib/api-errors";
+import { authenticatedApiRequest, authenticatedApiRequestWithHeaders, authenticatedFetch } from "@/lib/authenticated-api";
+import { formatOperatorErrorMessage } from "@/lib/api-errors";
 import { hasDirectoryCapability } from "@/lib/auth/access";
 import { useAuth } from "@/lib/auth/provider";
 import { useI18n } from "@/lib/i18n/provider";
-import { buildSessionActorHeaders } from "@/lib/local-session";
-import { listRetrievalProfiles, type PlatformRetrievalProfile } from "@/lib/platform-governance";
+import { useStatusNotifications } from "@/lib/notifications/use-status-notifications";
+import {
+  listMcpConnectors,
+  listRetrievalProfiles,
+  type PlatformMcpConnector,
+  type PlatformRetrievalProfile
+} from "@/lib/platform-governance";
+import {
+  compareRetrieval,
+  inspectRetrieval,
+  recordRetrievalEvaluation,
+  summarizeRetrievalEvaluations,
+  updateRetrievalEvaluationFollowUpStatus,
+  updateRetrievalQueryFollowUpStatus,
+  type RetrievalEvaluationRecord,
+  type RetrievalEvaluationSummary
+} from "@/lib/retrieval-inspector";
+import {
+  applyRuntimeGovernanceQuickAction,
+  buildRuntimeGovernanceQuickActions,
+  type RuntimeGovernanceQuickActionKey
+} from "@/lib/runtime-governance-actions";
+import {
+  readRuntimeGovernanceConnectorPreviewLabel,
+  readRuntimeGovernanceIssueDetail,
+  readRuntimeGovernanceIssueLabel,
+  readRuntimeGovernanceModelPreviewLabel,
+  readRuntimeGovernanceToolPreviewLabel,
+  readRuntimeGovernancePreviewFailureLabel
+} from "@/lib/runtime-governance-preview";
+import { resolveRuntimeGovernanceLeadIssue } from "@/lib/runtime-governance";
 import { buildWorkspaceAgentRecommendations } from "@/lib/workspace-agent-recommendations";
 import { formatStatusLabel } from "@/lib/workspace-formatters";
 import { buildGroundedValidationDraftQuestion } from "@/lib/workspace-follow-up";
+import {
+  buildWorkspaceRetrievalFollowUpActions,
+  type RetrievalFollowUpActionDescriptor
+} from "@/lib/workspace-retrieval-follow-up";
 import { buildAdminHref, buildAgentsHref, buildOperationsHref } from "@/lib/console-route-builders";
+import { withUniqueConsoleFollowUpActions } from "@/lib/console-follow-up-actions";
 import {
   applyWorkspaceSearchParams,
   buildWorkspaceHref,
@@ -40,6 +72,7 @@ import {
   readWorkspaceLocationState,
   type WorkspaceLocationState
 } from "@/lib/workspace-navigation";
+import { resolveWorkflowFollowUpStage, selectPreferredWorkflowRunId } from "@/lib/workspace-workflow-follow-up";
 import type {
   BootstrapState,
   Citation,
@@ -47,13 +80,12 @@ import type {
   ContextManagementPanel,
   Conversation,
   ConversationMetrics,
-  DocumentActionSummary,
-  DocumentActivity,
   DocumentDetail,
   DocumentLifecycleFilter,
   DocumentMetrics,
   DocumentRecord,
   DocumentRestoreResponse,
+  DocumentSourceFilter,
   DocumentSortOrder,
   DocumentWorkflowActionResponse,
   KnowledgeBase,
@@ -62,7 +94,6 @@ import type {
   Message,
   RetrievalValidationSummary,
   Tenant,
-  UploadFollowUpSummary,
   WorkflowMetrics,
   WorkflowRetryMode,
   WorkflowRun,
@@ -84,12 +115,54 @@ const DOCUMENT_PAGE_SIZE = 5;
 const WORKFLOW_PAGE_SIZE = 6;
 const CONVERSATION_PAGE_SIZE = 100;
 const SEARCH_DEBOUNCE_MS = 250;
+const RETRIEVAL_VALIDATION_TOP_K = 5;
 
 function resolveOperatorErrorMessage(error: unknown, fallbackMessage: string) {
   if (error instanceof Error) {
     return formatOperatorErrorMessage(error.message) ?? fallbackMessage;
   }
   return fallbackMessage;
+}
+
+function buildNavigationHrefString(href: Pick<UrlObject, "pathname" | "query">) {
+  const pathname = typeof href.pathname === "string" && href.pathname.length > 0 ? href.pathname : "/";
+  if (!href.query) {
+    return pathname;
+  }
+
+  if (typeof href.query === "string") {
+    return href.query.trim().length > 0 ? `${pathname}?${href.query}` : pathname;
+  }
+
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(href.query)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        const normalizedEntry = String(entry).trim();
+        if (normalizedEntry.length > 0) {
+          searchParams.append(key, normalizedEntry);
+        }
+      });
+      continue;
+    }
+
+    if (value !== null && value !== undefined) {
+      const normalizedValue = String(value).trim();
+      if (normalizedValue.length > 0) {
+        searchParams.set(key, normalizedValue);
+      }
+    }
+  }
+
+  const queryString = searchParams.toString();
+  return queryString ? `${pathname}?${queryString}` : pathname;
+}
+
+function formatWorkspaceRuntimeTimestamp(value: string, language: "en" | "zh-CN") {
+  return new Date(value).toLocaleString(language === "zh-CN" ? "zh-CN" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 }
 
 const EMPTY_DOCUMENT_METRICS: DocumentMetrics = {
@@ -106,7 +179,8 @@ const EMPTY_WORKFLOW_METRICS: WorkflowMetrics = {
   running_runs: 0,
   retry_runs: 0,
   completed_runs: 0,
-  failed_runs: 0
+  failed_runs: 0,
+  cancelled_runs: 0
 };
 
 const EMPTY_CONVERSATION_METRICS: ConversationMetrics = {
@@ -116,24 +190,30 @@ const EMPTY_CONVERSATION_METRICS: ConversationMetrics = {
   latest_activity_at: null
 };
 
-const EMPTY_MESSAGE_FEEDBACK_SUMMARY: MessageFeedbackSummary = {
-  total_feedback: 0,
-  helpful_feedback: 0,
-  partially_helpful_feedback: 0,
-  not_helpful_feedback: 0,
-  citation_issue_feedback: 0,
-  retrieval_tuning_candidates: 0,
-  recent_feedback: []
+type WorkspaceRunbookDirectAction = {
+  key: string;
+  label: string;
+  actionKey: RuntimeGovernanceQuickActionKey;
+  resourceId: string;
 };
 
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const apiBaseUrl = buildApiBaseUrl();
+type WorkspaceRunbookItem = {
+  title: string;
+  detail: string;
+  status: "attention" | "healthy" | "review";
+  statusLabel: string;
+  metricLabel: string;
+  metricValue: string;
+  primaryActionHref: ReturnType<typeof buildWorkspaceHref> | ReturnType<typeof buildAdminHref> | ReturnType<typeof buildAgentsHref> | ReturnType<typeof buildOperationsHref> | Route;
+  primaryActionRunRecord: AgentRunRecordInput | null;
+  primaryActionLabel: string;
+  secondaryActions: Array<{
+    label: string;
+    href: ReturnType<typeof buildWorkspaceHref> | ReturnType<typeof buildAdminHref> | ReturnType<typeof buildAgentsHref> | ReturnType<typeof buildOperationsHref> | Route;
+    runRecord?: AgentRunRecordInput | null;
+  }>;
+  directActions?: WorkspaceRunbookDirectAction[];
+};
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -149,36 +229,18 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 async function performApiRequest(path: string, init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...buildSessionActorHeaders(init?.headers)
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return response;
+  return await authenticatedFetch(path, init);
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await performApiRequest(path, init);
-  return (await response.json()) as T;
+  return await authenticatedApiRequest<T>(path, init);
 }
 
 async function apiRequestWithHeaders<T>(
   path: string,
   init?: RequestInit
 ): Promise<{ data: T; headers: Headers }> {
-  const response = await performApiRequest(path, init);
-  return {
-    data: (await response.json()) as T,
-    headers: response.headers
-  };
+  return await authenticatedApiRequestWithHeaders<T>(path, init);
 }
 
 function readCountHeader(headers: Headers, headerName: string, fallbackCount: number) {
@@ -217,16 +279,71 @@ async function loadConversationMetrics(tenantId: string, workspaceId: string) {
   );
 }
 
-async function loadMessageFeedbackSummary(tenantId: string, workspaceId: string, knowledgeBaseId?: string | null) {
+async function loadMessageFeedbackSummary(tenantId: string, workspaceId: string, knowledgeBaseId: string | null) {
   const searchParams = new URLSearchParams({
     tenant_id: tenantId,
     workspace_id: workspaceId
   });
+
   if (knowledgeBaseId) {
     searchParams.set("knowledge_base_id", knowledgeBaseId);
   }
 
   return await apiRequest<MessageFeedbackSummary>(`/chat/feedback/summary?${searchParams.toString()}`);
+}
+
+async function loadRetrievalEvaluationSummary(tenantId: string, workspaceId: string, knowledgeBaseId: string | null) {
+  return await summarizeRetrievalEvaluations({
+    tenant_id: tenantId,
+    workspace_id: workspaceId,
+    knowledge_base_id: knowledgeBaseId,
+    follow_up_status: null,
+    limit: 4,
+    sample_size: 120
+  });
+}
+
+function normalizeMessageFeedbackSummary(summary: MessageFeedbackSummary): MessageFeedbackSummary {
+  return {
+    ...summary,
+    recent_feedback: Array.isArray(summary.recent_feedback)
+      ? summary.recent_feedback.map((item) => ({
+          ...item,
+          recommended_actions: Array.isArray(item.recommended_actions) ? item.recommended_actions : [],
+          issue_labels: Array.isArray(item.issue_labels) ? item.issue_labels : [],
+          feedback_notes: item.feedback_notes ?? null,
+          latest_user_question: item.latest_user_question ?? null,
+          knowledge_base_id: item.knowledge_base_id ?? null,
+          retrieval_profile_id: item.retrieval_profile_id ?? null,
+          retrieval_profile_name: item.retrieval_profile_name ?? null
+        }))
+      : []
+  };
+}
+
+function normalizeRetrievalEvaluationSummary(summary: RetrievalEvaluationSummary): RetrievalEvaluationSummary {
+  return {
+    ...summary,
+    primary_query_text: summary.primary_query_text ?? null,
+    primary_baseline_engine_name: summary.primary_baseline_engine_name ?? null,
+    primary_candidate_engine_name: summary.primary_candidate_engine_name ?? null,
+    primary_retrieval_profile_name: summary.primary_retrieval_profile_name ?? null,
+    primary_recommended_actions: Array.isArray(summary.primary_recommended_actions) ? summary.primary_recommended_actions : [],
+    candidates: Array.isArray(summary.candidates)
+      ? summary.candidates.map((candidate) => ({
+          ...candidate,
+          recommended_actions: Array.isArray(candidate.recommended_actions) ? candidate.recommended_actions : [],
+          latest_source_documents: Array.isArray(candidate.latest_source_documents) ? candidate.latest_source_documents : []
+        }))
+      : [],
+    recent_evaluations: Array.isArray(summary.recent_evaluations)
+      ? summary.recent_evaluations.map((evaluation) => ({
+          ...evaluation,
+          source_documents: Array.isArray(evaluation.source_documents) ? evaluation.source_documents : [],
+          recommended_actions: Array.isArray(evaluation.recommended_actions) ? evaluation.recommended_actions : []
+        }))
+      : []
+  };
 }
 
 async function submitMessageFeedbackItem(options: {
@@ -249,12 +366,15 @@ async function submitMessageFeedbackItem(options: {
 }
 
 async function listTenantAgentDefinitions(tenantId: string) {
-  return await apiRequest<WorkspaceAgentContext[]>(`/agents?tenant_id=${tenantId}`);
+  return await apiRequest<WorkspaceAgentContext[]>(
+    `/agents?tenant_id=${tenantId}&include_runtime_governance=true`
+  );
 }
 
 async function loadDocumentItems(options: {
   knowledgeBaseId: string;
   query: string;
+  sourceFilter: DocumentSourceFilter;
   lifecycleFilter: DocumentLifecycleFilter;
   statusFilter: string;
   sortOrder: DocumentSortOrder;
@@ -271,6 +391,9 @@ async function loadDocumentItems(options: {
   const normalizedQuery = options.query.trim();
   if (normalizedQuery) {
     searchParams.set("query", normalizedQuery);
+  }
+  if (options.sourceFilter !== "all") {
+    searchParams.set("source_kind", options.sourceFilter);
   }
   if (options.lifecycleFilter !== "active") {
     searchParams.set("lifecycle", options.lifecycleFilter);
@@ -344,7 +467,7 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
   return response.items;
 }
 
-async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection): Promise<{ resources: BootstrapState; catalog: WorkspaceCatalog }> {
+  async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection): Promise<{ resources: BootstrapState; catalog: WorkspaceCatalog }> {
   let tenants = await listTenants();
   let tenant =
     (preferredSelection?.tenantId ? tenants.find((item) => item.id === preferredSelection.tenantId) : null) ??
@@ -353,7 +476,7 @@ async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection)
     tenant = await apiRequest<Tenant>("/tenants", {
       method: "POST",
       body: JSON.stringify({
-        name: "RagPilot Demo",
+        name: "RAGPilot Demo",
         slug: DEMO_TENANT_SLUG
       })
     });
@@ -370,7 +493,7 @@ async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection)
       method: "POST",
       body: JSON.stringify({
         tenant_id: tenant.id,
-        name: "RagPilot Operations",
+        name: "RAGPilot Operations",
         slug: DEMO_WORKSPACE_SLUG,
         description: "Local workspace for grounded chat and document operations."
       })
@@ -391,7 +514,7 @@ async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection)
       body: JSON.stringify({
         tenant_id: tenant.id,
         workspace_id: workspace.id,
-        name: "RagPilot Handbook",
+        name: "RAGPilot Handbook",
         slug: DEMO_KNOWLEDGE_BASE_SLUG,
         description: "Default knowledge base for the local operator workspace."
       })
@@ -431,6 +554,7 @@ async function loadWorkspaceOperations(
   resources: BootstrapState,
   options: {
     documentQuery: string;
+    documentSourceFilter: DocumentSourceFilter;
     documentLifecycleFilter: DocumentLifecycleFilter;
     documentStatusFilter: string;
     documentSortOrder: DocumentSortOrder;
@@ -447,6 +571,7 @@ async function loadWorkspaceOperations(
     loadDocumentItems({
       knowledgeBaseId: resources.knowledgeBase.id,
       query: options.documentQuery,
+      sourceFilter: options.documentSourceFilter,
       lifecycleFilter: options.documentLifecycleFilter,
       statusFilter: options.documentStatusFilter,
       sortOrder: options.documentSortOrder,
@@ -498,14 +623,6 @@ async function loadWorkflowRunDetailItem(tenantId: string, workflowRunId: string
   return await apiRequest<WorkflowRunDetail>(`/workflow-runs/${workflowRunId}?tenant_id=${tenantId}`);
 }
 
-function getDocumentLabel(documentId: string, documents: DocumentRecord[], selectedDocumentDetail: DocumentDetail | null) {
-  if (selectedDocumentDetail?.document.id === documentId) {
-    return selectedDocumentDetail.document.title;
-  }
-
-  return documents.find((document) => document.id === documentId)?.title ?? `Document ${documentId.slice(0, 8)}`;
-}
-
 type WorkspaceConsolePageProps = {
   activeHref?: "/" | "/workspace" | "/chat" | "/documents" | "/agents" | "/operations" | "/admin" | "/settings";
   routePath?: WorkspaceConsolePathname;
@@ -542,6 +659,9 @@ export default function WorkspaceConsolePage({
   const isApplyingDocumentLocationStateRef = useRef(false);
   const isApplyingWorkflowLocationStateRef = useRef(false);
   const previousLanguageRef = useRef(language);
+  const cachedTenantsRef = useRef<Tenant[] | null>(null);
+  const cachedWorkspacesByTenantIdRef = useRef<Record<string, Workspace[]>>({});
+  const cachedKnowledgeBasesByWorkspaceIdRef = useRef<Record<string, KnowledgeBase[]>>({});
 
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null);
   const [tenantAgentDefinitions, setTenantAgentDefinitions] = useState<WorkspaceAgentContext[]>([]);
@@ -558,30 +678,31 @@ export default function WorkspaceConsolePage({
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [documentTotalCount, setDocumentTotalCount] = useState(0);
   const [documentMetrics, setDocumentMetrics] = useState<DocumentMetrics>(EMPTY_DOCUMENT_METRICS);
-  const [documentActionSummary, setDocumentActionSummary] = useState<DocumentActionSummary | null>(null);
-  const [uploadFollowUpSummary, setUploadFollowUpSummary] = useState<UploadFollowUpSummary | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRun[]>([]);
   const [workflowTotalCount, setWorkflowTotalCount] = useState(0);
   const [workflowMetrics, setWorkflowMetrics] = useState<WorkflowMetrics>(EMPTY_WORKFLOW_METRICS);
   const [conversationMetrics, setConversationMetrics] = useState<ConversationMetrics>(EMPTY_CONVERSATION_METRICS);
-  const [messageFeedbackSummary, setMessageFeedbackSummary] = useState<MessageFeedbackSummary>(
-    EMPTY_MESSAGE_FEEDBACK_SUMMARY
-  );
+  const [messageFeedbackSummary, setMessageFeedbackSummary] = useState<MessageFeedbackSummary | null>(null);
+  const [retrievalEvaluationSummary, setRetrievalEvaluationSummary] = useState<RetrievalEvaluationSummary | null>(null);
   const [hasLoadedWorkspaceOperations, setHasLoadedWorkspaceOperations] = useState(false);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDocumentVersionId, setSelectedDocumentVersionId] = useState<string | null>(null);
   const [selectedDocumentDetail, setSelectedDocumentDetail] = useState<DocumentDetail | null>(null);
   const [focusedDocumentChunkId, setFocusedDocumentChunkId] = useState<string | null>(null);
   const [selectedDocumentWorkflowRuns, setSelectedDocumentWorkflowRuns] = useState<WorkflowRun[]>([]);
-  const [selectedDocumentActivity, setSelectedDocumentActivity] = useState<DocumentActivity | null>(null);
-  const [isLoadingSelectedDocumentActivity, setIsLoadingSelectedDocumentActivity] = useState(false);
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState<string | null>(null);
   const [selectedWorkflowRunDetail, setSelectedWorkflowRunDetail] = useState<WorkflowRunDetail | null>(null);
   const [selectedWorkflowLineageRuns, setSelectedWorkflowLineageRuns] = useState<WorkflowRun[]>([]);
+  const [isSavingWorkflowNotes, setIsSavingWorkflowNotes] = useState(false);
+  const [mcpConnectors, setMcpConnectors] = useState<PlatformMcpConnector[]>([]);
+  const [activeRuntimeGovernanceActionId, setActiveRuntimeGovernanceActionId] = useState<string | null>(null);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(initialWorkspaceView);
   const [showConsoleControls, setShowConsoleControls] = useState(false);
   const [documentQuery, setDocumentQuery] = useState(initialWorkspaceLocationState.documentQuery);
+  const [documentSourceFilter, setDocumentSourceFilter] = useState<DocumentSourceFilter>(
+    initialWorkspaceLocationState.documentSource as DocumentSourceFilter
+  );
   const [documentLifecycleFilter, setDocumentLifecycleFilter] = useState<DocumentLifecycleFilter>(
     initialWorkspaceLocationState.documentLifecycle as DocumentLifecycleFilter
   );
@@ -601,23 +722,23 @@ export default function WorkspaceConsolePage({
   );
   const [workflowPage, setWorkflowPage] = useState(initialWorkspaceLocationState.workflowPage);
   const [question, setQuestion] = useState("");
-  const [retrievalInspectorDraftQuery, setRetrievalInspectorDraftQuery] = useState("");
-  const [retrievalInspectorFocusToken, setRetrievalInspectorFocusToken] = useState(0);
-  const [retrievalInspectorAutoRunMode, setRetrievalInspectorAutoRunMode] = useState<"inspect" | "compare" | null>(
-    null
-  );
   const [conversationSearchQuery, setConversationSearchQuery] = useState(initialWorkspaceLocationState.conversationQuery);
   const [isConversationEditorOpen, setIsConversationEditorOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [webImportUrl, setWebImportUrl] = useState("");
+  const [webImportTitle, setWebImportTitle] = useState("");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [messageFeedbackPendingId, setMessageFeedbackPendingId] = useState<string | null>(null);
+  const [activeRetrievalEvaluationId, setActiveRetrievalEvaluationId] = useState<string | null>(null);
+  const [activeRetrievalFollowUpQuery, setActiveRetrievalFollowUpQuery] = useState<string | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [isUpdatingConversationTitle, setIsUpdatingConversationTitle] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunningDocumentAction, setIsRunningDocumentAction] = useState(false);
+  const [isCancellingWorkflow, setIsCancellingWorkflow] = useState(false);
   const [isRetryingWorkflow, setIsRetryingWorkflow] = useState(false);
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   const [isCreatingContext, setIsCreatingContext] = useState(false);
@@ -642,9 +763,21 @@ export default function WorkspaceConsolePage({
   const [editKnowledgeBaseSlug, setEditKnowledgeBaseSlug] = useState("");
   const [editKnowledgeBaseDescription, setEditKnowledgeBaseDescription] = useState("");
   const [editKnowledgeBaseRetrievalProfileId, setEditKnowledgeBaseRetrievalProfileId] = useState("");
+
+  useEffect(() => {
+    if (catalog.tenants.length > 0) {
+      cachedTenantsRef.current = catalog.tenants;
+    }
+    if (bootstrap !== null) {
+      cachedWorkspacesByTenantIdRef.current[bootstrap.tenant.id] = catalog.workspaces;
+      cachedKnowledgeBasesByWorkspaceIdRef.current[bootstrap.workspace.id] = catalog.knowledgeBases;
+    }
+  }, [bootstrap, catalog]);
   const [retrievalProfiles, setRetrievalProfiles] = useState<PlatformRetrievalProfile[]>([]);
   const [statusMessage, setStatusMessage] = useState(() => t("workspace.status.loading"));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  useStatusNotifications(statusMessage, errorMessage, { statusTone: "info" });
+  const [isActivatingRecommendedAgent, setIsActivatingRecommendedAgent] = useState(false);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(initialWorkspaceLocationState.agentId);
   const [sourceSurface, setSourceSurface] = useState<WorkspaceSourceSurface | null>(
     initialWorkspaceLocationState.sourceSurface
@@ -664,6 +797,8 @@ export default function WorkspaceConsolePage({
   const debouncedConversationSearchQuery = useDebouncedValue(conversationSearchQuery, SEARCH_DEBOUNCE_MS);
   const canManageAdminResources = hasDirectoryCapability(session, "manage_admin_resources");
   const canManageDocuments = hasDirectoryCapability(session, "manage_documents");
+  const canManageRuntimeGovernance = hasDirectoryCapability(session, "manage_runtime_governance");
+  const canManageWorkflowRuns = hasDirectoryCapability(session, "retry_workflow_runs");
   const canSendChatMessages = hasDirectoryCapability(session, "send_chat_messages");
   const isWorkspaceBusy =
     isBootstrapping ||
@@ -677,22 +812,27 @@ export default function WorkspaceConsolePage({
   useEffect(() => {
     let isMounted = true;
 
-    async function loadRetrievalProfiles() {
+    async function loadRuntimeCatalog() {
       try {
-        const nextRetrievalProfiles = await listRetrievalProfiles();
+        const [nextRetrievalProfiles, nextMcpConnectors] = await Promise.all([
+          listRetrievalProfiles(),
+          listMcpConnectors(),
+        ]);
         if (!isMounted) {
           return;
         }
         setRetrievalProfiles(nextRetrievalProfiles);
+        setMcpConnectors(nextMcpConnectors);
       } catch {
         if (!isMounted) {
           return;
         }
         setRetrievalProfiles([]);
+        setMcpConnectors([]);
       }
     }
 
-    void loadRetrievalProfiles();
+    void loadRuntimeCatalog();
 
     return () => {
       isMounted = false;
@@ -736,6 +876,112 @@ export default function WorkspaceConsolePage({
   const activeAgentContext = useMemo(
     () => tenantAgentDefinitions.find((agentDefinition) => agentDefinition.id === activeAgentId) ?? null,
     [activeAgentId, tenantAgentDefinitions]
+  );
+  const activeAgentRuntimeGovernance = activeAgentContext?.runtime_governance ?? null;
+  const activePendingMcpConnector = useMemo(
+    () => activeAgentRuntimeGovernance?.focus_mcp_connector ?? null,
+    [activeAgentRuntimeGovernance]
+  );
+  const activeAgentRuntimeDirectActions = useMemo(
+    () => buildRuntimeGovernanceQuickActions(activeAgentRuntimeGovernance, t),
+    [activeAgentRuntimeGovernance, t]
+  );
+  const activeAgentRuntimeLeadIssue = useMemo(
+    () => resolveRuntimeGovernanceLeadIssue(activeAgentRuntimeGovernance),
+    [activeAgentRuntimeGovernance]
+  );
+  const activeAgentModelPreviewDetail = useMemo(
+    () =>
+      readRuntimeGovernanceModelPreviewLabel(
+        activeAgentRuntimeGovernance?.resolved_model_endpoint,
+        t,
+        (value) => formatWorkspaceRuntimeTimestamp(value, language),
+        "admin.runtimeQueue.lastModelPreview"
+      ),
+    [activeAgentRuntimeGovernance?.resolved_model_endpoint, language, t]
+  );
+  const activeAgentModelPreviewFailures = useMemo(
+    () =>
+      readRuntimeGovernancePreviewFailureLabel(
+        activeAgentRuntimeGovernance?.resolved_model_endpoint,
+        t,
+        "admin.runtimeQueue.previewFailures"
+      ),
+    [activeAgentRuntimeGovernance?.resolved_model_endpoint, t]
+  );
+  const activeAgentToolPreviewDetail = useMemo(
+    () =>
+      readRuntimeGovernanceToolPreviewLabel(
+        activeAgentRuntimeGovernance?.focus_tool_registration,
+        t,
+        (value) => formatWorkspaceRuntimeTimestamp(value, language),
+        "operations.recoveryAgents.lastToolPreview"
+      ),
+    [activeAgentRuntimeGovernance?.focus_tool_registration, language, t]
+  );
+  const activeAgentToolPreviewFailures = useMemo(
+    () =>
+      readRuntimeGovernancePreviewFailureLabel(
+        activeAgentRuntimeGovernance?.focus_tool_registration,
+        t,
+        "admin.runtimeQueue.previewFailures"
+      ),
+    [activeAgentRuntimeGovernance?.focus_tool_registration, t]
+  );
+  const activeAgentConnectorPreviewDetail = useMemo(
+    () =>
+      readRuntimeGovernanceConnectorPreviewLabel(
+        activeAgentRuntimeGovernance?.focus_mcp_connector,
+        t,
+        (value) => formatWorkspaceRuntimeTimestamp(value, language),
+        "operations.recoveryAgents.lastConnectorPreview"
+      ),
+    [activeAgentRuntimeGovernance?.focus_mcp_connector, language, t]
+  );
+  const activeAgentConnectorPreviewFailures = useMemo(
+    () =>
+      readRuntimeGovernancePreviewFailureLabel(
+        activeAgentRuntimeGovernance?.focus_mcp_connector,
+        t,
+        "admin.runtimeQueue.previewFailures"
+      ),
+    [activeAgentRuntimeGovernance?.focus_mcp_connector, t]
+  );
+  const activeAgentRuntimeIssueDetail = useMemo(() => {
+    const previewContext =
+      activeAgentConnectorPreviewFailures ??
+      activeAgentConnectorPreviewDetail ??
+      activeAgentToolPreviewFailures ??
+      activeAgentToolPreviewDetail ??
+      activeAgentModelPreviewFailures ??
+      activeAgentModelPreviewDetail;
+
+    return readRuntimeGovernanceIssueDetail(
+      activeAgentRuntimeGovernance,
+      activeAgentRuntimeLeadIssue,
+      t,
+      previewContext
+    );
+  }, [
+    activeAgentConnectorPreviewDetail,
+    activeAgentConnectorPreviewFailures,
+    activeAgentModelPreviewDetail,
+    activeAgentModelPreviewFailures,
+    activeAgentRuntimeGovernance,
+    activeAgentRuntimeLeadIssue,
+    activeAgentToolPreviewDetail,
+    activeAgentToolPreviewFailures,
+    t
+  ]);
+  const activeAgentRuntimeIssueLabel = useMemo(
+    () => {
+      if (activeAgentRuntimeLeadIssue) {
+        return readRuntimeGovernanceIssueLabel(activeAgentRuntimeLeadIssue, t);
+      }
+
+      return activeAgentModelPreviewFailures ?? activeAgentModelPreviewDetail ?? null;
+    },
+    [activeAgentModelPreviewDetail, activeAgentModelPreviewFailures, activeAgentRuntimeLeadIssue, t]
   );
   const buildWorkspaceAgentRunRecord = useCallback((
     targetSurface: "chat" | "documents" | "operations" | "admin",
@@ -807,6 +1053,7 @@ export default function WorkspaceConsolePage({
       draftQuestion: recommendedView === "chat" ? question.trim() || null : null,
       documentId: recommendedView === "documents" ? selectedDocumentId : null,
       documentQuery: recommendedView === "documents" ? documentQuery : null,
+      documentSource: recommendedView === "documents" ? documentSourceFilter : null,
       documentLifecycle: recommendedView === "documents" ? documentLifecycleFilter : null,
       documentStatus: recommendedView === "documents" ? documentStatusFilter : null,
       documentSort: recommendedView === "documents" ? documentSortOrder : null,
@@ -858,12 +1105,14 @@ export default function WorkspaceConsolePage({
       });
     }
 
+    const selectedWorkflowStage = resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status);
+
     if (sourceSurface === "operations") {
       return buildOperationsHref({
         tenantId,
         agentId,
         lane: sourceOperationsLane ?? (activeAgentContext?.mode === "workflow_recovery" ? "failed" : "overview"),
-        status: selectedWorkflowRunDetail?.workflow_status === "failed" ? "failed" : "all",
+        status: selectedWorkflowStage === "recovery" ? "failed" : "all",
         workflowRunId: selectedWorkflowRunId
       });
     }
@@ -877,6 +1126,10 @@ export default function WorkspaceConsolePage({
 
     return null;
   }, [
+    activeAgentRuntimeDirectActions,
+    activeAgentRuntimeGovernance,
+    activeAgentRuntimeIssueDetail,
+    activeAgentRuntimeIssueLabel,
     activeAgentContext,
     activeAgentId,
     bootstrap?.tenant.id,
@@ -970,6 +1223,7 @@ export default function WorkspaceConsolePage({
       sourceOperationsLane,
       handoffIntent,
       documentId: selectedDocumentId,
+      documentSource: documentSourceFilter !== "all" ? documentSourceFilter : null,
       documentLifecycle: "active",
       documentStatus:
         documentMetrics.failed_documents > 0
@@ -996,11 +1250,13 @@ export default function WorkspaceConsolePage({
       workflowStatus:
         workflowMetrics.failed_runs > 0
           ? "failed"
-          : workflowMetrics.active_runs > 0
-            ? "running"
-            : workflowStatusFilter !== "all"
-              ? workflowStatusFilter
-              : null,
+          : workflowMetrics.cancelled_runs > 0
+            ? "cancelled"
+            : workflowMetrics.active_runs > 0
+              ? "running"
+              : workflowStatusFilter !== "all"
+                ? workflowStatusFilter
+                : null,
       workflowType: workflowTypeFilter,
       workflowRetryMode,
       workflowSort: workflowSortOrder,
@@ -1035,6 +1291,8 @@ export default function WorkspaceConsolePage({
           ? t(`operations.lanes.${sourceOperationsLane ?? "overview"}`)
           : sourceSurface === "agents"
             ? t("workspace.headerBar.sources.agents")
+            : sourceSurface === "workspace"
+              ? t("workspace.headerBar.sources.workspace")
             : sourceSurface === "home"
               ? t("workspace.headerBar.sources.home")
               : t("workspace.runtimeTaskPacket.pending");
@@ -1081,7 +1339,8 @@ export default function WorkspaceConsolePage({
     const prompt = question.trim().length > 0 ? question.trim() : t("workspace.runtimeTaskPacket.noPrompt");
 
     if (!sourceSurface && !activeAgentContext && !handoffIntent) {
-      const failedSignalCount = documentMetrics.failed_documents + workflowMetrics.failed_runs;
+      const failedSignalCount =
+        documentMetrics.failed_documents + workflowMetrics.failed_runs + workflowMetrics.cancelled_runs;
       const activeSignalCount = documentMetrics.active_documents + workflowMetrics.active_runs;
       const hasReadyKnowledge = documentMetrics.completed_documents > 0;
       const defaultValidationDetail = retrievalValidationReady
@@ -1276,7 +1535,7 @@ export default function WorkspaceConsolePage({
               )
             : null;
 
-    return {
+    return withUniqueConsoleFollowUpActions({
       detail,
       objective,
       primaryActionHref,
@@ -1325,7 +1584,7 @@ export default function WorkspaceConsolePage({
       statusLabel:
         handoffIntent === "grounded_validation"
           ? retrievalValidationStatusLabel
-          : handoffIntent === "workflow_recovery" && selectedWorkflowRunDetail?.workflow_status === "failed"
+          : handoffIntent === "workflow_recovery" && resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status) === "recovery"
             ? t("workspace.runtimeTaskPacket.statuses.attention")
             : isCurrentSurfaceRecommended
               ? t("workspace.runtimeTaskPacket.statuses.ready")
@@ -1333,7 +1592,7 @@ export default function WorkspaceConsolePage({
       statusTone:
         handoffIntent === "grounded_validation"
           ? retrievalValidationTone
-          : handoffIntent === "workflow_recovery" && selectedWorkflowRunDetail?.workflow_status === "failed"
+          : handoffIntent === "workflow_recovery" && resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status) === "recovery"
             ? ("attention" as const)
             : isCurrentSurfaceRecommended
               ? ("healthy" as const)
@@ -1366,7 +1625,7 @@ export default function WorkspaceConsolePage({
         }
       ],
       title: activeAgentContext?.name ?? subjectLabel
-    };
+    });
   }, [
     activeAgentContext,
     activeAgentId,
@@ -1413,7 +1672,7 @@ export default function WorkspaceConsolePage({
     workspaceView
   ]);
 
-  const workspaceRuntimeRunbook = useMemo(() => {
+  const workspaceRuntimeRunbook = useMemo<WorkspaceRunbookItem[]>(() => {
     if (!bootstrap || !workspaceRuntimeTaskPacket) {
       return [];
     }
@@ -1432,6 +1691,7 @@ export default function WorkspaceConsolePage({
       documentId: selectedDocumentId,
       workflowRunId: selectedWorkflowRunId,
       documentQuery,
+      documentSource: documentSourceFilter,
       documentLifecycle: documentLifecycleFilter,
       documentStatus: documentStatusFilter,
       documentSort: documentSortOrder,
@@ -1454,6 +1714,7 @@ export default function WorkspaceConsolePage({
       sourceOperationsLane,
       handoffIntent: handoffIntent === "document_recovery" ? "document_recovery" : "agent_brief",
       documentId: selectedDocumentId ?? (selectedWorkflowRunDetail?.subject_type === "document" ? selectedWorkflowRunDetail.subject_id : null),
+      documentSource: documentSourceFilter !== "all" ? documentSourceFilter : null,
       documentLifecycle: "active",
       documentStatus:
         handoffIntent === "document_recovery" || handoffIntent === "workflow_recovery"
@@ -1477,9 +1738,11 @@ export default function WorkspaceConsolePage({
             : handoffIntent,
       workflowRunId: selectedWorkflowRunId,
       workflowStatus:
-        handoffIntent === "workflow_recovery"
+        handoffIntent === "workflow_recovery" && resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status) === "recovery"
           ? "failed"
-          : selectedWorkflowRunDetail?.workflow_status === "running" || selectedWorkflowRunDetail?.workflow_status === "queued"
+          : handoffIntent === "workflow_recovery" && resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status) === "cancelled"
+            ? "cancelled"
+            : resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status) === "monitoring"
             ? "running"
             : null
     });
@@ -1516,7 +1779,10 @@ export default function WorkspaceConsolePage({
     if (!sourceSurface && !activeAgentContext && !handoffIntent) {
       const hasAnyDocuments = documentMetrics.total_documents > 0;
       const hasReadyKnowledge = documentMetrics.completed_documents > 0;
-      const hasFailures = documentMetrics.failed_documents > 0 || workflowMetrics.failed_runs > 0;
+      const hasFailures =
+        documentMetrics.failed_documents > 0 ||
+        workflowMetrics.failed_runs > 0 ||
+        workflowMetrics.cancelled_runs > 0;
       const hasActiveExecutions = documentMetrics.active_documents > 0 || workflowMetrics.active_runs > 0;
       const defaultValidationDetail = !hasReadyKnowledge
         ? t("workspace.runtimeRunbook.mainFlow.validatePendingDetail")
@@ -1569,7 +1835,7 @@ export default function WorkspaceConsolePage({
           status: hasFailures ? ("attention" as const) : hasActiveExecutions ? ("review" as const) : ("healthy" as const),
           statusLabel: hasFailures ? attentionLabel : hasActiveExecutions ? reviewLabel : healthyLabel,
           metricLabel: t("workspace.runtimeRunbook.metrics.scope"),
-          metricValue: `${workflowMetrics.failed_runs}/${workflowMetrics.active_runs}/${workflowMetrics.total_runs}`,
+          metricValue: `${workflowMetrics.failed_runs + workflowMetrics.cancelled_runs}/${workflowMetrics.active_runs}/${workflowMetrics.total_runs}`,
           primaryActionHref: workflowsHref,
           primaryActionRunRecord: buildWorkspaceAgentRunRecord("operations", "workflow_recovery"),
           primaryActionLabel: t("workspace.runtimeRunbook.actions.openWorkflowLane"),
@@ -1612,20 +1878,21 @@ export default function WorkspaceConsolePage({
             }
           ]
         }
-      ];
+      ].map((item) => withUniqueConsoleFollowUpActions(item));
     }
 
     if (handoffIntent === "workflow_recovery") {
+      const selectedWorkflowStage = resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status);
       return [
         {
           title: t("workspace.runtimeRunbook.workflowRecovery.stabilizeTitle"),
           detail: t("workspace.runtimeRunbook.workflowRecovery.stabilizeDetail"),
           status:
-            selectedWorkflowRunDetail?.workflow_status === "failed"
+            selectedWorkflowStage === "recovery"
               ? ("attention" as const)
               : ("review" as const),
           statusLabel:
-            selectedWorkflowRunDetail?.workflow_status === "failed"
+            selectedWorkflowStage === "recovery"
               ? attentionLabel
               : reviewLabel,
           metricLabel: t("workspace.runtimeRunbook.metrics.subject"),
@@ -1669,14 +1936,30 @@ export default function WorkspaceConsolePage({
         },
         {
           title: t("workspace.runtimeRunbook.workflowRecovery.closeLoopTitle"),
-          detail: t("workspace.runtimeRunbook.workflowRecovery.closeLoopDetail"),
-          status: "review" as const,
-          statusLabel: reviewLabel,
+          detail:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? activeAgentRuntimeIssueDetail ?? t("workspace.runtimeRunbook.workflowRecovery.closeLoopDetail")
+              : t("workspace.runtimeRunbook.workflowRecovery.closeLoopDetail"),
+          status:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? ("attention" as const)
+              : ("review" as const),
+          statusLabel:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? attentionLabel
+              : reviewLabel,
           metricLabel: t("workspace.runtimeRunbook.metrics.owner"),
-          metricValue: activeAgentContext?.name ?? t("workspace.runtimeTaskPacket.pending"),
+          metricValue:
+            activeAgentRuntimeIssueLabel ??
+            activeAgentContext?.name ??
+            t("workspace.runtimeTaskPacket.pending"),
           primaryActionHref: governanceHref,
           primaryActionRunRecord: buildWorkspaceAgentRunRecord("admin", "workflow_recovery"),
           primaryActionLabel: t("workspace.runtimeRunbook.actions.openGovernance"),
+          directActions:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready && activeAgentRuntimeDirectActions.length > 0
+              ? activeAgentRuntimeDirectActions
+              : undefined,
           secondaryActions: [
             {
               label: t("workspace.runtimeRunbook.actions.returnToSource"),
@@ -1690,7 +1973,7 @@ export default function WorkspaceConsolePage({
             }
           ]
         }
-      ];
+      ].map((item) => withUniqueConsoleFollowUpActions(item));
     }
 
     if (handoffIntent === "document_recovery") {
@@ -1736,14 +2019,34 @@ export default function WorkspaceConsolePage({
         },
         {
           title: t("workspace.runtimeRunbook.documentRecovery.briefAgentTitle"),
-          detail: t("workspace.runtimeRunbook.documentRecovery.briefAgentDetail"),
-          status: activeAgentContext ? ("healthy" as const) : ("review" as const),
-          statusLabel: activeAgentContext ? healthyLabel : reviewLabel,
+          detail:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? activeAgentRuntimeIssueDetail ?? t("workspace.runtimeRunbook.documentRecovery.briefAgentDetail")
+              : t("workspace.runtimeRunbook.documentRecovery.briefAgentDetail"),
+          status:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? ("attention" as const)
+              : activeAgentContext
+                ? ("healthy" as const)
+                : ("review" as const),
+          statusLabel:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? attentionLabel
+              : activeAgentContext
+                ? healthyLabel
+                : reviewLabel,
           metricLabel: t("workspace.runtimeRunbook.metrics.owner"),
-          metricValue: activeAgentContext?.name ?? t("workspace.runtimeTaskPacket.pending"),
+          metricValue:
+            activeAgentRuntimeIssueLabel ??
+            activeAgentContext?.name ??
+            t("workspace.runtimeTaskPacket.pending"),
           primaryActionHref: chatHref,
           primaryActionRunRecord: buildWorkspaceAgentRunRecord("chat", "agent_brief"),
           primaryActionLabel: t("workspace.runtimeRunbook.actions.openChat"),
+          directActions:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready && activeAgentRuntimeDirectActions.length > 0
+              ? activeAgentRuntimeDirectActions
+              : undefined,
           secondaryActions: [
             {
               label: t("workspace.runtimeRunbook.actions.openAgent"),
@@ -1752,7 +2055,7 @@ export default function WorkspaceConsolePage({
             }
           ]
         }
-      ];
+      ].map((item) => withUniqueConsoleFollowUpActions(item));
     }
 
     if (handoffIntent === "grounded_validation") {
@@ -1821,19 +2124,29 @@ export default function WorkspaceConsolePage({
         },
         {
           title: t("workspace.runtimeRunbook.groundedValidation.closeLoopTitle"),
-          detail: validationCloseLoopDetail,
+          detail:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? activeAgentRuntimeIssueDetail ?? validationCloseLoopDetail
+              : validationCloseLoopDetail,
           status: retrievalValidationReady
-            ? ("healthy" as const)
+            ? activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? ("attention" as const)
+              : ("healthy" as const)
             : retrievalValidationBlocksGroundedChat
               ? ("attention" as const)
               : ("review" as const),
           statusLabel: retrievalValidationReady
-            ? healthyLabel
+            ? activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+              ? attentionLabel
+              : healthyLabel
             : retrievalValidationBlocksGroundedChat
               ? attentionLabel
               : reviewLabel,
           metricLabel: t("workspace.runtimeRunbook.metrics.owner"),
-          metricValue: activeAgentContext?.name ?? t("workspace.runtimeTaskPacket.pending"),
+          metricValue:
+            activeAgentRuntimeIssueLabel ??
+            activeAgentContext?.name ??
+            t("workspace.runtimeTaskPacket.pending"),
           primaryActionHref: retrievalValidationReady ? governanceHref : validationPrimaryActionHref,
           primaryActionRunRecord: retrievalValidationReady
             ? buildWorkspaceAgentRunRecord("admin", "grounded_validation")
@@ -1841,6 +2154,10 @@ export default function WorkspaceConsolePage({
           primaryActionLabel: retrievalValidationReady
             ? t("workspace.runtimeRunbook.actions.openGovernance")
             : validationPrimaryActionLabel,
+          directActions:
+            activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready && activeAgentRuntimeDirectActions.length > 0
+              ? activeAgentRuntimeDirectActions
+              : undefined,
           secondaryActions: [
             {
               label: t("workspace.runtimeRunbook.actions.returnToSource"),
@@ -1854,7 +2171,7 @@ export default function WorkspaceConsolePage({
             }
           ]
         }
-      ];
+      ].map((item) => withUniqueConsoleFollowUpActions(item));
     }
 
     return [
@@ -1904,14 +2221,34 @@ export default function WorkspaceConsolePage({
       },
       {
         title: t("workspace.runtimeRunbook.agentBrief.closeLoopTitle"),
-        detail: t("workspace.runtimeRunbook.agentBrief.closeLoopDetail"),
-        status: activeAgentContext ? ("healthy" as const) : ("review" as const),
-        statusLabel: activeAgentContext ? healthyLabel : reviewLabel,
+        detail:
+          activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+            ? activeAgentRuntimeIssueDetail ?? t("workspace.runtimeRunbook.agentBrief.closeLoopDetail")
+            : t("workspace.runtimeRunbook.agentBrief.closeLoopDetail"),
+        status:
+          activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+            ? ("attention" as const)
+            : activeAgentContext
+              ? ("healthy" as const)
+              : ("review" as const),
+        statusLabel:
+          activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready
+            ? attentionLabel
+            : activeAgentContext
+              ? healthyLabel
+              : reviewLabel,
         metricLabel: t("workspace.runtimeRunbook.metrics.owner"),
-        metricValue: activeAgentContext?.name ?? t("workspace.runtimeTaskPacket.pending"),
+        metricValue:
+          activeAgentRuntimeIssueLabel ??
+          activeAgentContext?.name ??
+          t("workspace.runtimeTaskPacket.pending"),
         primaryActionHref: agentConsoleHref ?? governanceHref,
         primaryActionRunRecord: agentConsoleHref ? null : buildWorkspaceAgentRunRecord("admin", "agent_brief"),
         primaryActionLabel: t("workspace.runtimeRunbook.actions.openAgent"),
+        directActions:
+          activeAgentRuntimeGovernance && !activeAgentRuntimeGovernance.is_ready && activeAgentRuntimeDirectActions.length > 0
+            ? activeAgentRuntimeDirectActions
+            : undefined,
         secondaryActions: [
           {
             label: t("workspace.runtimeRunbook.actions.openGovernance"),
@@ -1920,7 +2257,7 @@ export default function WorkspaceConsolePage({
           }
         ]
       }
-    ];
+    ].map((item) => withUniqueConsoleFollowUpActions(item));
   }, [
     activeAgentContext,
     activeAgentId,
@@ -1998,6 +2335,7 @@ export default function WorkspaceConsolePage({
     documentId?: string | null;
     workflowRunId?: string | null;
     documentQuery?: string | null;
+    documentSource?: DocumentSourceFilter | null;
     documentLifecycle?: DocumentLifecycleFilter | null;
     documentStatus?: string | null;
     documentSort?: string | null;
@@ -2037,6 +2375,7 @@ export default function WorkspaceConsolePage({
     setSelectedConversationId(nextLocationState.conversationId);
     setConversationSearchQuery(nextLocationState.conversationQuery);
     setDocumentQuery(nextLocationState.documentQuery);
+    setDocumentSourceFilter(nextLocationState.documentSource as DocumentSourceFilter);
     setDocumentLifecycleFilter(nextLocationState.documentLifecycle as DocumentLifecycleFilter);
     setDocumentStatusFilter(nextLocationState.documentStatus);
     setDocumentSortOrder(nextLocationState.documentSort as DocumentSortOrder);
@@ -2075,6 +2414,7 @@ export default function WorkspaceConsolePage({
       documentId: selectedDocumentId,
       workflowRunId: selectedWorkflowRunId,
       documentQuery,
+      documentSource: documentSourceFilter,
       documentLifecycle: documentLifecycleFilter,
       documentStatus: documentStatusFilter,
       documentSort: documentSortOrder,
@@ -2100,6 +2440,7 @@ export default function WorkspaceConsolePage({
     selectedDocumentId,
     selectedWorkflowRunId,
     documentQuery,
+    documentSourceFilter,
     documentLifecycleFilter,
     documentStatusFilter,
     documentSortOrder,
@@ -2124,6 +2465,11 @@ export default function WorkspaceConsolePage({
     }
   }, [pathname, routePath, router, workspaceView]);
 
+  const refreshTenantAgentDefinitions = useCallback(async (tenantId: string) => {
+    const agentDefinitions = await listTenantAgentDefinitions(tenantId);
+    setTenantAgentDefinitions(agentDefinitions);
+  }, []);
+
   useEffect(() => {
     if (!bootstrap) {
       setTenantAgentDefinitions([]);
@@ -2133,7 +2479,7 @@ export default function WorkspaceConsolePage({
     const tenantId = bootstrap.tenant.id;
     let cancelled = false;
 
-    async function loadTenantAgentDefinitions() {
+    async function loadTenantAgentsForCurrentScope() {
       try {
         const agentDefinitions = await listTenantAgentDefinitions(tenantId);
         if (!cancelled) {
@@ -2146,12 +2492,38 @@ export default function WorkspaceConsolePage({
       }
     }
 
-    void loadTenantAgentDefinitions();
+    void loadTenantAgentsForCurrentScope();
 
     return () => {
       cancelled = true;
     };
   }, [bootstrap]);
+
+  const handleApplyWorkspaceRuntimeGovernanceAction = useCallback(
+    async (action: { actionKey: RuntimeGovernanceQuickActionKey; resourceId: string }) => {
+      if (!bootstrap || !canManageRuntimeGovernance) {
+        return;
+      }
+
+      try {
+        setActiveRuntimeGovernanceActionId(action.resourceId);
+        setErrorMessage(null);
+        const response = await applyRuntimeGovernanceQuickAction(action.resourceId, action.actionKey);
+        const [nextMcpConnectors] = await Promise.all([
+          listMcpConnectors(),
+          refreshTenantAgentDefinitions(bootstrap.tenant.id),
+        ]);
+        setMcpConnectors(nextMcpConnectors);
+        setStatusMessage(response.summary);
+      } catch (error) {
+        setErrorMessage(resolveOperatorErrorMessage(error, t("admin.runtimeQueue.actions.applyFailed")));
+        setStatusMessage(t("admin.runtimeQueue.actions.applyFailed"));
+      } finally {
+        setActiveRuntimeGovernanceActionId(null);
+      }
+    },
+    [bootstrap, canManageRuntimeGovernance, refreshTenantAgentDefinitions, t]
+  );
 
   const documentPageCount = useMemo(
     () => Math.max(1, Math.ceil(documentTotalCount / DOCUMENT_PAGE_SIZE)),
@@ -2333,7 +2705,6 @@ export default function WorkspaceConsolePage({
     setIsConversationEditorOpen(false);
     setConversationDraftTitle("");
     setSelectedDocumentId(null);
-    setDocumentActionSummary(null);
     setSelectedDocumentIds([]);
     setSelectedWorkflowRunId(null);
     setSelectedDocumentDetail(null);
@@ -2347,14 +2718,11 @@ export default function WorkspaceConsolePage({
     setWorkflowTotalCount(0);
     setWorkflowMetrics(EMPTY_WORKFLOW_METRICS);
     setConversationMetrics(EMPTY_CONVERSATION_METRICS);
-    setMessageFeedbackSummary(EMPTY_MESSAGE_FEEDBACK_SUMMARY);
+    setMessageFeedbackSummary(null);
     setHasLoadedWorkspaceOperations(false);
     setDocumentPage(options?.preferredDocumentPage ?? 1);
     setWorkflowPage(options?.preferredWorkflowPage ?? 1);
     setMessages([]);
-    setRetrievalInspectorDraftQuery("");
-    setRetrievalInspectorFocusToken(0);
-    setRetrievalInspectorAutoRunMode(null);
     setConversationSearchQuery(options?.preferredConversationQuery ?? "");
     setUploadFile(null);
 
@@ -2368,15 +2736,13 @@ export default function WorkspaceConsolePage({
       conversationSearchParams.set("query", normalizedPreferredConversationQuery);
     }
 
-    const [conversationItems, nextConversationMetrics, nextMessageFeedbackSummary] = await Promise.all([
+    const [conversationItems, nextConversationMetrics] = await Promise.all([
       apiRequest<Conversation[]>(`/chat/conversations?${conversationSearchParams.toString()}`),
       loadConversationMetrics(resources.tenant.id, resources.workspace.id),
-      loadMessageFeedbackSummary(resources.tenant.id, resources.workspace.id, resources.knowledgeBase.id),
     ]);
 
     setConversations(conversationItems);
     setConversationMetrics(nextConversationMetrics);
-    setMessageFeedbackSummary(nextMessageFeedbackSummary);
     const nextConversationId =
       options?.preferredConversationId && conversationItems.some((item) => item.id === options.preferredConversationId)
         ? options.preferredConversationId
@@ -2413,13 +2779,19 @@ export default function WorkspaceConsolePage({
       setErrorMessage(null);
       setStatusMessage(t("workspace.status.switchingContext"));
 
-      const tenants = catalog.tenants.length > 0 ? catalog.tenants : await listTenants();
+      const tenants =
+        catalog.tenants.length > 0
+          ? catalog.tenants
+          : cachedTenantsRef.current ?? (await listTenants());
+      cachedTenantsRef.current = tenants;
       const tenant = tenants.find((item) => item.id === nextTenantId);
       if (!tenant) {
         throw new Error(t("workspace.errors.selectedTenantNotResolved"));
       }
 
-      const workspaces = await listWorkspaces(tenant.id);
+      const workspaces =
+        cachedWorkspacesByTenantIdRef.current[tenant.id] ?? (await listWorkspaces(tenant.id));
+      cachedWorkspacesByTenantIdRef.current[tenant.id] = workspaces;
       const workspace =
         workspaces.find((item) => item.id === nextWorkspaceId) ??
         (tenant.id === bootstrap.tenant.id ? workspaces.find((item) => item.id === bootstrap.workspace.id) : null) ??
@@ -2428,7 +2800,10 @@ export default function WorkspaceConsolePage({
         throw new Error(t("workspace.errors.selectedTenantNoWorkspaces"));
       }
 
-      const knowledgeBases = await listKnowledgeBases(workspace.id);
+      const knowledgeBases =
+        cachedKnowledgeBasesByWorkspaceIdRef.current[workspace.id] ??
+        (await listKnowledgeBases(workspace.id));
+      cachedKnowledgeBasesByWorkspaceIdRef.current[workspace.id] = knowledgeBases;
       const knowledgeBase =
         knowledgeBases.find((item) => item.id === nextKnowledgeBaseId) ??
         (workspace.id === bootstrap.workspace.id
@@ -2921,7 +3296,7 @@ export default function WorkspaceConsolePage({
     }
 
     setDocumentPage(1);
-  }, [documentQuery, documentLifecycleFilter, documentSortOrder, documentStatusFilter]);
+  }, [documentQuery, documentSourceFilter, documentLifecycleFilter, documentSortOrder, documentStatusFilter]);
 
   useEffect(() => {
     if (isApplyingWorkflowLocationStateRef.current) {
@@ -2969,6 +3344,7 @@ export default function WorkspaceConsolePage({
       try {
         const operations = await loadWorkspaceOperations(bootstrap, {
           documentQuery: debouncedDocumentQuery,
+          documentSourceFilter,
           documentLifecycleFilter,
           documentStatusFilter,
           documentSortOrder,
@@ -3000,6 +3376,7 @@ export default function WorkspaceConsolePage({
   }, [
     bootstrap,
     debouncedDocumentQuery,
+    documentSourceFilter,
     documentLifecycleFilter,
     documentStatusFilter,
     documentSortOrder,
@@ -3144,6 +3521,48 @@ export default function WorkspaceConsolePage({
   useEffect(() => {
     let cancelled = false;
 
+    async function loadFeedbackSummary() {
+      if (!bootstrap) {
+        setMessageFeedbackSummary(null);
+        setRetrievalEvaluationSummary(null);
+        return;
+      }
+
+      try {
+        const [summary, retrievalSummary] = await Promise.all([
+          loadMessageFeedbackSummary(
+            bootstrap.tenant.id,
+            bootstrap.workspace.id,
+            bootstrap.knowledgeBase.id
+          ),
+          loadRetrievalEvaluationSummary(
+            bootstrap.tenant.id,
+            bootstrap.workspace.id,
+            bootstrap.knowledgeBase.id
+          )
+        ]);
+        if (!cancelled) {
+          setMessageFeedbackSummary(normalizeMessageFeedbackSummary(summary));
+          setRetrievalEvaluationSummary(normalizeRetrievalEvaluationSummary(retrievalSummary));
+        }
+      } catch {
+        if (!cancelled) {
+          setMessageFeedbackSummary(null);
+          setRetrievalEvaluationSummary(null);
+        }
+      }
+    }
+
+    void loadFeedbackSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrap]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     async function loadDocumentDetail() {
       if (!bootstrap || !selectedDocumentId) {
         setSelectedDocumentDetail(null);
@@ -3209,48 +3628,23 @@ export default function WorkspaceConsolePage({
   }, [bootstrap, selectedDocumentId, workflowRuns]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadSelectedDocumentActivity() {
-      if (!bootstrap || !selectedDocumentId) {
-        setSelectedDocumentActivity(null);
-        setIsLoadingSelectedDocumentActivity(false);
-        return;
-      }
-
-      try {
-        if (!cancelled) {
-          setIsLoadingSelectedDocumentActivity(true);
-        }
-        const activity = await apiRequest<DocumentActivity>(
-          `/documents/${selectedDocumentId}/activity?${new URLSearchParams({
-            knowledge_base_id: bootstrap.knowledgeBase.id,
-            include_deleted:
-              documentLifecycleFilter !== "active" || isSelectedDocumentDeleted ? "true" : "false",
-          }).toString()}`
-        );
-        if (!cancelled) {
-          setSelectedDocumentActivity(activity);
-          setErrorMessage(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setSelectedDocumentActivity(null);
-          setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.documentActivityLoadFailed")));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingSelectedDocumentActivity(false);
-        }
-      }
+    if (!selectedDocumentId) {
+      return;
     }
 
-    void loadSelectedDocumentActivity();
+    const currentWorkflowMatchesSelectedDocument = selectedDocumentWorkflowRuns.some(
+      (workflowRun) => workflowRun.id === selectedWorkflowRunId
+    );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [bootstrap, documentLifecycleFilter, isSelectedDocumentDeleted, selectedDocumentId, selectedDocumentWorkflowRuns, t]);
+    if (currentWorkflowMatchesSelectedDocument) {
+      return;
+    }
+
+    const nextSelectedWorkflowRunId = selectPreferredWorkflowRunId(selectedDocumentWorkflowRuns);
+    if (nextSelectedWorkflowRunId !== selectedWorkflowRunId) {
+      setSelectedWorkflowRunId(nextSelectedWorkflowRunId);
+    }
+  }, [selectedDocumentId, selectedDocumentWorkflowRuns, selectedWorkflowRunId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3346,19 +3740,6 @@ export default function WorkspaceConsolePage({
     setSelectedConversationId(nextConversationId);
   }
 
-  async function refreshMessageFeedbackSummary() {
-    if (!bootstrap) {
-      return;
-    }
-
-    const nextSummary = await loadMessageFeedbackSummary(
-      bootstrap.tenant.id,
-      bootstrap.workspace.id,
-      bootstrap.knowledgeBase.id
-    );
-    setMessageFeedbackSummary(nextSummary);
-  }
-
   useEffect(() => {
     if (!bootstrap) {
       return;
@@ -3370,11 +3751,6 @@ export default function WorkspaceConsolePage({
   function handleSelectConversation(conversationId: string) {
     setIsConversationEditorOpen(false);
     setSelectedConversationId(conversationId);
-  }
-
-  function handleOpenFeedbackConversation(conversationId: string) {
-    handleSelectConversation(conversationId);
-    setWorkspaceView("chat");
   }
 
   function openConversationEditor() {
@@ -3476,10 +3852,6 @@ export default function WorkspaceConsolePage({
     const conversationTitle =
       selectedConversation?.title ??
       t("workspace.headerBar.startConversationPlaceholder");
-    const confirmed = window.confirm(t("workspace.confirm.deleteConversation", { title: conversationTitle }));
-    if (!confirmed) {
-      return;
-    }
 
     try {
       setIsDeletingConversation(true);
@@ -3514,6 +3886,7 @@ export default function WorkspaceConsolePage({
 
     const operations = await loadWorkspaceOperations(bootstrap, {
       documentQuery: debouncedDocumentQuery,
+      documentSourceFilter,
       documentLifecycleFilter,
       documentStatusFilter,
       documentSortOrder,
@@ -3631,7 +4004,6 @@ export default function WorkspaceConsolePage({
         })
       );
       await refreshMessageFeedbackSummary();
-
       setStatusMessage(
         signal === "helpful"
           ? t("workspace.status.messageFeedbackSavedHelpful")
@@ -3653,7 +4025,6 @@ export default function WorkspaceConsolePage({
     try {
       setIsUploading(true);
       setErrorMessage(null);
-      setUploadFollowUpSummary(null);
       setStatusMessage(t("workspace.status.uploadingAndStartingIngestion"));
 
       const formData = new FormData();
@@ -3669,80 +4040,7 @@ export default function WorkspaceConsolePage({
         body: formData
       });
 
-      const workflowStatus = await waitForWorkflowCompletion(bootstrap.tenant.id, uploadResponse.workflow_run_id);
-      const normalizedUploadWorkflowStatus =
-        workflowStatus === "queued" ||
-        workflowStatus === "running" ||
-        workflowStatus === "pending" ||
-        workflowStatus === "completed" ||
-        workflowStatus === "failed"
-          ? workflowStatus
-          : "running";
-      const uploadedWorkflowRun = await loadWorkflowRunDetailItem(bootstrap.tenant.id, uploadResponse.workflow_run_id);
-
-      setSelectedWorkflowRunId(uploadedWorkflowRun.id);
-      let uploadedDocumentTitle = uploadFile.name.replace(/\.[^.]+$/, "");
-      if (uploadedWorkflowRun.subject_type === "document" && uploadedWorkflowRun.subject_id) {
-        await handleSelectDocument(uploadedWorkflowRun.subject_id);
-        const matchedDocument = documents.find((document) => document.id === uploadedWorkflowRun.subject_id) ?? null;
-        if (matchedDocument?.title) {
-          uploadedDocumentTitle = matchedDocument.title;
-        }
-      }
-
-      if (workflowStatus === "completed") {
-        setWorkspaceView("documents");
-        setHandoffIntent("grounded_validation");
-        setWorkflowStatusFilter("all");
-        setWorkflowPage(1);
-      } else {
-        setWorkspaceView("workflows");
-        setHandoffIntent("workflow_recovery");
-        setWorkflowQuery("");
-        setWorkflowTypeFilter("all");
-        setWorkflowRetryMode("all");
-        setWorkflowSortOrder("updated-desc");
-        setWorkflowStatusFilter(
-          workflowStatus === "queued" ||
-            workflowStatus === "running" ||
-            workflowStatus === "pending" ||
-            workflowStatus === "failed" ||
-            workflowStatus === "completed"
-            ? workflowStatus
-            : "all"
-        );
-        setWorkflowPage(1);
-      }
-
-      await refreshOperations();
-      setUploadFollowUpSummary({
-        documentId:
-          uploadedWorkflowRun.subject_type === "document" ? uploadedWorkflowRun.subject_id ?? null : null,
-        documentTitle: uploadedWorkflowRun.subject_label ?? uploadedDocumentTitle,
-        workflowRunId: uploadedWorkflowRun.id,
-        workflowStatus: normalizedUploadWorkflowStatus,
-        completedAt: new Date().toISOString(),
-        followUpDraftQuestion: buildGroundedValidationDraftQuestion(t, {
-          documentTitle:
-            normalizedUploadWorkflowStatus === "completed" ? uploadedWorkflowRun.subject_label ?? uploadedDocumentTitle : null,
-          workflowStatus: normalizedUploadWorkflowStatus,
-          workflowLabel: uploadedWorkflowRun.subject_label ?? uploadedDocumentTitle,
-          workflowId: uploadedWorkflowRun.id
-        })
-      });
-      setStatusMessage(
-        workflowStatus === "completed"
-          ? t("workspace.status.documentIndexedReady")
-          : workflowStatus === "failed"
-            ? t("workspace.status.documentWorkflowOpenedInOperations")
-            : workflowStatus === "queued" || workflowStatus === "running" || workflowStatus === "pending"
-              ? t("workspace.status.documentWorkflowMonitoring", {
-                  status: formatStatusLabel(workflowStatus)
-                })
-          : t("workspace.status.workflowFinishedWithStatus", {
-              status: formatStatusLabel(workflowStatus)
-            })
-      );
+      await handleImportedDocumentWorkflow(uploadResponse.workflow_run_id);
       setUploadFile(null);
     } catch (error) {
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.uploadFailed")));
@@ -3750,6 +4048,101 @@ export default function WorkspaceConsolePage({
     } finally {
       setIsUploading(false);
     }
+  }
+
+  async function handleImportWebPage() {
+    if (
+      !bootstrap ||
+      !canManageDocuments ||
+      !webImportUrl.trim() ||
+      isUploading ||
+      isSwitchingContext ||
+      isUpdatingContext ||
+      isRunningContextLifecycleAction
+    ) {
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setErrorMessage(null);
+      setStatusMessage(t("workspace.status.importingWebPageAndStartingIngestion"));
+
+      const importResponse = await apiRequest<{
+        workflow_run_id: string;
+      }>("/documents/import-webpage", {
+        method: "POST",
+        body: JSON.stringify({
+          tenant_id: bootstrap.tenant.id,
+          knowledge_base_id: bootstrap.knowledgeBase.id,
+          source_url: webImportUrl.trim(),
+          title: webImportTitle.trim() || null
+        })
+      });
+
+      await handleImportedDocumentWorkflow(importResponse.workflow_run_id);
+      setWebImportUrl("");
+      setWebImportTitle("");
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.webImportFailed")));
+      setStatusMessage(t("workspace.status.webImportFailed"));
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleImportedDocumentWorkflow(workflowRunId: string) {
+    if (!bootstrap) {
+      return;
+    }
+
+    const workflowStatus = await waitForWorkflowCompletion(bootstrap.tenant.id, workflowRunId);
+    const uploadedWorkflowRun = await loadWorkflowRunDetailItem(bootstrap.tenant.id, workflowRunId);
+
+    setSelectedWorkflowRunId(uploadedWorkflowRun.id);
+    if (uploadedWorkflowRun.subject_type === "document" && uploadedWorkflowRun.subject_id) {
+      await handleSelectDocument(uploadedWorkflowRun.subject_id);
+    }
+
+    if (workflowStatus === "completed") {
+      setWorkspaceView("documents");
+      setHandoffIntent("grounded_validation");
+      setWorkflowStatusFilter("all");
+      setWorkflowPage(1);
+    } else {
+      setWorkspaceView("workflows");
+      setHandoffIntent("workflow_recovery");
+      setWorkflowQuery("");
+      setWorkflowTypeFilter("all");
+      setWorkflowRetryMode("all");
+      setWorkflowSortOrder("updated-desc");
+      setWorkflowStatusFilter(
+        workflowStatus === "queued" ||
+          workflowStatus === "running" ||
+          workflowStatus === "pending" ||
+          workflowStatus === "failed" ||
+          workflowStatus === "completed" ||
+          workflowStatus === "cancelled"
+          ? workflowStatus
+          : "all"
+      );
+      setWorkflowPage(1);
+    }
+
+    await refreshOperations();
+    setStatusMessage(
+      workflowStatus === "completed"
+        ? t("workspace.status.documentIndexedReady")
+        : workflowStatus === "failed"
+          ? t("workspace.status.documentWorkflowOpenedInOperations")
+          : workflowStatus === "queued" || workflowStatus === "running" || workflowStatus === "pending"
+            ? t("workspace.status.documentWorkflowMonitoring", {
+                status: formatStatusLabel(workflowStatus)
+              })
+            : t("workspace.status.workflowFinishedWithStatus", {
+                status: formatStatusLabel(workflowStatus)
+              })
+    );
   }
 
   function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -3780,7 +4173,7 @@ export default function WorkspaceConsolePage({
           documentLifecycleFilter !== "active" || documents.find((item) => item.id === documentId)?.is_deleted === true
         ),
       ]);
-      const nextSelectedWorkflowRunId = relatedWorkflowRuns[0]?.id ?? null;
+      const nextSelectedWorkflowRunId = selectPreferredWorkflowRunId(relatedWorkflowRuns);
 
       setSelectedDocumentWorkflowRuns(relatedWorkflowRuns);
       setSelectedWorkflowRunId(nextSelectedWorkflowRunId);
@@ -3902,14 +4295,6 @@ export default function WorkspaceConsolePage({
     setSelectedDocumentIds([]);
   }
 
-  function clearDocumentActionSummary() {
-    setDocumentActionSummary(null);
-  }
-
-  function clearUploadFollowUpSummary() {
-    setUploadFollowUpSummary(null);
-  }
-
   function isSelectedDocumentReady() {
     return (
       selectedDocumentDetail?.document.ingestion_status === "completed" &&
@@ -3936,10 +4321,14 @@ export default function WorkspaceConsolePage({
   function openWorkflowSupervision() {
     setWorkspaceView("workflows");
     setHandoffIntent("workflow_recovery");
-    if (selectedWorkflowRunDetail?.workflow_status === "failed") {
+    const selectedWorkflowStage = resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status);
+    if (selectedWorkflowStage === "recovery") {
       setWorkflowStatusFilter("failed");
       setWorkflowPage(1);
-    } else if (selectedWorkflowRunDetail?.workflow_status === "queued" || selectedWorkflowRunDetail?.workflow_status === "running") {
+    } else if (selectedWorkflowStage === "cancelled") {
+      setWorkflowStatusFilter("cancelled");
+      setWorkflowPage(1);
+    } else if (selectedWorkflowStage === "monitoring") {
       setWorkflowStatusFilter("running");
       setWorkflowPage(1);
     }
@@ -3959,18 +4348,6 @@ export default function WorkspaceConsolePage({
     }
   }
 
-  function handleOpenRetrievalQueryInChat(nextQuery: string) {
-    const normalizedQuery = nextQuery.trim();
-    if (!normalizedQuery) {
-      return;
-    }
-
-    setWorkspaceView("chat");
-    setHandoffIntent("grounded_validation");
-    setQuestion(normalizedQuery);
-    setStatusMessage(t("workspace.status.retrievalQueryPreparedInChat"));
-  }
-
   function handlePrepareValidationQuery(nextQuery: string) {
     const normalizedQuery = nextQuery.trim();
     if (!normalizedQuery) {
@@ -3983,7 +4360,34 @@ export default function WorkspaceConsolePage({
     setStatusMessage(t("workspace.status.retrievalQueryPreparedInChat"));
   }
 
-  function handleRunFeedbackValidationQuery(nextQuery: string, mode: "inspect" | "compare") {
+  async function refreshMessageFeedbackSummary() {
+    if (!bootstrap) {
+      setMessageFeedbackSummary(null);
+      setRetrievalEvaluationSummary(null);
+      return;
+    }
+
+    const [summary, retrievalSummary] = await Promise.all([
+      loadMessageFeedbackSummary(
+        bootstrap.tenant.id,
+        bootstrap.workspace.id,
+        bootstrap.knowledgeBase.id
+      ),
+      loadRetrievalEvaluationSummary(
+        bootstrap.tenant.id,
+        bootstrap.workspace.id,
+        bootstrap.knowledgeBase.id
+      )
+    ]);
+    setMessageFeedbackSummary(normalizeMessageFeedbackSummary(summary));
+    setRetrievalEvaluationSummary(normalizeRetrievalEvaluationSummary(retrievalSummary));
+  }
+
+  async function handleRunFeedbackValidationQuery(nextQuery: string, mode: "inspect" | "compare") {
+    if (!bootstrap) {
+      return;
+    }
+
     const normalizedQuery = nextQuery.trim();
     if (!normalizedQuery) {
       return;
@@ -3991,14 +4395,299 @@ export default function WorkspaceConsolePage({
 
     setWorkspaceView("chat");
     setHandoffIntent("grounded_validation");
-    setRetrievalInspectorDraftQuery(normalizedQuery);
-    setRetrievalInspectorAutoRunMode(mode);
-    setRetrievalInspectorFocusToken((currentValue) => currentValue + 1);
-    setStatusMessage(
-      mode === "compare"
-        ? t("workspace.status.feedbackComparisonPrepared")
-        : t("workspace.status.feedbackValidationPrepared")
+    setQuestion(normalizedQuery);
+    setErrorMessage(null);
+
+    try {
+      if (mode === "compare") {
+        setStatusMessage(t("workspace.status.feedbackComparisonPrepared"));
+
+        const response = await compareRetrieval({
+          tenant_id: bootstrap.tenant.id,
+          knowledge_base_id: bootstrap.knowledgeBase.id,
+          query_text: normalizedQuery,
+          top_k: RETRIEVAL_VALIDATION_TOP_K
+        });
+
+        const summary: RetrievalValidationSummary = {
+          mode: "compare",
+          status:
+            response.summary.recommendation_status === "aligned"
+              ? "ready"
+              : response.summary.recommendation_status,
+          queryText: normalizedQuery,
+          detail: response.summary.recommendation_reason,
+          engineName: response.baseline.engine_name,
+          candidateEngineName: response.candidate.engine_name,
+          retrievalProfileName:
+            response.candidate.retrieval_profile_name ?? response.baseline.retrieval_profile_name,
+          resultCount: response.summary.shared_result_count,
+          updatedAt: new Date().toISOString()
+        };
+
+        setRetrievalValidationSummary(summary);
+        setStatusMessage(response.summary.recommendation_reason);
+
+        try {
+          await recordRetrievalEvaluation({
+            tenant_id: bootstrap.tenant.id,
+            workspace_id: bootstrap.workspace.id,
+            knowledge_base_id: bootstrap.knowledgeBase.id,
+            evaluation_mode: "compare",
+            validation_status: summary.status,
+            query_text: normalizedQuery,
+            baseline_engine_name: response.baseline.engine_name,
+            candidate_engine_name: response.candidate.engine_name,
+            retrieval_profile_name: summary.retrievalProfileName,
+            retrieval_profile_source:
+              response.candidate.retrieval_profile_source ?? response.baseline.retrieval_profile_source,
+            result_count: response.baseline.result_count,
+            shared_result_count: response.summary.shared_result_count,
+            baseline_only_count: response.summary.baseline_only_count,
+            candidate_only_count: response.summary.candidate_only_count,
+            top_result_matches: response.summary.top_result_matches,
+            recommendation_reason: response.summary.recommendation_reason,
+            evaluation_payload_json: response as unknown as Record<string, unknown>
+          });
+        } catch {
+          // Preserve the validation result even if evaluation logging fails.
+        }
+
+        await refreshMessageFeedbackSummary();
+
+        return;
+      }
+
+      setStatusMessage(t("workspace.status.feedbackValidationPrepared"));
+
+      const response = await inspectRetrieval({
+        tenant_id: bootstrap.tenant.id,
+        knowledge_base_id: bootstrap.knowledgeBase.id,
+        query_text: normalizedQuery,
+        top_k: RETRIEVAL_VALIDATION_TOP_K
+      });
+      const detail =
+        response.results.length > 0
+          ? t("workspace.retrievalInspector.statusLoaded", { count: String(response.results.length) })
+          : t("workspace.retrievalInspector.statusEmpty");
+      const summary: RetrievalValidationSummary = {
+        mode: "inspect",
+        status: response.results.length > 0 ? "ready" : "empty",
+        queryText: normalizedQuery,
+        detail,
+        engineName: response.engine_name,
+        candidateEngineName: null,
+        retrievalProfileName: response.retrieval_profile_name,
+        resultCount: response.results.length,
+        updatedAt: new Date().toISOString()
+      };
+
+      setRetrievalValidationSummary(summary);
+      setStatusMessage(detail);
+
+      try {
+        await recordRetrievalEvaluation({
+          tenant_id: bootstrap.tenant.id,
+          workspace_id: bootstrap.workspace.id,
+          knowledge_base_id: bootstrap.knowledgeBase.id,
+          evaluation_mode: "inspect",
+          validation_status: summary.status,
+          query_text: normalizedQuery,
+          baseline_engine_name: response.engine_name,
+          retrieval_profile_name: response.retrieval_profile_name,
+          retrieval_profile_source: response.retrieval_profile_source,
+          result_count: response.results.length,
+          recommendation_reason: detail,
+          evaluation_payload_json: response as unknown as Record<string, unknown>
+        });
+      } catch {
+        // Preserve the validation result even if evaluation logging fails.
+      }
+
+      await refreshMessageFeedbackSummary();
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : t("workspace.retrievalInspector.statusFailed");
+      setRetrievalValidationSummary({
+        mode,
+        status: "failed",
+        queryText: normalizedQuery,
+        detail,
+        engineName: null,
+        candidateEngineName: null,
+        retrievalProfileName: null,
+        resultCount: 0,
+        updatedAt: new Date().toISOString()
+      });
+      setErrorMessage(detail);
+      setStatusMessage(t("workspace.retrievalInspector.statusFailed"));
+    }
+  }
+
+  function handleOpenFeedbackConversation(conversationId: string) {
+    setWorkspaceView("chat");
+    setIsConversationEditorOpen(false);
+    setSelectedConversationId(conversationId);
+  }
+
+  const buildRetrievalFollowUpDescriptors = useCallback(
+    (options: {
+      sourceKey: string;
+      actions: Array<{
+        action_key:
+          | "review_knowledge_base_governance"
+          | "review_retrieval_profile_governance"
+          | "rerun_retrieval_inspection"
+          | "rerun_retrieval_comparison"
+          | "validate_in_chat";
+        action_category: "governance" | "analysis" | "validation";
+        action_label: string;
+        action_reason: string;
+      }>;
+      queryText: string | null;
+      knowledgeBaseId: string | null;
+      retrievalProfileId: string | null;
+    }) => {
+      if (!bootstrap) {
+        return [];
+      }
+
+      return buildWorkspaceRetrievalFollowUpActions({
+        sourceKey: options.sourceKey,
+        actions: options.actions,
+        queryText: options.queryText,
+        tenantId: bootstrap.tenant.id,
+        workspaceId: bootstrap.workspace.id,
+        knowledgeBaseId: options.knowledgeBaseId,
+        retrievalProfileId: options.retrievalProfileId,
+        t,
+        onOpenChatWithQuery: handlePrepareValidationQuery,
+        onRunComparison: (query) => {
+          void handleRunFeedbackValidationQuery(query, "compare");
+        },
+        onRunInspection: (query) => {
+          void handleRunFeedbackValidationQuery(query, "inspect");
+        }
+      });
+    },
+    [bootstrap, t]
+  );
+
+  const feedbackFollowUpActionsByItemId = useMemo<Record<string, RetrievalFollowUpActionDescriptor[]>>(() => {
+    if (!bootstrap || !messageFeedbackSummary) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      messageFeedbackSummary.recent_feedback.map((item) => [
+        item.id,
+        buildRetrievalFollowUpDescriptors({
+          sourceKey: `feedback-${item.id}`,
+          actions: item.recommended_actions,
+          queryText: item.latest_user_question,
+          knowledgeBaseId: item.knowledge_base_id ?? bootstrap.knowledgeBase.id,
+          retrievalProfileId: item.retrieval_profile_id
+        })
+      ])
     );
+  }, [bootstrap, buildRetrievalFollowUpDescriptors, messageFeedbackSummary]);
+
+  const candidateFollowUpActionsByQuery = useMemo<Record<string, RetrievalFollowUpActionDescriptor[]>>(() => {
+    if (!bootstrap || !retrievalEvaluationSummary) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      retrievalEvaluationSummary.candidates.map((candidate) => [
+        candidate.query_text.trim(),
+        buildRetrievalFollowUpDescriptors({
+          sourceKey: `candidate-${candidate.query_text.trim()}`,
+          actions: candidate.recommended_actions,
+          queryText: candidate.query_text,
+          knowledgeBaseId: bootstrap.knowledgeBase.id,
+          retrievalProfileId: candidate.retrieval_profile_id
+        })
+      ])
+    );
+  }, [bootstrap, buildRetrievalFollowUpDescriptors, retrievalEvaluationSummary]);
+
+  const recentEvaluationFollowUpActionsById = useMemo<Record<string, RetrievalFollowUpActionDescriptor[]>>(() => {
+    if (!bootstrap || !retrievalEvaluationSummary) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      retrievalEvaluationSummary.recent_evaluations.map((evaluation) => [
+        evaluation.id,
+        buildRetrievalFollowUpDescriptors({
+          sourceKey: `evaluation-${evaluation.id}`,
+          actions: evaluation.recommended_actions,
+          queryText: evaluation.query_text,
+          knowledgeBaseId: evaluation.knowledge_base_id,
+          retrievalProfileId: evaluation.retrieval_profile_id
+        })
+      ])
+    );
+  }, [bootstrap, buildRetrievalFollowUpDescriptors, retrievalEvaluationSummary]);
+
+  async function handleSetRetrievalEvaluationFollowUpStatus(
+    evaluation: RetrievalEvaluationRecord,
+    nextStatus: "pending" | "resolved"
+  ) {
+    try {
+      setActiveRetrievalEvaluationId(evaluation.id);
+      setErrorMessage(null);
+      await updateRetrievalEvaluationFollowUpStatus({
+        retrieval_evaluation_id: evaluation.id,
+        follow_up_status: nextStatus
+      });
+      await refreshMessageFeedbackSummary();
+      setStatusMessage(
+        nextStatus === "resolved"
+          ? t("workspace.retrievalInspector.followUpResolvedToast")
+          : t("workspace.retrievalInspector.followUpReopenedToast")
+      );
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.retrievalInspector.followUpUpdateFailed")));
+    } finally {
+      setActiveRetrievalEvaluationId(null);
+    }
+  }
+
+  async function handleSetRetrievalQueryFollowUpStatus(
+    queryText: string,
+    nextStatus: "pending" | "resolved"
+  ) {
+    if (!bootstrap) {
+      return;
+    }
+
+    const normalizedQuery = queryText.trim();
+    if (!normalizedQuery) {
+      return;
+    }
+
+    try {
+      setActiveRetrievalFollowUpQuery(normalizedQuery);
+      setErrorMessage(null);
+      await updateRetrievalQueryFollowUpStatus({
+        tenant_id: bootstrap.tenant.id,
+        workspace_id: bootstrap.workspace.id,
+        knowledge_base_id: bootstrap.knowledgeBase.id,
+        query_text: normalizedQuery,
+        follow_up_status: nextStatus
+      });
+      await refreshMessageFeedbackSummary();
+      setStatusMessage(
+        nextStatus === "resolved"
+          ? t("workspace.retrievalInspector.candidateResolvedToast")
+          : t("workspace.retrievalInspector.candidateReopenedToast")
+      );
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.workspaceRefreshFailed")));
+    } finally {
+      setActiveRetrievalFollowUpQuery(null);
+    }
   }
 
   function showFailedDocumentsQueue() {
@@ -4010,7 +4699,7 @@ export default function WorkspaceConsolePage({
 
   function focusFailedWorkflowRuns() {
     setWorkspaceView("workflows");
-    setWorkflowStatusFilter("failed");
+    setWorkflowStatusFilter(workflowMetrics.failed_runs > 0 ? "failed" : "cancelled");
     setWorkflowRetryMode("all");
     setWorkflowPage(1);
   }
@@ -4052,9 +4741,10 @@ export default function WorkspaceConsolePage({
   function openDocumentsView() {
     setWorkspaceView("documents");
     setDocumentLifecycleFilter("active");
+    const selectedWorkflowStage = resolveWorkflowFollowUpStage(selectedWorkflowRunDetail?.workflow_status);
 
     if (
-      selectedWorkflowRunDetail?.workflow_status === "failed" ||
+      selectedWorkflowStage === "recovery" ||
       isSelectedDocumentFailed()
     ) {
       setHandoffIntent("document_recovery");
@@ -4064,7 +4754,7 @@ export default function WorkspaceConsolePage({
     }
 
     if (
-      selectedWorkflowRunDetail?.workflow_status === "completed" ||
+      selectedWorkflowStage === "ready" ||
       isSelectedDocumentReady()
     ) {
       setHandoffIntent("grounded_validation");
@@ -4098,7 +4788,78 @@ export default function WorkspaceConsolePage({
       : "";
   }
 
-  function handleActivateRecommendedAgent(
+  function buildRecommendationExecutionInput(
+    recommendation: WorkspaceAgentRecommendation
+  ) {
+    if (recommendation.reason === "workflow-completed" || recommendation.reason === "workflow-in-progress" || recommendation.reason === "workflow-failed") {
+      if (!selectedWorkflowRunDetail) {
+        return null;
+      }
+
+      const lines = [
+        `Review workflow run ${selectedWorkflowRunDetail.id}.`,
+        `Workflow type: ${selectedWorkflowRunDetail.workflow_type}.`,
+        `Workflow status: ${selectedWorkflowRunDetail.workflow_status}.`,
+      ];
+
+      if (selectedWorkflowRunDetail.subject_label?.trim()) {
+        lines.push(`Subject label: ${selectedWorkflowRunDetail.subject_label.trim()}.`);
+      }
+      if (selectedWorkflowRunDetail.subject_type?.trim()) {
+        lines.push(`Subject type: ${selectedWorkflowRunDetail.subject_type.trim()}.`);
+      }
+      if (selectedWorkflowRunDetail.error_message?.trim()) {
+        lines.push(`Latest error: ${selectedWorkflowRunDetail.error_message.trim()}.`);
+      }
+      if (selectedWorkflowRunDetail.operator_notes?.trim()) {
+        lines.push(`Operator notes: ${selectedWorkflowRunDetail.operator_notes.trim()}.`);
+      }
+      if (selectedWorkflowRunDetail.subject_type === "document" && selectedDocumentDetail?.document.title?.trim()) {
+        lines.push(`Related document: ${selectedDocumentDetail.document.title.trim()}.`);
+      }
+      if (selectedDocumentDetail?.document.source_kind === "web" && selectedDocumentDetail.document.source_uri?.trim()) {
+        lines.push(`Related source URL: ${selectedDocumentDetail.document.source_uri.trim()}.`);
+      }
+
+      lines.push(`Recommendation reason: ${recommendation.reason}.`);
+      return lines.join(" ");
+    }
+
+    if (!selectedDocumentDetail) {
+      return null;
+    }
+
+    const lines = [
+      `Review document ${selectedDocumentDetail.document.title}.`,
+      `Document ingestion status: ${selectedDocumentDetail.document.ingestion_status}.`,
+      `Document indexing status: ${selectedDocumentDetail.document.indexing_status}.`,
+      `Document source kind: ${selectedDocumentDetail.document.source_kind}.`,
+    ];
+
+    if (selectedDocumentDetail.document.source_uri?.trim()) {
+      lines.push(`Document source reference: ${selectedDocumentDetail.document.source_uri.trim()}.`);
+    }
+    if (selectedDocumentDetail.parser_name?.trim()) {
+      lines.push(`Current parser: ${selectedDocumentDetail.parser_name.trim()}.`);
+    }
+    if (typeof selectedDocumentDetail.chunk_count === "number") {
+      lines.push(`Chunk count: ${selectedDocumentDetail.chunk_count}.`);
+    }
+    if (typeof selectedDocumentDetail.token_count_total === "number") {
+      lines.push(`Token count: ${selectedDocumentDetail.token_count_total}.`);
+    }
+    if (selectedDocumentWorkflowRuns[0]?.workflow_status?.trim()) {
+      lines.push(`Latest workflow status: ${selectedDocumentWorkflowRuns[0].workflow_status.trim()}.`);
+    }
+    if (selectedDocumentWorkflowRuns[0]?.error_message?.trim()) {
+      lines.push(`Latest workflow error: ${selectedDocumentWorkflowRuns[0].error_message.trim()}.`);
+    }
+
+    lines.push(`Recommendation reason: ${recommendation.reason}.`);
+    return lines.join(" ");
+  }
+
+  function applyRecommendationWorkspaceContext(
     recommendation: WorkspaceAgentRecommendation
   ) {
     const matchedAgent =
@@ -4115,6 +4876,9 @@ export default function WorkspaceConsolePage({
     }
 
     if (recommendation.targetView === "documents") {
+      if (selectedDocumentDetail?.document.source_kind) {
+        setDocumentSourceFilter(selectedDocumentDetail.document.source_kind);
+      }
       if (recommendation.reason === "document-needs-recovery") {
         setDocumentStatusFilter("failed");
       } else if (recommendation.reason === "document-needs-intake" || recommendation.reason === "workflow-in-progress") {
@@ -4153,37 +4917,152 @@ export default function WorkspaceConsolePage({
                   ? t("workspace.headerBar.documentOperations")
                   : t("workspace.headerBar.workflowOperations")
           })
-        : t("workspace.status.workspaceRefreshed")
-    );
+          : t("workspace.status.workspaceRefreshed")
+      );
   }
 
-  function resolveDocumentActionFollowUpView(options: {
-    action: "delete" | "reindex" | "restore";
-    successCount: number;
-    failureCount: number;
-    lastWorkflowStatus: string | null;
-  }): "none" | "documents" | "workflows" | "chat" {
-    if (options.action === "restore") {
-      return options.successCount > 0 ? "documents" : options.failureCount > 0 ? "documents" : "none";
+  function applyExecutionResultToWorkspace(
+    recommendation: WorkspaceAgentRecommendation,
+    execution: Awaited<ReturnType<typeof createAgentExecution>>
+  ) {
+    const evidenceSummary = readAgentExecutionEvidenceSummary(
+      execution.result_payload_json && typeof execution.result_payload_json === "object"
+        ? execution.result_payload_json
+        : null
+    );
+    const followUpActions = buildAgentExecutionFollowUpActions({
+      sourceContext: { surface: "workspace" },
+      execution,
+      executionInput: evidenceSummary?.executionInput ?? null,
+      recommendedActions: evidenceSummary?.recommendedActionSpecs ?? []
+    });
+    const primaryFollowUpAction =
+      followUpActions.find((action) => action.variant === "default") ?? followUpActions[0] ?? null;
+
+    setActiveAgentId(recommendation.agent.id);
+    setErrorMessage(null);
+
+    if (primaryFollowUpAction) {
+      router.push(buildNavigationHrefString(primaryFollowUpAction.href) as Route);
+      return;
     }
 
-    if (options.action === "delete") {
-      return options.failureCount > 0 ? "documents" : "none";
+    const payload =
+      execution.result_payload_json && typeof execution.result_payload_json === "object"
+        ? execution.result_payload_json
+        : {};
+    const documentMetrics =
+      payload.document_metrics && typeof payload.document_metrics === "object" && !Array.isArray(payload.document_metrics)
+        ? (payload.document_metrics as Record<string, unknown>)
+        : null;
+    const workflowMetrics =
+      payload.workflow_metrics && typeof payload.workflow_metrics === "object" && !Array.isArray(payload.workflow_metrics)
+        ? (payload.workflow_metrics as Record<string, unknown>)
+        : null;
+    const failedDocuments =
+      typeof documentMetrics?.failed_documents === "number" ? documentMetrics.failed_documents : 0;
+    const activeDocuments =
+      typeof documentMetrics?.active_documents === "number" ? documentMetrics.active_documents : 0;
+    const failedRuns = typeof workflowMetrics?.failed_runs === "number" ? workflowMetrics.failed_runs : 0;
+    const runningRuns = typeof workflowMetrics?.running_runs === "number" ? workflowMetrics.running_runs : 0;
+    const queuedRuns = typeof workflowMetrics?.queued_runs === "number" ? workflowMetrics.queued_runs : 0;
+
+    if (execution.execution_mode === "document_intake") {
+      setWorkspaceView("documents");
+      setDocumentLifecycleFilter("active");
+      setDocumentPage(1);
+      setHandoffIntent(failedDocuments > 0 || execution.execution_status === "failed" ? "document_recovery" : "agent_brief");
+      if (selectedDocumentDetail?.document.source_kind) {
+        setDocumentSourceFilter(selectedDocumentDetail.document.source_kind);
+      }
+      if (failedDocuments > 0 || execution.execution_status === "failed") {
+        setDocumentStatusFilter("failed");
+      } else if (
+        activeDocuments > 0 ||
+        execution.execution_status === "queued" ||
+        execution.execution_status === "running"
+      ) {
+        setDocumentStatusFilter("running");
+      } else {
+        setDocumentStatusFilter("all");
+      }
+      setStatusMessage(
+        t("workspace.status.agentExecutionCompletedForDocuments", {
+          name: recommendation.agent.name
+        })
+      );
+      return;
     }
 
-    if (options.successCount === 0) {
-      return options.failureCount > 0 ? "documents" : "none";
+    if (execution.execution_mode === "workflow_recovery") {
+      setWorkspaceView("workflows");
+      setWorkflowPage(1);
+      setHandoffIntent("workflow_recovery");
+      if (failedRuns > 0 || execution.execution_status === "failed") {
+        setWorkflowStatusFilter("failed");
+      } else if (
+        runningRuns > 0 ||
+        queuedRuns > 0 ||
+        execution.execution_status === "queued" ||
+        execution.execution_status === "running"
+      ) {
+        setWorkflowStatusFilter("running");
+      } else {
+        setWorkflowStatusFilter("all");
+      }
+      if (selectedWorkflowRunDetail?.id) {
+        setSelectedWorkflowRunId(selectedWorkflowRunDetail.id);
+      }
+      setStatusMessage(
+        t("workspace.status.agentExecutionCompletedForWorkflows", {
+          name: recommendation.agent.name
+        })
+      );
+      return;
     }
 
-    if (options.lastWorkflowStatus === "completed") {
-      return "chat";
+    applyRecommendationWorkspaceContext(recommendation);
+  }
+
+  async function handleActivateRecommendedAgent(
+    recommendation: WorkspaceAgentRecommendation
+  ) {
+    if (!bootstrap) {
+      return;
     }
 
-    if (options.lastWorkflowStatus === "failed") {
-      return "documents";
+    if (recommendation.agent.mode === "grounded_chat") {
+      applyRecommendationWorkspaceContext(recommendation);
+      return;
     }
 
-    return "workflows";
+    if (isActivatingRecommendedAgent) {
+      return;
+    }
+
+    try {
+      setIsActivatingRecommendedAgent(true);
+      setErrorMessage(null);
+      setStatusMessage(
+        t("workspace.status.executingRecommendedAgent", {
+          name: recommendation.agent.name
+        })
+      );
+
+      const execution = await createAgentExecution({
+        tenant_id: bootstrap.tenant.id,
+        agent_definition_id: recommendation.agent.id,
+        execution_input: buildRecommendationExecutionInput(recommendation),
+        trigger_source: "workspace"
+      });
+
+      applyExecutionResultToWorkspace(recommendation, execution);
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.recommendedAgentExecutionFailed")));
+      setStatusMessage(t("workspace.status.recommendedAgentExecutionFailed"));
+    } finally {
+      setIsActivatingRecommendedAgent(false);
+    }
   }
 
   async function runDocumentAction(options: {
@@ -4206,14 +5085,12 @@ export default function WorkspaceConsolePage({
     try {
       setIsRunningDocumentAction(true);
       setErrorMessage(null);
-      setDocumentActionSummary(null);
       setStatusMessage(options.statusLabel);
 
       let successCount = 0;
       let failureCount = 0;
       const successfulDocumentIds: string[] = [];
       const failedDocumentIds: string[] = [];
-      const failedItems: DocumentActionSummary["failedItems"] = [];
       let lastWorkflowRunId: string | null = null;
       let lastWorkflowStatus: string | null = null;
       let lastErrorMessage: string | null = null;
@@ -4254,11 +5131,6 @@ export default function WorkspaceConsolePage({
                 ? t("workspace.status.documentRestoreFailed")
                 : t("workspace.status.documentReindexFailed")
           );
-          failedItems.push({
-            documentId,
-            documentTitle: getDocumentLabel(documentId, documents, selectedDocumentDetail),
-            message: lastErrorMessage
-          });
         }
       }
 
@@ -4273,38 +5145,6 @@ export default function WorkspaceConsolePage({
       }
 
       setSelectedDocumentIds((currentIds) => currentIds.filter((documentId) => failedDocumentIds.includes(documentId)));
-      setDocumentActionSummary({
-        action: options.action,
-        requestedCount: options.documentIds.length,
-        successCount,
-        failureCount,
-        completedAt: new Date().toISOString(),
-        successfulDocumentIds,
-        lastWorkflowRunId,
-        lastWorkflowStatus,
-        followUpView: resolveDocumentActionFollowUpView({
-          action: options.action,
-          successCount,
-          failureCount,
-          lastWorkflowStatus
-        }),
-        followUpDraftQuestion:
-          options.action === "reindex" && successCount > 0
-            ? buildGroundedValidationDraftQuestion(t, {
-                documentTitle:
-                  successfulDocumentIds.length === 1
-                    ? getDocumentLabel(successfulDocumentIds[0], documents, selectedDocumentDetail)
-                    : null,
-                workflowStatus: lastWorkflowStatus,
-                workflowLabel:
-                  successfulDocumentIds.length === 1
-                    ? getDocumentLabel(successfulDocumentIds[0], documents, selectedDocumentDetail)
-                    : null,
-                workflowId: lastWorkflowRunId
-              })
-            : null,
-        failedItems
-      });
 
       if (failureCount > 0) {
         setErrorMessage(lastErrorMessage ?? t("workspace.status.documentActionFailed"));
@@ -4350,11 +5190,6 @@ export default function WorkspaceConsolePage({
     if (!selectedDocumentId) {
       return;
     }
-
-    const confirmed = window.confirm(t("workspace.confirm.deleteSelectedDocument"));
-    if (!confirmed) {
-      return;
-    }
     await runDocumentAction({
       action: "delete",
       documentIds: [selectedDocumentId],
@@ -4389,15 +5224,6 @@ export default function WorkspaceConsolePage({
 
   async function handleBulkDeleteDocuments() {
     if (selectedDocumentIds.length === 0) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      t("workspace.confirm.deleteSelectedDocuments", {
-        count: String(selectedDocumentIds.length)
-      })
-    );
-    if (!confirmed) {
       return;
     }
 
@@ -4457,7 +5283,8 @@ export default function WorkspaceConsolePage({
           response.workflow_status === "running" ||
           response.workflow_status === "pending" ||
           response.workflow_status === "failed" ||
-          response.workflow_status === "completed"
+          response.workflow_status === "completed" ||
+          response.workflow_status === "cancelled"
           ? response.workflow_status
           : "all"
       );
@@ -4479,115 +5306,105 @@ export default function WorkspaceConsolePage({
     }
   }
 
+  async function handleCancelWorkflowRun() {
+    if (
+      !bootstrap ||
+      !selectedWorkflowRunId ||
+      isCancellingWorkflow ||
+      isRetryingWorkflow ||
+      isSwitchingContext ||
+      isUpdatingContext ||
+      isRunningContextLifecycleAction
+    ) {
+      return;
+    }
+
+    try {
+      setIsCancellingWorkflow(true);
+      setErrorMessage(null);
+      setStatusMessage(t("workspace.status.cancellingWorkflow"));
+
+      const response = await apiRequest<WorkflowRunActionResponse>(
+        `/workflow-runs/${selectedWorkflowRunId}/cancel?tenant_id=${bootstrap.tenant.id}`,
+        {
+          method: "POST"
+        }
+      );
+
+      setWorkspaceView("workflows");
+      setWorkflowQuery("");
+      setWorkflowTypeFilter("all");
+      setWorkflowRetryMode("all");
+      setWorkflowSortOrder("updated-desc");
+      setWorkflowStatusFilter("cancelled");
+      setWorkflowPage(1);
+      setSelectedWorkflowRunId(response.id);
+      await refreshOperations();
+      setStatusMessage(t("workspace.status.workflowCancelFinished"));
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.workflowCancelFailed")));
+      setStatusMessage(t("workspace.status.workflowCancelFailed"));
+    } finally {
+      setIsCancellingWorkflow(false);
+    }
+  }
+
+  async function handleSaveWorkflowOperatorNotes(operatorNotes: string | null) {
+    if (
+      !bootstrap ||
+      !selectedWorkflowRunId ||
+      isSavingWorkflowNotes ||
+      isRetryingWorkflow ||
+      isCancellingWorkflow ||
+      isSwitchingContext ||
+      isUpdatingContext ||
+      isRunningContextLifecycleAction
+    ) {
+      return;
+    }
+
+    try {
+      setIsSavingWorkflowNotes(true);
+      setErrorMessage(null);
+      setStatusMessage(t("workspace.status.savingWorkflowNotes"));
+
+      const response = await apiRequest<WorkflowRunDetail>(
+        `/workflow-runs/${selectedWorkflowRunId}/notes?tenant_id=${bootstrap.tenant.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            operator_notes: operatorNotes,
+          }),
+        }
+      );
+
+      setSelectedWorkflowRunDetail(response);
+      setWorkflowRuns((currentRuns) =>
+        currentRuns.map((workflowRun) =>
+          workflowRun.id === response.id
+            ? {
+                ...workflowRun,
+                workflow_status: response.workflow_status,
+                error_message: response.error_message,
+                operator_notes: response.operator_notes,
+                updated_at: response.updated_at,
+              }
+            : workflowRun
+        )
+      );
+      setStatusMessage(t("workspace.status.workflowNotesSaved"));
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.workflowNotesSaveFailed")));
+      setStatusMessage(t("workspace.status.workflowNotesSaveFailed"));
+    } finally {
+      setIsSavingWorkflowNotes(false);
+    }
+  }
+
   return (
     <ConsoleShell activeHref={activeHref}>
       <PageTitleSync title={workspaceSurfaceCopy.browserTitle} />
-      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-6">
-        <ConsolePageHeader
-          description={workspaceSurfaceCopy.description}
-          eyebrow={workspaceSurfaceCopy.eyebrow}
-          icon={
-            workspaceView === "chat" ? (
-              <MessageSquareText className="h-4 w-4" />
-            ) : workspaceView === "documents" ? (
-              <FileText className="h-4 w-4" />
-            ) : (
-              <Waypoints className="h-4 w-4" />
-            )
-          }
-          title={workspaceSurfaceCopy.title}
-        />
-
-        <ConsoleSurface>
-          <ConsoleSurfaceHeader
-            action={
-              <div className="flex flex-wrap gap-2">
-                {workspaceView === "chat" ? (
-                  <Button onClick={() => void handleCreateConversation()} size="sm" type="button">
-                    {t("workspace.chatView.startConversation")}
-                  </Button>
-                ) : workspaceView === "documents" ? (
-                  <Button onClick={showFailedDocumentsQueue} size="sm" type="button">
-                    {t("workspace.documentsView.needsAttention")}
-                  </Button>
-                ) : (
-                  <Button onClick={focusFailedWorkflowRuns} size="sm" type="button">
-                    {t("workspace.workflowsView.failedRuns")}
-                  </Button>
-                )}
-                <Button className="bg-white" onClick={() => setShowConsoleControls(true)} size="sm" type="button" variant="outline">
-                  {t("workspace.headerBar.contextControls")}
-                </Button>
-              </div>
-            }
-            description={workspaceSurfaceCopy.description}
-            title={workspaceView === "chat" ? t("workspace.routePanel.chat") : workspaceView === "documents" ? t("workspace.routePanel.documents") : t("workspace.routePanel.operations")}
-          />
-          <div className="grid gap-4 p-6 md:grid-cols-3">
-            {workspaceView === "chat" ? (
-              <>
-                <MetricSummaryCard
-                  description={t("workspace.chatView.activeInScope", {
-                    count: String(conversationMetrics.active_conversations)
-                  })}
-                  label={t("workspace.chatView.workspaceConversations")}
-                  value={conversationMetrics.total_conversations}
-                />
-                <MetricSummaryCard
-                  description={t("workspace.chatView.askKnowledgeBaseDescription")}
-                  label={t("workspace.chatView.workspaceMessages")}
-                  value={conversationMetrics.total_messages}
-                />
-                <MetricSummaryCard
-                  description={t("workspace.documentsView.documentsDescription")}
-                  label={t("workspace.chatView.indexedDocuments")}
-                  value={documentTotalCount}
-                />
-              </>
-            ) : workspaceView === "documents" ? (
-              <>
-                <MetricSummaryCard
-                  description={t("workspace.documentsView.documentsDescription")}
-                  label={t("workspace.documentsView.documents")}
-                  value={documentMetrics.total_documents}
-                />
-                <MetricSummaryCard
-                  accentClassName="border-amber-200"
-                  description={t("workspace.documentsView.inProgressDescription")}
-                  label={t("workspace.documentsView.inProgress")}
-                  value={documentMetrics.active_documents}
-                />
-                <MetricSummaryCard
-                  accentClassName="border-rose-200"
-                  description={t("workspace.documentsView.needsAttentionDescription")}
-                  label={t("workspace.documentsView.needsAttention")}
-                  value={documentMetrics.failed_documents}
-                />
-              </>
-            ) : (
-              <>
-                <MetricSummaryCard
-                  description={t("workspace.workflowsView.workflowRunsDescription")}
-                  label={t("workspace.workflowsView.workflowRuns")}
-                  value={workflowMetrics.total_runs}
-                />
-                <MetricSummaryCard
-                  accentClassName="border-amber-200"
-                  description={t("workspace.workflowsView.activeDescription")}
-                  label={t("workspace.workflowsView.active")}
-                  value={workflowMetrics.active_runs}
-                />
-                <MetricSummaryCard
-                  accentClassName="border-rose-200"
-                  description={t("workspace.workflowsView.failedDescription")}
-                  label={t("workspace.workflowsView.failed")}
-                  value={workflowMetrics.failed_runs}
-                />
-              </>
-            )}
-          </div>
-        </ConsoleSurface>
-
+      <ConsolePage className="gap-6">
         <WorkspaceSidebar
           bootstrap={bootstrap}
           canManageAdminResources={canManageAdminResources}
@@ -4624,8 +5441,11 @@ export default function WorkspaceConsolePage({
           }}
           managementPanel={managementPanel}
           onFileSelection={handleFileSelection}
+          onImportWebPage={handleImportWebPage}
           onSwitchWorkspaceContext={switchWorkspaceContext}
           onUploadDocument={handleUploadDocument}
+          onWebImportTitleChange={setWebImportTitle}
+          onWebImportUrlChange={setWebImportUrl}
           retrievalProfiles={retrievalProfiles}
           setManagementPanel={setManagementPanel}
           setShowConsoleControls={setShowConsoleControls}
@@ -4644,6 +5464,8 @@ export default function WorkspaceConsolePage({
             setNewSlug: setNewTenantSlug
           }}
           uploadFile={uploadFile}
+          webImportTitle={webImportTitle}
+          webImportUrl={webImportUrl}
           workspaceForm={{
             editDescription: editWorkspaceDescription,
             editName: editWorkspaceName,
@@ -4666,15 +5488,10 @@ export default function WorkspaceConsolePage({
 
         <section className="flex min-h-[calc(100vh-190px)] flex-col overflow-hidden rounded-[24px] border border-white/80 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/90">
           <WorkspaceHeaderBar
-            activeAgentContext={activeAgentContext}
-            agentConsoleHref={agentConsoleHref}
-            bootstrap={bootstrap}
-            conversationMetrics={conversationMetrics}
             conversationDraftTitle={conversationDraftTitle}
             conversationSearchQuery={conversationSearchQuery}
             conversations={conversations}
             errorMessage={errorMessage}
-            isCurrentSurfaceRecommended={isCurrentSurfaceRecommended}
             isBusy={isWorkspaceBusy}
             isConversationEditing={isConversationEditorOpen}
             isDeletingConversation={isDeletingConversation}
@@ -4689,78 +5506,10 @@ export default function WorkspaceConsolePage({
             onStartNewConversation={handleCreateConversation}
             onSubmitConversationTitle={handleSaveConversationTitle}
             onToggleConsoleControls={() => setShowConsoleControls((currentValue) => !currentValue)}
-            recommendedSurfaceHref={recommendedSurfaceHref}
-            recommendedSurfaceRunRecord={recommendedSurfaceRunRecord}
-            sourceSurfaceHref={sourceSurfaceHref}
-            sourceSurface={sourceSurface}
             selectedConversationId={selectedConversationId}
-            selectedConversationTitle={selectedConversation?.title ?? null}
             showConsoleControls={showConsoleControls}
-            statusMessage={statusMessage}
-            retrievalValidationSummary={retrievalValidationSummary}
             workspaceView={workspaceView}
           />
-
-          {workspaceRuntimeTaskPacket ? (
-            <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
-              <ConsoleRuntimeTaskPacket
-                detail={workspaceRuntimeTaskPacket.detail}
-                objective={workspaceRuntimeTaskPacket.objective}
-                objectiveLabel={t("workspace.runtimeTaskPacket.fields.objective")}
-                primaryActionHref={workspaceRuntimeTaskPacket.primaryActionHref}
-                primaryActionLabel={workspaceRuntimeTaskPacket.primaryActionLabel}
-                primaryActionRunRecord={workspaceRuntimeTaskPacket.primaryActionRunRecord}
-                prompt={workspaceRuntimeTaskPacket.prompt}
-                promptLabel={t("workspace.runtimeTaskPacket.fields.prompt")}
-                secondaryActions={workspaceRuntimeTaskPacket.secondaryActions}
-                statusLabel={workspaceRuntimeTaskPacket.statusLabel}
-                statusTone={workspaceRuntimeTaskPacket.statusTone}
-                summaryItems={workspaceRuntimeTaskPacket.summaryItems}
-                title={workspaceRuntimeTaskPacket.title}
-              />
-            </div>
-          ) : null}
-
-          {workspaceRuntimeRunbook.length > 0 ? (
-            <div className="border-b border-slate-100 px-6 py-5 dark:border-slate-800">
-              <ConsoleSurfaceHeader
-                description={t("workspace.runtimeRunbook.description")}
-                title={t("workspace.runtimeRunbook.title")}
-              />
-              <div className="mt-4 grid gap-4 xl:grid-cols-3">
-                {workspaceRuntimeRunbook.map((item) => (
-                  <ConsoleActionPacketCard
-                    detail={item.detail}
-                    key={item.title}
-                    metricLabel={item.metricLabel}
-                    metricValue={item.metricValue}
-                    primaryActionHref={item.primaryActionHref}
-                    primaryActionLabel={item.primaryActionLabel}
-                    primaryActionRunRecord={item.primaryActionRunRecord}
-                    secondaryActions={item.secondaryActions}
-                    status={item.status}
-                    statusLabel={item.statusLabel}
-                    title={item.title}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {workspaceView !== "workflows" ? (
-            <WorkspaceRetrievalInspectorPanel
-              autoRunMode={retrievalInspectorAutoRunMode}
-              draftQuery={retrievalInspectorDraftQuery}
-              focusToken={retrievalInspectorFocusToken}
-              knowledgeBaseId={bootstrap?.knowledgeBase.id ?? null}
-              onOpenChatWithQuery={handleOpenRetrievalQueryInChat}
-              onOpenDocument={handleOpenDocumentFromWorkflow}
-              onValidationSummaryChange={setRetrievalValidationSummary}
-              suggestions={workspaceRetrievalSuggestions}
-              tenantId={bootstrap?.tenant.id ?? null}
-              workspaceId={bootstrap?.workspace.id ?? null}
-            />
-          ) : null}
 
           {workspaceView === "chat" ? (
             <WorkspaceChatView
@@ -4770,36 +5519,47 @@ export default function WorkspaceConsolePage({
               conversationMetrics={conversationMetrics}
               currentConversationStats={currentConversationStats}
               documents={documents}
-              documentTotalCount={documentTotalCount}
               errorMessage={errorMessage}
               focusedChunkId={focusedDocumentChunkId}
               canManageDocuments={canManageDocuments}
+              canManageWorkflowRuns={canManageWorkflowRuns}
               canSendChatMessages={canSendChatMessages}
               canSubmitMessageFeedback={Boolean(session?.userId)}
               currentUserId={session?.userId ?? null}
+              candidateFollowUpActionsByQuery={candidateFollowUpActionsByQuery}
+              feedbackFollowUpActionsByItemId={feedbackFollowUpActionsByItemId}
+              recentEvaluationFollowUpActionsById={recentEvaluationFollowUpActionsById}
+              knowledgeBaseId={bootstrap?.knowledgeBase.id ?? null}
               handleSendQuestion={handleSendQuestion}
               isBusy={isWorkspaceBusy}
+              isCancellingWorkflow={isCancellingWorkflow}
               isGroundedValidationFlow={handoffIntent === "grounded_validation"}
               isCurrentSurfaceRecommended={Boolean(isCurrentSurfaceRecommended)}
               isLoadingMessages={isLoadingMessages}
+              isSavingWorkflowNotes={isSavingWorkflowNotes}
               isRetryingWorkflow={isRetryingWorkflow}
               isRunningDocumentAction={isRunningDocumentAction}
               isSending={isSending}
-              messageFeedbackSummary={messageFeedbackSummary}
+              activeRetrievalEvaluationId={activeRetrievalEvaluationId}
               messageFeedbackPendingId={messageFeedbackPendingId}
+              messageFeedbackSummary={messageFeedbackSummary}
               messages={messages}
+              activeRetrievalFollowUpQuery={activeRetrievalFollowUpQuery}
               onDeleteDocument={handleDeleteDocument}
+              onCancelWorkflowRun={handleCancelWorkflowRun}
               onOpenFeedbackConversation={handleOpenFeedbackConversation}
               onInspectCitationDocument={handleInspectCitationDocument}
               onOpenDocumentsView={openDocumentsView}
               onOpenCitationDocumentView={handleOpenCitationDocumentView}
-              onRunFeedbackValidationQuery={handleRunFeedbackValidationQuery}
               onPrepareValidationQuery={handlePrepareValidationQuery}
+              onSetRetrievalEvaluationFollowUpStatus={handleSetRetrievalEvaluationFollowUpStatus}
+              onSetRetrievalQueryFollowUpStatus={handleSetRetrievalQueryFollowUpStatus}
               onFocusQueuedWorkflowRuns={focusQueuedWorkflowRuns}
               onFocusRetryWorkflowRuns={focusRetryWorkflowRuns}
               onRefreshWorkspace={handleRefreshWorkspace}
               onReindexDocument={handleReindexDocument}
               onRestoreDocument={handleRestoreDocument}
+              onSaveWorkflowOperatorNotes={handleSaveWorkflowOperatorNotes}
               onSelectDocumentVersion={handleSelectDocumentVersion}
               onRetryWorkflowRun={handleRetryWorkflowRun}
               onSelectDocument={handleSelectDocument}
@@ -4812,44 +5572,47 @@ export default function WorkspaceConsolePage({
               retrievalValidationSummary={retrievalValidationSummary}
               selectedConversation={selectedConversation}
               selectedDocumentDetail={selectedDocumentDetail}
+              selectedDocumentWorkflowRuns={selectedDocumentWorkflowRuns}
               selectedDocumentId={selectedDocumentId}
               selectedWorkflowRunDetail={selectedWorkflowRunDetail}
               selectedWorkflowRunId={selectedWorkflowRunId}
               setQuestion={setQuestion}
+              tenantId={bootstrap?.tenant.id ?? null}
+              retrievalEvaluationSummary={retrievalEvaluationSummary}
               validationQueryPrompt={resolveGroundedValidationDraftQuestion()}
-              workflowRuns={workflowRuns}
+              workflowRuns={selectedDocumentWorkflowRuns}
             />
           ) : workspaceView === "documents" ? (
           <WorkspaceDocumentsView
             activeAgentContext={activeAgentContext}
-            agentConsoleHref={agentConsoleHref ?? buildAgentsHref({ tenantId: bootstrap?.tenant.id ?? null })}
-            documentActionSummary={documentActionSummary}
-            documentMetrics={documentMetrics}
             documentPage={documentPage}
             documentPageCount={documentPageCount}
             documentLifecycleFilter={documentLifecycleFilter}
             documentQuery={documentQuery}
+            documentSourceFilter={documentSourceFilter}
             documentSortOrder={documentSortOrder}
             documentStatusFilter={documentStatusFilter}
             documentTotalCount={documentTotalCount}
             documents={documents}
             focusedChunkId={focusedDocumentChunkId}
-            canManageDocuments={canManageDocuments}
+              canManageDocuments={canManageDocuments}
+              canManageWorkflowRuns={canManageWorkflowRuns}
+              isActivatingRecommendation={isActivatingRecommendedAgent}
+              isCancellingWorkflow={isCancellingWorkflow}
+              isSavingWorkflowNotes={isSavingWorkflowNotes}
             isRetryAvailable={isRetryAvailable}
             isRetryEligibilityLoading={false}
             isRetryingWorkflow={isRetryingWorkflow}
             isRunningDocumentAction={isRunningDocumentAction}
-            isCurrentSurfaceRecommended={Boolean(isCurrentSurfaceRecommended)}
             onBulkDeleteDocuments={handleBulkDeleteDocuments}
             onBulkReindexDocuments={handleBulkReindexDocuments}
             onBulkRestoreDocuments={handleBulkRestoreDocuments}
-            onClearDocumentActionSummary={clearDocumentActionSummary}
-            onClearUploadFollowUpSummary={clearUploadFollowUpSummary}
             onClearDocumentSelection={clearDocumentSelection}
             onDeleteDocument={handleDeleteDocument}
             onDocumentLifecycleFilterChange={setDocumentLifecycleFilter}
             onDocumentPageChange={setDocumentPage}
             onDocumentQueryChange={setDocumentQuery}
+            onDocumentSourceFilterChange={setDocumentSourceFilter}
             onDocumentSortOrderChange={setDocumentSortOrder}
             onDocumentStatusFilterChange={setDocumentStatusFilter}
             onActivateRecommendedAgent={handleActivateRecommendedAgent}
@@ -4857,8 +5620,10 @@ export default function WorkspaceConsolePage({
             onOpenConsoleControls={() => setShowConsoleControls(true)}
             onOpenFailedDocumentsQueue={showFailedDocumentsQueue}
             onOpenWorkflowView={openWorkflowSupervision}
+            onCancelWorkflowRun={handleCancelWorkflowRun}
             onReindexDocument={handleReindexDocument}
             onRestoreDocument={handleRestoreDocument}
+            onSaveWorkflowOperatorNotes={handleSaveWorkflowOperatorNotes}
             onSelectDocumentVersion={handleSelectDocumentVersion}
             onRetryWorkflowRun={handleRetryWorkflowRun}
             onSelectDocument={handleSelectDocument}
@@ -4866,15 +5631,11 @@ export default function WorkspaceConsolePage({
             onShowFailedDocuments={showFailedDocumentsQueue}
             onToggleDocumentSelection={toggleDocumentSelection}
             onToggleSelectAllDocumentsOnPage={toggleSelectAllDocumentsOnPage}
-            isLoadingSelectedDocumentActivity={isLoadingSelectedDocumentActivity}
-            selectedDocumentActivity={selectedDocumentActivity}
             selectedDocumentDetail={selectedDocumentDetail}
             selectedDocumentId={selectedDocumentId}
             selectedDocumentIds={selectedDocumentIds}
             selectedDocumentRecommendedAgents={selectedDocumentRecommendedAgents}
-            uploadFollowUpSummary={uploadFollowUpSummary}
             selectedWorkflowRunDetail={selectedWorkflowRunDetail}
-            selectedWorkflowRunId={selectedWorkflowRunId}
             selectedWorkflowRetryDisabledReason={selectedWorkflowRunDetail?.retry_unavailable_reason ?? null}
             workflowRuns={selectedDocumentWorkflowRuns}
           />
@@ -4882,6 +5643,11 @@ export default function WorkspaceConsolePage({
             <WorkspaceWorkflowsView
               activeAgentContext={activeAgentContext}
               agentConsoleHref={agentConsoleHref ?? buildAgentsHref({ tenantId: bootstrap?.tenant.id ?? null })}
+                handoffIntent={handoffIntent}
+                canManageWorkflowRuns={canManageWorkflowRuns}
+                isActivatingRecommendation={isActivatingRecommendedAgent}
+                isCancellingWorkflow={isCancellingWorkflow}
+              isSavingWorkflowNotes={isSavingWorkflowNotes}
               isRetryAvailable={isRetryAvailable}
               isRetryEligibilityLoading={false}
               isRetryingWorkflow={isRetryingWorkflow}
@@ -4894,7 +5660,9 @@ export default function WorkspaceConsolePage({
               onOpenConsoleControls={() => setShowConsoleControls(true)}
               onFocusQueuedWorkflowRuns={focusQueuedWorkflowRuns}
               onFocusRetryWorkflowRuns={focusRetryWorkflowRuns}
+              onCancelWorkflowRun={handleCancelWorkflowRun}
               onOpenDocumentsView={openDocumentsView}
+              onSaveWorkflowOperatorNotes={handleSaveWorkflowOperatorNotes}
               onSelectDocument={handleOpenDocumentFromWorkflow}
               onRetryWorkflowRun={handleRetryWorkflowRun}
               onSelectWorkflowRun={handleSelectWorkflowRun}
@@ -4926,7 +5694,7 @@ export default function WorkspaceConsolePage({
             />
           )}
         </section>
-      </div>
+      </ConsolePage>
     </ConsoleShell>
   );
 }

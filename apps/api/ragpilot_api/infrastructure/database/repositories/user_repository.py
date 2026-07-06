@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -54,12 +54,21 @@ class UserRepository:
         statement = select(func.count()).select_from(User).where(User.deleted_at.is_(None))
         return int(await self.session.scalar(statement) or 0)
 
-    async def create_user(self, *, email: str, display_name: str, is_active: bool, role: str) -> User:
+    async def create_user(
+        self,
+        *,
+        email: str,
+        display_name: str,
+        is_active: bool,
+        role: str,
+        password_hash: str | None = None,
+    ) -> User:
         user = User(
             email=email.strip().lower(),
             display_name=display_name.strip(),
             is_active=is_active,
             role=role,
+            password_hash=password_hash,
         )
         self.session.add(user)
 
@@ -176,6 +185,7 @@ class UserRepository:
         display_name: str,
         is_active: bool,
         role: str | None = None,
+        password_hash: str | None = None,
     ) -> User | None:
         user = await self.get_user(user_id=user_id)
         if user is None:
@@ -186,6 +196,8 @@ class UserRepository:
         user.is_active = is_active
         if role is not None:
             user.role = role
+        if password_hash is not None:
+            user.password_hash = password_hash
 
         try:
             await self.session.commit()
@@ -193,6 +205,16 @@ class UserRepository:
             await self.session.rollback()
             raise ResourceConflictError("User email already exists.") from error
 
+        await self.session.refresh(user)
+        return user
+
+    async def set_user_password(self, *, user_id: UUID, password_hash: str) -> User | None:
+        user = await self.get_user(user_id=user_id)
+        if user is None:
+            return None
+
+        user.password_hash = password_hash
+        await self.session.commit()
         await self.session.refresh(user)
         return user
 
@@ -344,6 +366,8 @@ class UserRepository:
         tenant_id: UUID | None = None,
         user_id: UUID | None = None,
         event_type: str | None = None,
+        created_after: datetime | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[UserAccessEventRecord]:
         actor = aliased(User)
@@ -361,9 +385,63 @@ class UserRepository:
             statement = statement.where(UserAccessEvent.user_id == user_id)
         if event_type is not None:
             statement = statement.where(UserAccessEvent.event_type == event_type)
+        if created_after is not None:
+            statement = statement.where(UserAccessEvent.created_at >= created_after)
+        if query and query.strip():
+            pattern = f"%{query.strip()}%"
+            statement = statement.where(
+                or_(
+                    User.display_name.ilike(pattern),
+                    User.email.ilike(pattern),
+                    actor.display_name.ilike(pattern),
+                    Tenant.name.ilike(pattern),
+                    UserAccessEvent.event_type.ilike(pattern),
+                    cast(UserAccessEvent.detail_json, String).ilike(pattern),
+                )
+            )
 
         rows = await self.session.execute(statement)
         return [
             UserAccessEventRecord(event=event, user=user, actor=event_actor, tenant=tenant)
             for event, user, event_actor, tenant in rows.all()
         ]
+
+    async def count_user_access_events(
+        self,
+        *,
+        tenant_id: UUID | None = None,
+        user_ids: list[UUID] | None = None,
+        event_types: list[str] | None = None,
+    ) -> int:
+        statement = select(func.count()).select_from(UserAccessEvent)
+        if tenant_id is not None:
+            statement = statement.where(UserAccessEvent.tenant_id == tenant_id)
+        if user_ids is not None:
+            if len(user_ids) == 0:
+                return 0
+            statement = statement.where(UserAccessEvent.user_id.in_(user_ids))
+        if event_types is not None:
+            if len(event_types) == 0:
+                return 0
+            statement = statement.where(UserAccessEvent.event_type.in_(event_types))
+
+        return int(await self.session.scalar(statement) or 0)
+
+    async def count_user_access_events_grouped(
+        self,
+        *,
+        tenant_id: UUID | None = None,
+        user_ids: list[UUID] | None = None,
+    ) -> dict[str, int]:
+        if user_ids is not None and len(user_ids) == 0:
+            return {}
+
+        statement = select(UserAccessEvent.event_type, func.count()).select_from(UserAccessEvent)
+        if tenant_id is not None:
+            statement = statement.where(UserAccessEvent.tenant_id == tenant_id)
+        if user_ids is not None:
+            statement = statement.where(UserAccessEvent.user_id.in_(user_ids))
+
+        statement = statement.group_by(UserAccessEvent.event_type)
+        rows = await self.session.execute(statement)
+        return {event_type: int(event_count) for event_type, event_count in rows.all()}

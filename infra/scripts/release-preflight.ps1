@@ -14,14 +14,13 @@ function Assert-PathExists {
   }
 }
 
-Write-Host "Running RagPilot release preflight..." -ForegroundColor Cyan
+Write-Host "Running RAGPilot release preflight..." -ForegroundColor Cyan
 
 $requiredFiles = @(
   @{ Path = "README.md"; Description = "README" },
+  @{ Path = "CHANGELOG.md"; Description = "changelog" },
   @{ Path = "CONTRIBUTING.md"; Description = "contribution guide" },
   @{ Path = "SECURITY.md"; Description = "security policy" },
-  @{ Path = "docs/planning/phase-5-release-checklist.md"; Description = "Phase 5 checklist" },
-  @{ Path = "docs/runbooks/first-public-release.md"; Description = "first public release runbook" },
   @{ Path = ".github/workflows/ci.yml"; Description = "CI workflow" }
 )
 
@@ -54,30 +53,49 @@ Write-Host "Git baseline commit present: $hasCommit"
 Write-Host "Git remotes: $([string]::Join(', ', $remoteNames))"
 
 Write-Host ""
-Write-Host "1/4 Building web..." -ForegroundColor Cyan
-& npm run web:build
+Write-Host "1/7 Auditing public documentation..." -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-docs-audit.ps1"
+if ($LASTEXITCODE -ne 0) {
+  throw "Public documentation audit failed."
+}
+
+Write-Host ""
+Write-Host "2/7 Auditing public markdown links..." -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-links-audit.ps1"
+if ($LASTEXITCODE -ne 0) {
+  throw "Public markdown link audit failed."
+}
+
+Write-Host ""
+Write-Host "3/7 Building web..." -ForegroundColor Cyan
+& npm run web:check
 if ($LASTEXITCODE -ne 0) {
   throw "Web build failed."
 }
 
 Write-Host ""
-Write-Host "2/4 Running API tests..." -ForegroundColor Cyan
-$pythonPath = "apps/api/.venv/Scripts/python.exe"
-Assert-PathExists -Path $pythonPath -Description "API virtualenv Python"
-& $pythonPath -m pytest apps/api/tests
+Write-Host "4/7 Running API tests..." -ForegroundColor Cyan
+& npm run api:test
 if ($LASTEXITCODE -ne 0) {
   throw "API tests failed."
 }
 
 Write-Host ""
-Write-Host "3/4 Auditing public candidate files..." -ForegroundColor Cyan
+Write-Host "5/7 Auditing public candidate files..." -ForegroundColor Cyan
 & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/release-candidate-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Release candidate audit failed."
 }
 
 Write-Host ""
-Write-Host "4/4 Running secret scan..." -ForegroundColor Cyan
+Write-Host "6/7 Auditing production delivery assets..." -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/production-delivery-audit.ps1"
+if ($LASTEXITCODE -ne 0) {
+  throw "Production delivery audit failed."
+}
+
+Write-Host ""
+Write-Host "7/7 Running secret scan..." -ForegroundColor Cyan
 & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/secret-scan.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Secret scan failed."

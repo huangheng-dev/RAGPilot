@@ -10,6 +10,7 @@ type WorkspaceRecommendedAgentsPanelProps = {
   description: string;
   recommendations: WorkspaceAgentRecommendation[];
   title: string;
+  isActivatingRecommendation?: boolean;
   onActivateRecommendation: (recommendation: WorkspaceAgentRecommendation) => void | Promise<void>;
   getActionLabel: (targetView: "chat" | "documents" | "workflows") => string;
 };
@@ -18,6 +19,7 @@ export function WorkspaceRecommendedAgentsPanel({
   description,
   recommendations,
   title,
+  isActivatingRecommendation = false,
   onActivateRecommendation,
   getActionLabel
 }: WorkspaceRecommendedAgentsPanelProps) {
@@ -70,6 +72,7 @@ export function WorkspaceRecommendedAgentsPanel({
               </div>
               <Button
                 className="shrink-0 bg-white"
+                disabled={isActivatingRecommendation}
                 onClick={() => void onActivateRecommendation(recommendation)}
                 size="sm"
                 type="button"

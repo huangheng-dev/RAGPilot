@@ -4,7 +4,7 @@ Describe the change in one short paragraph.
 
 ## Main Product Chain Impact
 
-Explain where this change lands in RagPilot:
+Explain where this change lands in RAGPilot:
 
 - Identity
 - Scope
@@ -20,6 +20,8 @@ Explain where this change lands in RagPilot:
 
 List the checks you ran.
 
+- [ ] release docs audit if public repository files changed
+- [ ] release links audit if root markdown links changed
 - [ ] web build
 - [ ] API tests
 - [ ] manual UI verification if needed
@@ -27,13 +29,13 @@ List the checks you ran.
 
 ## Documentation
 
-Call out any updated durable docs:
+Call out any updated public-facing documentation:
 
 - [ ] `README.md`
-- [ ] `docs/product/project-snapshot.md`
-- [ ] `docs/planning/progress-flow.md`
-- [ ] `docs/planning/roadmap.md`
-- [ ] other relevant docs
+- [ ] `CHANGELOG.md`
+- [ ] `CONTRIBUTING.md`
+- [ ] `SECURITY.md`
+- [ ] other relevant root-level public docs
 
 ## Notes
 

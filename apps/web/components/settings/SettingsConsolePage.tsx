@@ -1,75 +1,81 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import {
-  Clock3,
-  Github,
-  LayoutDashboard,
-  MessageSquareText,
-  Moon,
-  RefreshCw,
-  Settings,
-  ShieldCheck,
-  SunMedium,
-  UserCircle2
-} from "lucide-react";
+import { LockKeyhole, RefreshCw, UserCircle2 } from "lucide-react";
 
-import { ConsoleOutlineBadge, ConsolePageHeader, ConsoleSurface, ConsoleSurfaceHeader } from "@/components/console/ConsolePrimitives";
+import {
+  ConsoleMetricCard,
+  ConsoleMetricGrid,
+  ConsoleOutlineBadge,
+  ConsolePage,
+  ConsoleSurface,
+  ConsoleSurfaceHeader,
+} from "@/components/console/ConsolePrimitives";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
-import { PlatformGovernanceSection } from "@/components/settings/PlatformGovernanceSection";
+import {
+  DialogFormActions,
+  DialogFormField,
+  DialogFormLayout,
+  FormDialog
+} from "@/components/ui/form-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  listCurrentUserAccessEvents,
-  revokeCurrentDirectorySession,
-  type DirectoryAccessEvent,
-  updateDirectoryUser
+  changeCurrentUserPassword,
+  getDirectoryAuthMode,
+  getCurrentUserAccessSummary,
+  listCurrentUserSessions,
+  revokeCurrentUserSession,
+  type DirectoryActiveSession,
+  type DirectoryCurrentAccessSummary,
+  updateDirectoryUser,
 } from "@/lib/auth-directory";
-import { getMembershipAccessState, hasDirectoryCapability } from "@/lib/auth/access";
+import { hasDirectoryCapability } from "@/lib/auth/access";
 import { useAuth } from "@/lib/auth/provider";
 import { useI18n } from "@/lib/i18n/provider";
-import { usePreferences } from "@/lib/preferences/provider";
-import { useRuntimeHealth } from "@/lib/runtime-health";
+import { useNotifications } from "@/lib/notifications/provider";
 
-const repositoryUrl = process.env.NEXT_PUBLIC_GIT_REPOSITORY_URL?.trim() || null;
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://127.0.0.1:18000/api/v1";
-
-function buildEventBadgeClassName(eventType: DirectoryAccessEvent["event_type"]) {
-  if (eventType === "sign_in_succeeded" || eventType === "invitation_activated" || eventType === "membership_active") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+function normalizeAccessSummary(
+  summary: DirectoryCurrentAccessSummary | null | undefined
+): DirectoryCurrentAccessSummary | null {
+  if (!summary) {
+    return null;
   }
 
-  if (eventType === "invitation_revoked" || eventType === "membership_suspended" || eventType === "membership_deleted") {
-    return "border-rose-200 bg-rose-50 text-rose-700";
-  }
-
-  return "border-amber-200 bg-amber-50 text-amber-700";
+  return {
+    ...summary,
+    review_items: Array.isArray(summary.review_items) ? summary.review_items : [],
+  };
 }
 
-function buildRuntimeReadinessClassName(isReady: boolean) {
-  return isReady
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-    : "border-amber-200 bg-amber-50 text-amber-800";
+function normalizeSessions(value: DirectoryActiveSession[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
 }
 
 export default function SettingsConsolePage() {
-  const { session, signIn, signOut, refreshSession } = useAuth();
-  const { language, setLanguage, t } = useI18n();
-  const { themeMode, setThemeMode } = usePreferences();
+  const { session, signOut, refreshSession } = useAuth();
+  const { language, t } = useI18n();
+  const { error: notifyError, success: notifySuccess } = useNotifications();
+
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [accessEvents, setAccessEvents] = useState<DirectoryAccessEvent[]>([]);
-  const [isLoadingAccessEvents, setIsLoadingAccessEvents] = useState(false);
-  const [accessEventsErrorMessage, setAccessEventsErrorMessage] = useState<string | null>(null);
+  const [currentAccessSummary, setCurrentAccessSummary] = useState<DirectoryCurrentAccessSummary | null>(null);
+  const [activeSessions, setActiveSessions] = useState<DirectoryActiveSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [activeSessionsErrorMessage, setActiveSessionsErrorMessage] = useState<string | null>(null);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
-  const { runtimeHealth, runtimeHealthErrorMessage } = useRuntimeHealth();
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [supportsPasswordInput, setSupportsPasswordInput] = useState(false);
 
   useEffect(() => {
     setDisplayName(session?.displayName ?? "");
@@ -78,32 +84,70 @@ export default function SettingsConsolePage() {
     setSaveErrorMessage(null);
   }, [session]);
 
-  const loadCurrentUserAccessEvents = useCallback(async () => {
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAuthMode() {
+      try {
+        const authMode = await getDirectoryAuthMode();
+        if (isMounted) {
+          setSupportsPasswordInput(Boolean(authMode?.supports_password_input));
+        }
+      } catch {
+        if (isMounted) {
+          setSupportsPasswordInput(false);
+        }
+      }
+    }
+
+    void loadAuthMode();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const loadCurrentUserAccessSummary = useCallback(async () => {
     if (!session?.userId) {
-      setAccessEvents([]);
-      setAccessEventsErrorMessage(null);
-      setIsLoadingAccessEvents(false);
+      setCurrentAccessSummary(null);
       return;
     }
 
     try {
-      setIsLoadingAccessEvents(true);
-      setAccessEventsErrorMessage(null);
-      const events = await listCurrentUserAccessEvents(12);
-      setAccessEvents(events);
+      const summary = await getCurrentUserAccessSummary();
+      setCurrentAccessSummary(normalizeAccessSummary(summary));
+    } catch {
+      setCurrentAccessSummary(null);
+    }
+  }, [session?.userId]);
+
+  const loadCurrentUserSessions = useCallback(async () => {
+    if (!session?.userId) {
+      setActiveSessions([]);
+      setActiveSessionsErrorMessage(null);
+      setIsLoadingSessions(false);
+      return;
+    }
+
+    try {
+      setIsLoadingSessions(true);
+      setActiveSessionsErrorMessage(null);
+      const sessions = await listCurrentUserSessions();
+      setActiveSessions(normalizeSessions(sessions));
     } catch (error) {
-      setAccessEventsErrorMessage(error instanceof Error ? error.message : t("settings.status.accessEventsFailed"));
+      setActiveSessions([]);
+      setActiveSessionsErrorMessage(error instanceof Error ? error.message : t("settings.status.activeSessionsFailed"));
     } finally {
-      setIsLoadingAccessEvents(false);
+      setIsLoadingSessions(false);
     }
   }, [session?.userId, t]);
 
   useEffect(() => {
-    void loadCurrentUserAccessEvents();
-  }, [loadCurrentUserAccessEvents]);
+    void loadCurrentUserAccessSummary();
+    void loadCurrentUserSessions();
+  }, [loadCurrentUserAccessSummary, loadCurrentUserSessions]);
 
   const hasAdminAccess = hasDirectoryCapability(session, "access_admin_console");
-  const canManageGovernance = hasDirectoryCapability(session, "manage_runtime_governance");
   const roleLabel =
     session?.role === "super_admin"
       ? t("auth.roles.superAdmin")
@@ -111,88 +155,27 @@ export default function SettingsConsolePage() {
         ? t("auth.roles.reviewer")
         : t("auth.roles.operator");
   const canSaveProfile = displayName.trim().length > 0 && email.trim().length > 0;
-  const isDarkMode = themeMode === "dark";
-  const sessionMemberships = session?.memberships ?? [];
-  const membershipAccessState = getMembershipAccessState(sessionMemberships);
-  const latestAccessEvent = accessEvents[0] ?? null;
-  const loginEvents = useMemo(
-    () => accessEvents.filter((event) => event.event_type === "sign_in_succeeded"),
-    [accessEvents]
-  );
-  const expiredMembershipInvitations = useMemo(
-    () =>
-      sessionMemberships.filter(
-        (membership) =>
-          membership.membership_status === "invited" &&
-          membership.invitation_expires_at &&
-          new Date(membership.invitation_expires_at).getTime() < Date.now()
-      ).length,
-    [sessionMemberships]
-  );
-  const expiringMembershipInvitations = useMemo(
-    () =>
-      sessionMemberships.filter((membership) => {
-        if (membership.membership_status !== "invited" || !membership.invitation_expires_at) {
-          return false;
-        }
+  const canChangePassword =
+    currentPassword.trim().length >= 8 &&
+    newPassword.trim().length >= 8 &&
+    confirmPassword.trim().length >= 8 &&
+    !isChangingPassword;
+  const sessionMemberships = Array.isArray(session?.memberships) ? session.memberships : [];
 
-        const expiresAt = new Date(membership.invitation_expires_at).getTime();
-        const now = Date.now();
-        return expiresAt >= now && expiresAt - now <= 1000 * 60 * 60 * 24 * 3;
-      }).length,
-    [sessionMemberships]
+  const sessionSummary = useMemo(
+    () => ({
+      activeSessions: currentAccessSummary?.active_sessions ?? activeSessions.length,
+      recentFailedSignIns: currentAccessSummary?.recent_failed_sign_in_events ?? 0,
+      activeMemberships: currentAccessSummary?.active_memberships ?? sessionMemberships.length,
+    }),
+    [activeSessions.length, currentAccessSummary, sessionMemberships.length]
   );
 
-  function renderMembershipStatusLabel(status: "active" | "invited" | "suspended") {
-    if (status === "active") {
-      return t("admin.members.activeMembership");
-    }
-
-    if (status === "invited") {
-      return t("admin.members.invitedMembership");
-    }
-
-    return t("admin.members.suspendedMembership");
-  }
-
-  function renderEventTypeLabel(eventType: DirectoryAccessEvent["event_type"]) {
-    if (eventType === "sign_in_succeeded") {
-      return t("settings.eventTypes.signInSucceeded");
-    }
-
-    if (eventType === "invitation_issued") {
-      return t("settings.eventTypes.invitationIssued");
-    }
-
-    if (eventType === "invitation_activated") {
-      return t("settings.eventTypes.invitationActivated");
-    }
-
-    if (eventType === "invitation_revoked") {
-      return t("settings.eventTypes.invitationRevoked");
-    }
-
-    if (eventType === "membership_active") {
-      return t("settings.eventTypes.membershipActive");
-    }
-
-    if (eventType === "membership_suspended") {
-      return t("settings.eventTypes.membershipSuspended");
-    }
-
-    return t("settings.eventTypes.membershipDeleted");
-  }
-
-  function renderLoginModeLabel(value: string) {
-    if (value === "bootstrap") {
-      return t("settings.activity.loginModeBootstrap");
-    }
-
-    if (value === "invitation_activation") {
-      return t("settings.activity.loginModeInvitationActivation");
-    }
-
-    return t("settings.activity.loginModeDirectory");
+  function resetPasswordDialogState() {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setIsChangingPassword(false);
   }
 
   function formatTimestamp(value: string | null) {
@@ -203,43 +186,52 @@ export default function SettingsConsolePage() {
     const timestamp = new Date(value);
     return timestamp.toLocaleString(language === "zh-CN" ? "zh-CN" : "en-US", {
       dateStyle: "medium",
-      timeStyle: "short"
+      timeStyle: "short",
     });
   }
 
+  function formatSessionValue(value: string | null) {
+    if (!value?.trim()) {
+      return t("settings.activity.notAvailable");
+    }
+
+    return value;
+  }
+
+  function renderMembershipStatusLabel(status: "active" | "invited" | "suspended") {
+    if (status === "active") {
+      return t("admin.members.activeMembership");
+    }
+    if (status === "invited") {
+      return t("admin.members.invitedMembership");
+    }
+    return t("admin.members.suspendedMembership");
+  }
+
+  function renderLoginModeLabel(value: string) {
+    if (value === "bootstrap") {
+      return t("settings.activity.loginModeBootstrap");
+    }
+    if (value === "invitation_activation") {
+      return t("settings.activity.loginModeInvitationActivation");
+    }
+    return t("settings.activity.loginModeDirectory");
+  }
+
   async function handleSaveProfile() {
-    if (!canSaveProfile) {
+    if (!canSaveProfile || !session?.userId) {
+      notifyError(t("settings.status.profileSaveUnavailable"));
       return;
     }
 
     try {
       setIsSavingProfile(true);
       setSaveErrorMessage(null);
-      const normalizedDisplayName = displayName.trim();
-      const normalizedEmail = email.trim().toLowerCase();
-
-      if (session?.userId) {
-        const directoryUser = await updateDirectoryUser(session.userId, {
-          display_name: normalizedDisplayName,
-          email: normalizedEmail,
-          is_active: true
-        });
-        signIn({
-          userId: directoryUser.id,
-          displayName: directoryUser.display_name,
-          email: directoryUser.email,
-          role: directoryUser.role,
-          lastSignedInAt: directoryUser.last_signed_in_at,
-          memberships: directoryUser.memberships
-        });
-      } else {
-        signIn({
-          displayName: normalizedDisplayName,
-          email: normalizedEmail,
-          role: "operator"
-        });
-      }
-
+      await updateDirectoryUser(session.userId, {
+        display_name: displayName.trim(),
+        email: email.trim().toLowerCase(),
+      });
+      await refreshSession();
       setSaveState("saved");
     } catch (error) {
       setSaveState("idle");
@@ -254,7 +246,8 @@ export default function SettingsConsolePage() {
       setIsRefreshingSession(true);
       setSaveErrorMessage(null);
       await refreshSession();
-      await loadCurrentUserAccessEvents();
+      await loadCurrentUserAccessSummary();
+      await loadCurrentUserSessions();
     } catch (error) {
       setSaveErrorMessage(error instanceof Error ? error.message : t("settings.status.sessionRefreshFailed"));
     } finally {
@@ -262,51 +255,107 @@ export default function SettingsConsolePage() {
     }
   }
 
-  async function handleSignOut() {
+  async function handleChangePassword() {
+    if (!session?.userId) {
+      notifyError(t("settings.status.passwordChangeUnavailable"));
+      return;
+    }
+
+    if (newPassword.trim() !== confirmPassword.trim()) {
+      notifyError(t("settings.status.passwordConfirmationMismatch"));
+      return;
+    }
+
     try {
-      if (session?.sessionToken) {
-        await revokeCurrentDirectorySession();
+      setIsChangingPassword(true);
+      await changeCurrentUserPassword({
+        current_password: currentPassword.trim(),
+        new_password: newPassword.trim(),
+      });
+      await refreshSession();
+      await loadCurrentUserAccessSummary();
+      await loadCurrentUserSessions();
+      setIsPasswordDialogOpen(false);
+      resetPasswordDialogState();
+      notifySuccess(t("settings.status.passwordChanged"));
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : t("settings.status.passwordChangeFailed"));
+      setIsChangingPassword(false);
+    }
+  }
+
+  async function handleRevokeTrackedSession(targetSession: DirectoryActiveSession) {
+    try {
+      setRevokingSessionId(targetSession.id);
+      setActiveSessionsErrorMessage(null);
+      await revokeCurrentUserSession(
+        targetSession.id,
+        targetSession.is_current
+          ? t("settings.activity.currentSessionRevokeReason")
+          : t("settings.activity.otherSessionRevokeReason")
+      );
+      await loadCurrentUserSessions();
+      await loadCurrentUserAccessSummary();
+      if (targetSession.is_current) {
+        signOut("session_revoked");
       }
-    } catch {
-      // Clear the local session even if the backend token has already expired or been revoked.
+    } catch (error) {
+      setActiveSessionsErrorMessage(error instanceof Error ? error.message : t("settings.status.activeSessionsFailed"));
     } finally {
-      signOut();
+      setRevokingSessionId(null);
     }
   }
 
   return (
     <ConsoleShell activeHref="/settings">
       <PageTitleSync title={t("settings.title")} />
-      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-6">
-        <ConsolePageHeader
-          description={t("settings.header.description")}
-          eyebrow={t("settings.header.eyebrow")}
-          icon={<Settings className="h-4 w-4" />}
-          title={t("settings.header.title")}
-        />
+      <ConsolePage className="gap-5">
+        <ConsoleMetricGrid>
+          <ConsoleMetricCard
+            detail={session?.email ?? t("settings.activity.notAvailable")}
+            label={t("settings.fields.role")}
+            value={roleLabel}
+          />
+          <ConsoleMetricCard
+            detail={t("settings.sessions.title")}
+            label={t("settings.sessions.summary.total")}
+            value={sessionSummary.activeSessions}
+          />
+          <ConsoleMetricCard
+            detail={hasAdminAccess ? t("settings.fields.adminAllowed") : t("settings.fields.adminDenied")}
+            label={t("settings.fields.memberships")}
+            value={sessionSummary.activeMemberships}
+          />
+        </ConsoleMetricGrid>
 
-        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr_0.9fr]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
           <ConsoleSurface>
-            <ConsoleSurfaceHeader
-              description={t("settings.sections.sessionDescription")}
-              title={t("settings.sections.sessionTitle")}
-            />
-            <div className="space-y-4 p-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <ConsoleSurfaceHeader title={t("settings.sections.sessionTitle")} />
+            <div className="space-y-5 p-6">
+              <div className="flex items-center gap-4 rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <UserCircle2 className="h-5 w-5" />
                 </div>
-                <div>
-                  <div className="text-base font-semibold text-slate-950">{session?.displayName ?? "RagPilot Operator"}</div>
-                  <div className="text-sm text-slate-500">{session?.email ?? "operator@ragpilot.local"}</div>
-                  <div className="mt-1 text-xs text-slate-400">
-                    {session?.userId ? t("settings.fields.directoryLinked") : t("settings.fields.directoryUnlinked")}
+                <div className="min-w-0">
+                  <div className="truncate text-base font-semibold text-slate-950">
+                    {session?.displayName ?? t("settings.fields.noActiveSession")}
+                  </div>
+                  <div className="truncate text-sm text-slate-500">
+                    {session?.email ?? t("settings.activity.notAvailable")}
                   </div>
                 </div>
+                <ConsoleOutlineBadge
+                  className={hasAdminAccess ? "border-emerald-200 bg-emerald-50 text-emerald-700" : undefined}
+                >
+                  {hasAdminAccess ? t("settings.fields.adminAllowed") : t("settings.fields.adminDenied")}
+                </ConsoleOutlineBadge>
               </div>
-              <div className="grid gap-4">
+
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.fields.name")}</div>
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                    {t("settings.fields.name")}
+                  </div>
                   <Input
                     className="bg-white"
                     onChange={(event) => {
@@ -317,7 +366,9 @@ export default function SettingsConsolePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.fields.email")}</div>
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                    {t("settings.fields.email")}
+                  </div>
                   <Input
                     className="bg-white"
                     onChange={(event) => {
@@ -328,447 +379,220 @@ export default function SettingsConsolePage() {
                     value={email}
                   />
                 </div>
-                <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.fields.role")}</div>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900">
-                    {roleLabel}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                    {t("settings.posture.recentFailedSignIns")}
                   </div>
-                  <div className="text-sm text-slate-500">{t("settings.fields.roleManaged")}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-slate-900">{t("settings.fields.adminAccess")}</div>
-                      <div className="mt-1 text-sm text-slate-500">{roleLabel}</div>
-                    </div>
-                    <ConsoleOutlineBadge className={hasAdminAccess ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
-                      {hasAdminAccess ? t("settings.fields.adminAllowed") : t("settings.fields.adminDenied")}
-                    </ConsoleOutlineBadge>
+                  <div className="mt-2 text-2xl font-semibold text-slate-950">
+                    {sessionSummary.recentFailedSignIns}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="text-sm font-medium text-slate-900">{t("settings.fields.memberships")}</div>
-                  {sessionMemberships.length > 0 ? (
-                    <div className="mt-3 space-y-3">
-                      {sessionMemberships.map((membership) => (
-                        <div
-                          className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-white px-3 py-3"
-                          key={membership.id}
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-slate-900">{membership.tenant_name}</div>
-                            <div className="mt-1 truncate text-xs text-slate-500">{membership.tenant_slug}</div>
-                          </div>
-                          <Badge className="shrink-0 border-slate-200 bg-slate-50 text-slate-700" variant="outline">
-                            {renderMembershipStatusLabel(membership.membership_status)}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-sm text-slate-500">{t("settings.fields.noMemberships")}</div>
-                  )}
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-medium text-slate-900">{t("settings.fields.membershipAccess")}</div>
-                      <div className="mt-1 text-sm text-slate-500">
-                        {membershipAccessState === "ready"
-                          ? t("settings.fields.membershipAccessReadyDescription")
-                          : membershipAccessState === "blocked"
-                            ? t("settings.fields.membershipAccessBlockedDescription")
-                            : t("settings.fields.membershipAccessBootstrapDescription")}
-                      </div>
-                    </div>
-                    <ConsoleOutlineBadge
-                      className={
-                        membershipAccessState === "ready"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : membershipAccessState === "blocked"
-                            ? "border-rose-200 bg-rose-50 text-rose-700"
-                            : "border-slate-200 bg-slate-50 text-slate-700"
-                      }
-                    >
-                      {membershipAccessState === "ready"
-                        ? t("settings.fields.membershipAccessReady")
-                        : membershipAccessState === "blocked"
-                          ? t("settings.fields.membershipAccessBlocked")
-                          : t("settings.fields.membershipAccessBootstrap")}
-                    </ConsoleOutlineBadge>
+                <div className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                    {t("settings.fields.membershipAccess")}
+                  </div>
+                  <div className="mt-2 text-sm font-medium text-slate-950">
+                    {currentAccessSummary?.membership_access_state === "ready"
+                      ? t("settings.fields.membershipAccessReady")
+                      : currentAccessSummary?.membership_access_state === "blocked"
+                        ? t("settings.fields.membershipAccessBlocked")
+                        : currentAccessSummary?.membership_access_state === "bootstrap"
+                          ? t("settings.fields.membershipAccessBootstrap")
+                          : t("settings.activity.notAvailable")}
                   </div>
                 </div>
               </div>
+
+              {sessionMemberships.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold text-slate-950">{t("settings.fields.memberships")}</div>
+                  <div className="grid gap-3">
+                    {sessionMemberships.map((membership) => (
+                      <div
+                        className="flex items-start justify-between gap-3 rounded-[18px] border border-slate-100 bg-slate-50/80 p-4"
+                        key={membership.id}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-slate-950">{membership.tenant_name}</div>
+                          <div className="mt-1 truncate text-xs text-slate-500">{membership.tenant_slug}</div>
+                        </div>
+                        <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
+                          {renderMembershipStatusLabel(membership.membership_status)}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-3">
                 <Button disabled={!canSaveProfile || isSavingProfile} onClick={() => void handleSaveProfile()} type="button">
                   {isSavingProfile ? t("settings.actions.savingProfile") : t("settings.actions.saveProfile")}
                 </Button>
-                <Button disabled={!session?.userId || isRefreshingSession} onClick={() => void handleRefreshSession()} type="button" variant="outline">
+                <Button
+                  className="bg-white"
+                  disabled={!session?.userId || isRefreshingSession}
+                  onClick={() => void handleRefreshSession()}
+                  type="button"
+                  variant="outline"
+                >
                   <RefreshCw className={isRefreshingSession ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
                   {isRefreshingSession ? t("settings.actions.refreshingSession") : t("settings.actions.refreshSession")}
                 </Button>
-                {saveState === "saved" ? <div className="text-sm text-emerald-600">{t("settings.status.profileSaved")}</div> : null}
-                {saveErrorMessage ? <div className="text-sm text-rose-600">{saveErrorMessage}</div> : null}
+                {supportsPasswordInput ? (
+                  <Button
+                    className="bg-white"
+                    onClick={() => setIsPasswordDialogOpen(true)}
+                    type="button"
+                    variant="outline"
+                  >
+                    <LockKeyhole className="h-4 w-4" />
+                    {t("settings.actions.changePassword")}
+                  </Button>
+                ) : null}
               </div>
+
+              {saveState === "saved" ? <div className="text-sm text-emerald-600">{t("settings.status.profileSaved")}</div> : null}
+              {saveErrorMessage ? <div className="text-sm text-rose-600">{saveErrorMessage}</div> : null}
             </div>
           </ConsoleSurface>
 
           <ConsoleSurface>
             <ConsoleSurfaceHeader
-              description={t("settings.sections.roleDescription")}
-              title={t("settings.sections.roleTitle")}
+              action={
+                <Button
+                  className="bg-white"
+                  disabled={!session?.userId || isLoadingSessions}
+                  onClick={() => void loadCurrentUserSessions()}
+                  type="button"
+                  variant="outline"
+                >
+                  <RefreshCw className={isLoadingSessions ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                  {isLoadingSessions ? t("settings.actions.refreshingSessions") : t("settings.actions.refreshSessions")}
+                </Button>
+              }
+              title={t("settings.sessions.title")}
             />
             <div className="space-y-4 p-6">
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.fields.language")}</div>
-                <Select onValueChange={(value) => setLanguage(value as "en" | "zh-CN")} value={language}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder={t("settings.fields.language")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="en">{t("shell.languages.en")}</SelectItem>
-                    <SelectItem value="zh-CN">{t("shell.languages.zhCN")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="text-sm text-slate-500">{t("settings.fields.languageValue")}</div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.fields.theme")}</div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Button
-                    className="justify-start rounded-xl"
-                    onClick={() => setThemeMode("light")}
-                    type="button"
-                    variant={isDarkMode ? "outline" : "default"}
-                  >
-                    <SunMedium className="h-4 w-4" />
-                    {t("settings.fields.themeLight")}
-                  </Button>
-                  <Button
-                    className="justify-start rounded-xl"
-                    onClick={() => setThemeMode("dark")}
-                    type="button"
-                    variant={isDarkMode ? "default" : "outline"}
-                  >
-                    <Moon className="h-4 w-4" />
-                    {t("settings.fields.themeDark")}
-                  </Button>
+              {activeSessionsErrorMessage ? (
+                <div className="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                  {activeSessionsErrorMessage}
                 </div>
-                <div className="text-sm text-slate-500">{t("settings.fields.themeValue")}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium text-slate-900">{t("settings.fields.pendingRole")}</div>
-                    <div className="mt-1 text-sm text-slate-500">{roleLabel}</div>
-                  </div>
-                  <ConsoleOutlineBadge className={hasAdminAccess ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
-                    {hasAdminAccess ? t("settings.fields.adminAllowed") : t("settings.fields.adminDenied")}
-                  </ConsoleOutlineBadge>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild className="rounded-xl" variant="outline">
-                  <Link href="/login">{t("shell.userMenu.signIn")}</Link>
-                </Button>
-                <Button className="rounded-xl" onClick={() => void handleSignOut()} type="button" variant="outline">
-                  {t("settings.actions.signOut")}
-                </Button>
-              </div>
-            </div>
-          </ConsoleSurface>
+              ) : null}
 
-          <ConsoleSurface>
-            <ConsoleSurfaceHeader
-              description={t("settings.sections.platformDescription")}
-              title={t("settings.sections.platformTitle")}
-            />
-            <div className="flex flex-col gap-3 p-6">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-sm font-medium text-slate-900">{t("settings.fields.apiBaseUrl")}</div>
-                <div className="mt-1 break-all text-sm text-slate-500">{apiBaseUrl}</div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                    {t("settings.fields.retrievalEngine")}
-                  </div>
-                  <div className="mt-2 text-sm font-semibold text-slate-950">
-                    {runtimeHealth?.retrieval_engine ?? t("settings.fields.runtimeUnavailable")}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">{t("settings.fields.retrievalEngineHint")}</div>
+              {activeSessions.length === 0 && !isLoadingSessions ? (
+                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
+                  {t("settings.sessions.empty")}
                 </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                    {t("settings.fields.agentRuntimeEngine")}
+              ) : (
+                activeSessions.map((trackedSession) => (
+                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-4" key={trackedSession.id}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            className={
+                              trackedSession.is_current
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 bg-white text-slate-700"
+                            }
+                            variant="outline"
+                          >
+                            {trackedSession.is_current ? t("settings.sessions.current") : t("settings.sessions.other")}
+                          </Badge>
+                          <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
+                            {renderLoginModeLabel(trackedSession.authentication_mode)}
+                          </Badge>
+                        </div>
+                        <div className="grid gap-1 text-sm text-slate-600">
+                          <div>{t("settings.sessions.startedAt")}: {formatTimestamp(trackedSession.created_at)}</div>
+                          <div>{t("settings.sessions.expiresAt")}: {formatTimestamp(trackedSession.expires_at)}</div>
+                          <div>{t("settings.sessions.deviceLabel")}: {formatSessionValue(trackedSession.device_label)}</div>
+                          <div>{t("settings.sessions.ipAddress")}: {formatSessionValue(trackedSession.ip_address)}</div>
+                        </div>
+                      </div>
+                      <Button
+                        className="bg-white"
+                        disabled={trackedSession.is_current || revokingSessionId === trackedSession.id}
+                        onClick={() => void handleRevokeTrackedSession(trackedSession)}
+                        type="button"
+                        variant="outline"
+                      >
+                        {revokingSessionId === trackedSession.id
+                          ? t("settings.actions.revokingSession")
+                          : t("settings.actions.revokeSession")}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="mt-2 text-sm font-semibold text-slate-950">
-                    {runtimeHealth?.agent_runtime_engine ?? t("settings.fields.runtimeUnavailable")}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">{t("settings.fields.agentRuntimeEngineHint")}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                    {t("settings.fields.chatProvider")}
-                  </div>
-                  <div className="mt-2 text-sm font-semibold text-slate-950">
-                    {runtimeHealth?.chat_model_provider ?? t("settings.fields.runtimeUnavailable")}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">{t("settings.fields.chatProviderHint")}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                    {t("settings.fields.chatModel")}
-                  </div>
-                  <div className="mt-2 break-all text-sm font-semibold text-slate-950">
-                    {runtimeHealth?.chat_model_name ?? t("settings.fields.runtimeUnavailable")}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">{t("settings.fields.chatModelHint")}</div>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium text-slate-900">{t("settings.fields.optionalRuntimes")}</div>
-                    <div className="mt-1 text-sm text-slate-500">{t("settings.fields.optionalRuntimesHint")}</div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge
-                      className={buildRuntimeReadinessClassName(Boolean(runtimeHealth?.llamaindex_pilot_ready))}
-                      variant="outline"
-                    >
-                      {`LlamaIndex · ${
-                        runtimeHealth?.llamaindex_pilot_ready
-                          ? t("settings.fields.runtimeReady")
-                          : t("settings.fields.runtimePending")
-                      }`}
-                    </Badge>
-                    <Badge
-                      className={buildRuntimeReadinessClassName(Boolean(runtimeHealth?.langgraph_pilot_ready))}
-                      variant="outline"
-                    >
-                      {`LangGraph · ${
-                        runtimeHealth?.langgraph_pilot_ready
-                          ? t("settings.fields.runtimeReady")
-                          : t("settings.fields.runtimePending")
-                      }`}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-              {runtimeHealthErrorMessage ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-                  {runtimeHealthErrorMessage}
-                </div>
-              ) : null}
-              <Button asChild className="justify-start rounded-xl" variant="outline">
-                <Link href="/">
-                  <LayoutDashboard className="h-4 w-4" />
-                  {t("settings.actions.openHome")}
-                </Link>
-              </Button>
-              <Button asChild className="justify-start rounded-xl" variant="outline">
-                <Link href="/chat">
-                  <MessageSquareText className="h-4 w-4" />
-                  {t("settings.actions.openChat")}
-                </Link>
-              </Button>
-              {hasAdminAccess ? (
-                <Button asChild className="justify-start rounded-xl" variant="outline">
-                  <Link href="/admin">
-                    <ShieldCheck className="h-4 w-4" />
-                    {t("settings.actions.openAdmin")}
-                  </Link>
-                </Button>
-              ) : null}
-              {repositoryUrl ? (
-                <Button asChild className="justify-start rounded-xl" variant="outline">
-                  <a href={repositoryUrl} rel="noreferrer" target="_blank">
-                    <Github className="h-4 w-4" />
-                    {t("settings.actions.openRepository")}
-                  </a>
-                </Button>
-              ) : null}
+                ))
+              )}
             </div>
           </ConsoleSurface>
         </div>
+      </ConsolePage>
 
-        <ConsoleSurface>
-          <ConsoleSurfaceHeader
-            description={t("settings.sections.accessDescription")}
-            title={t("settings.sections.accessTitle")}
-          />
-          <div className="space-y-6 p-6">
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.activity.latestEvent")}</div>
-                <div className="mt-3 text-sm font-semibold text-slate-950">
-                  {latestAccessEvent ? renderEventTypeLabel(latestAccessEvent.event_type) : t("settings.activity.empty")}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">
-                  {latestAccessEvent ? formatTimestamp(latestAccessEvent.created_at) : t("settings.activity.scopedToCurrentUser")}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.activity.lastSignIn")}</div>
-                <div className="mt-3 text-sm font-semibold text-slate-950">
-                  {session?.lastSignedInAt ? formatTimestamp(session.lastSignedInAt) : t("settings.activity.notAvailable")}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">
-                  {loginEvents.length > 0
-                    ? t("settings.activity.loadedLoginEvents", { count: loginEvents.length })
-                    : t("settings.activity.noLoginEvents")}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.activity.directoryState")}</div>
-                <div className="mt-3 text-sm font-semibold text-slate-950">
-                  {session?.userId ? t("settings.activity.directoryUser") : t("settings.activity.localSession")}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">
-                  {session?.userId ? t("settings.activity.scopedToCurrentUser") : t("settings.activity.localOnly")}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-4">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.posture.activeMemberships")}</div>
-                <div className="mt-3 text-2xl font-semibold text-slate-950">
-                  {sessionMemberships.filter((membership) => membership.membership_status === "active").length}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{t("settings.posture.activeMembershipsHint")}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.posture.invitedMemberships")}</div>
-                <div className="mt-3 text-2xl font-semibold text-slate-950">
-                  {sessionMemberships.filter((membership) => membership.membership_status === "invited").length}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{t("settings.posture.invitedMembershipsHint")}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.posture.expiringInvitations")}</div>
-                <div className="mt-3 text-2xl font-semibold text-slate-950">
-                  {expiringMembershipInvitations + expiredMembershipInvitations}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{t("settings.posture.expiringInvitationsHint")}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-4">
-                <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{t("settings.posture.sensitiveEvents")}</div>
-                <div className="mt-3 text-2xl font-semibold text-slate-950">
-                  {accessEvents.filter((event) =>
-                    event.event_type === "invitation_revoked" ||
-                    event.event_type === "membership_suspended" ||
-                    event.event_type === "membership_deleted"
-                  ).length}
-                </div>
-                <div className="mt-2 text-sm text-slate-500">{t("settings.posture.sensitiveEventsHint")}</div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-slate-950">{t("settings.activity.eventFeed")}</div>
-                <div className="mt-1 text-sm text-slate-500">{t("settings.activity.scopedToCurrentUser")}</div>
-              </div>
-              <Button
-                className="rounded-xl"
-                disabled={!session?.userId || isLoadingAccessEvents}
-                onClick={() => void loadCurrentUserAccessEvents()}
-                type="button"
-                variant="outline"
-              >
-                <RefreshCw className={isLoadingAccessEvents ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-                {isLoadingAccessEvents ? t("settings.actions.refreshingActivity") : t("settings.actions.refreshActivity")}
-              </Button>
-            </div>
-
-            {!session?.userId ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
-                {t("settings.activity.localOnly")}
-              </div>
-            ) : accessEventsErrorMessage ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
-                {accessEventsErrorMessage}
-              </div>
-            ) : accessEvents.length === 0 && !isLoadingAccessEvents ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
-                {t("settings.activity.empty")}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {accessEvents.map((event) => {
-                  const membershipStatus =
-                    typeof event.detail_json.membership_status === "string" ? event.detail_json.membership_status : null;
-                  const reason = typeof event.detail_json.reason === "string" ? event.detail_json.reason : null;
-                  const loginMode = typeof event.detail_json.login_mode === "string" ? event.detail_json.login_mode : null;
-                  const invitationIssueCount =
-                    typeof event.detail_json.invitation_issue_count === "number"
-                      ? event.detail_json.invitation_issue_count
-                      : null;
-
-                  return (
-                    <div
-                      className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm shadow-slate-950/5"
-                      key={event.id}
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className={buildEventBadgeClassName(event.event_type)} variant="outline">
-                              {renderEventTypeLabel(event.event_type)}
-                            </Badge>
-                            <Badge className="border-slate-200 bg-slate-50 text-slate-700" variant="outline">
-                              {event.tenant_name ?? t("settings.activity.noTenant")}
-                            </Badge>
-                          </div>
-                          <div className="grid gap-2 text-sm text-slate-600 md:grid-cols-2">
-                            <div className="flex items-center gap-2">
-                              <Clock3 className="h-4 w-4 text-slate-400" />
-                              <span>{formatTimestamp(event.created_at)}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-slate-900">{t("settings.activity.issuedBy")}</span>
-                              <span className="ml-2">{event.actor_display_name ?? t("settings.activity.noActor")}</span>
-                            </div>
-                            {membershipStatus ? (
-                              <div>
-                                <span className="font-medium text-slate-900">{t("settings.activity.membershipStatus")}</span>
-                                <span className="ml-2">{renderMembershipStatusLabel(membershipStatus as "active" | "invited" | "suspended")}</span>
-                              </div>
-                            ) : null}
-                            {loginMode ? (
-                              <div>
-                                <span className="font-medium text-slate-900">{t("settings.activity.loginMode")}</span>
-                                <span className="ml-2">{renderLoginModeLabel(loginMode)}</span>
-                              </div>
-                            ) : null}
-                            {invitationIssueCount !== null ? (
-                              <div>
-                                <span className="font-medium text-slate-900">{t("settings.activity.invitationIssueCount")}</span>
-                                <span className="ml-2">{invitationIssueCount}</span>
-                              </div>
-                            ) : null}
-                            {reason ? (
-                              <div className="md:col-span-2">
-                                <span className="font-medium text-slate-900">{t("settings.activity.reason")}</span>
-                                <span className="ml-2">{reason}</span>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-xs text-slate-400">{event.user_display_name ?? session?.displayName}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </ConsoleSurface>
-
-        <PlatformGovernanceSection canManage={canManageGovernance} isVisible={hasAdminAccess} />
-      </div>
+      <FormDialog
+        description={t("settings.passwordDialog.description")}
+        footer={
+          <DialogFormActions>
+            <Button
+              className="bg-white"
+              disabled={isChangingPassword}
+              onClick={() => {
+                setIsPasswordDialogOpen(false);
+                resetPasswordDialogState();
+              }}
+              type="button"
+              variant="outline"
+            >
+              {t("settings.passwordDialog.cancel")}
+            </Button>
+            <Button disabled={!canChangePassword} onClick={() => void handleChangePassword()} type="button">
+              {isChangingPassword ? t("settings.passwordDialog.saving") : t("settings.passwordDialog.submit")}
+            </Button>
+          </DialogFormActions>
+        }
+        onClose={() => {
+          setIsPasswordDialogOpen(false);
+          resetPasswordDialogState();
+        }}
+        open={isPasswordDialogOpen}
+        size="md"
+        title={t("settings.passwordDialog.title")}
+      >
+        <DialogFormLayout className="space-y-4">
+          <DialogFormField label={t("settings.passwordDialog.currentPassword")}>
+            <Input
+              className="bg-white"
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              placeholder={t("settings.passwordDialog.currentPasswordPlaceholder")}
+              type="password"
+              value={currentPassword}
+            />
+          </DialogFormField>
+          <DialogFormField label={t("settings.passwordDialog.newPassword")}>
+            <Input
+              className="bg-white"
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder={t("settings.passwordDialog.newPasswordPlaceholder")}
+              type="password"
+              value={newPassword}
+            />
+          </DialogFormField>
+          <DialogFormField label={t("settings.passwordDialog.confirmPassword")}>
+            <Input
+              className="bg-white"
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder={t("settings.passwordDialog.confirmPasswordPlaceholder")}
+              type="password"
+              value={confirmPassword}
+            />
+          </DialogFormField>
+        </DialogFormLayout>
+      </FormDialog>
     </ConsoleShell>
   );
 }

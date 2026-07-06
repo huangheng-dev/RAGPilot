@@ -28,6 +28,10 @@ jobs:
       - name: Build web
         run: npm run web:build
 
+      - name: Audit production delivery assets
+        shell: pwsh
+        run: npm run release:delivery-audit
+
   api:
     name: API tests
     runs-on: ubuntu-latest

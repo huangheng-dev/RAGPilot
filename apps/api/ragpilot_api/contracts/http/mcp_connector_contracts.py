@@ -2,15 +2,18 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 McpConnectorType = Literal["streamable_http", "sse", "managed_reserved"]
 McpConnectorAuthMode = Literal["none", "environment", "managed_reserved"]
 McpConnectorPreviewStatus = Literal["completed", "blocked", "failed"]
+McpConnectorGovernanceActionType = Literal["enable_connector", "disable_connector"]
 
 
 class McpConnectorCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     connector_type: McpConnectorType
@@ -22,6 +25,8 @@ class McpConnectorCreateRequest(BaseModel):
 
 
 class McpConnectorUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     connector_type: McpConnectorType
@@ -44,8 +49,25 @@ class McpConnectorResponse(BaseModel):
     is_enabled: bool
     referenced_tool_count: int = 0
     integration_ready_tool_count: int = 0
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: McpConnectorPreviewStatus | None = None
+    last_preview_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class McpConnectorGovernanceActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_type: McpConnectorGovernanceActionType
+
+
+class McpConnectorGovernanceActionResponse(BaseModel):
+    action_type: McpConnectorGovernanceActionType
+    summary: str
+    mcp_connector: McpConnectorResponse
 
 
 class McpConnectorPreviewResponse(BaseModel):
@@ -82,10 +104,16 @@ class McpConnectorGovernanceSummaryResponse(BaseModel):
     disabled_connectors: int = 0
     referenced_connectors: int = 0
     integration_ready_connectors: int = 0
+    blocked_integration_connectors: int = 0
     runtime_ready_connectors: int = 0
     missing_base_url_connectors: int = 0
     environment_auth_connectors: int = 0
     missing_credential_hint_connectors: int = 0
     managed_reserved_connectors: int = 0
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: McpConnectorPreviewStatus | None = None
+    last_preview_at: datetime | None = None
     type_breakdown: list[McpConnectorTypeGovernanceBreakdownResponse] = Field(default_factory=list)
     auth_breakdown: list[McpConnectorAuthGovernanceBreakdownResponse] = Field(default_factory=list)

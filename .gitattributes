@@ -11,3 +11,8 @@
 
 *.ps1 text eol=crlf
 *.bat text eol=crlf
+
+/.nvmrc text eol=lf
+/.python-version text eol=lf
+/.env.example text eol=lf
+/.env.production.example text eol=lf

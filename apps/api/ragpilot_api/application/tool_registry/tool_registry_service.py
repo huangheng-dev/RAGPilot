@@ -1,6 +1,10 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from ragpilot_api.application.errors import ResourceConflictError
+from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import (
+    build_recent_preview_activity_by_resource_id,
+)
 from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import is_mcp_connector_runtime_ready
 from ragpilot_api.contracts.http.tool_registration_contracts import (
     ToolGovernanceActionResponse,
@@ -15,7 +19,9 @@ from ragpilot_api.contracts.http.tool_registration_contracts import (
 from ragpilot_api.infrastructure.database.models import ToolRegistration
 from ragpilot_api.infrastructure.database.repositories.agent_repository import AgentRepository
 from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository import McpConnectorRepository
+from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_repository import RuntimeGovernanceEventRepository
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
+from ragpilot_api.shared.settings import Settings, get_settings
 
 
 class ToolRegistryService:
@@ -24,10 +30,14 @@ class ToolRegistryService:
         tool_registration_repository: ToolRegistrationRepository,
         agent_repository: AgentRepository,
         mcp_connector_repository: McpConnectorRepository | None = None,
+        runtime_governance_event_repository: RuntimeGovernanceEventRepository | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.tool_registration_repository = tool_registration_repository
         self.agent_repository = agent_repository
         self.mcp_connector_repository = mcp_connector_repository
+        self.runtime_governance_event_repository = runtime_governance_event_repository
+        self.settings = settings or get_settings()
 
     async def create_tool_registration(self, request: ToolRegistrationCreateRequest) -> ToolRegistrationResponse:
         tool_registration = await self.tool_registration_repository.create_tool_registration(
@@ -65,16 +75,27 @@ class ToolRegistryService:
             query=query,
         )
         binding_counts = await self.agent_repository.list_tool_registration_binding_counts()
+        connector_runtime_by_slug = await self._build_mcp_connector_runtime_by_slug()
+        preview_activity_by_tool_id = await self._build_recent_preview_activity_by_tool_id()
         responses = [
             build_tool_registration_response(
                 tool_registration,
                 bound_agent_count=binding_counts.get(str(tool_registration.id), 0),
+                preview_activity=preview_activity_by_tool_id.get(str(tool_registration.id)),
             )
             for tool_registration in tool_registrations
         ]
         if runtime_state is None:
             return responses
-        return [response for response in responses if _matches_tool_runtime_state(response, runtime_state)]
+        return [
+            response
+            for response in responses
+            if _matches_tool_runtime_state(
+                response,
+                runtime_state,
+                connector_runtime_by_slug=connector_runtime_by_slug,
+            )
+        ]
 
     async def update_tool_registration(
         self,
@@ -103,7 +124,12 @@ class ToolRegistryService:
         bound_agent_count = await self.agent_repository.count_agents_using_tool_registration(
             tool_registration_id=tool_registration.id
         )
-        return build_tool_registration_response(tool_registration, bound_agent_count=bound_agent_count)
+        preview_activity_by_tool_id = await self._build_recent_preview_activity_by_tool_id()
+        return build_tool_registration_response(
+            tool_registration,
+            bound_agent_count=bound_agent_count,
+            preview_activity=preview_activity_by_tool_id.get(str(tool_registration.id)),
+        )
 
     async def apply_tool_governance_action(
         self,
@@ -198,6 +224,7 @@ class ToolRegistryService:
     async def get_tool_governance_summary(self) -> ToolGovernanceSummaryResponse:
         tool_registrations = await self.tool_registration_repository.list_tool_registrations()
         binding_counts = await self.agent_repository.list_tool_registration_binding_counts()
+        connector_runtime_by_slug = await self._build_mcp_connector_runtime_by_slug()
 
         transport_breakdown: dict[str, ToolTransportGovernanceBreakdownResponse] = {
             "native": ToolTransportGovernanceBreakdownResponse(transport_type="native"),
@@ -212,6 +239,26 @@ class ToolRegistryService:
             "agents": ToolSurfaceGovernanceBreakdownResponse(surface_area="agents"),
         }
         summary = ToolGovernanceSummaryResponse()
+
+        if self.runtime_governance_event_repository is not None:
+            recent_preview_events = await self.runtime_governance_event_repository.list_runtime_governance_events(
+                resource_type="tool_registration",
+                action_types=["preview_completed", "preview_blocked", "preview_failed"],
+                created_after=datetime.now(timezone.utc).replace(microsecond=0)
+                - timedelta(hours=max(self.settings.tool_preview_review_window_hours, 1)),
+                limit=500,
+            )
+            for event in recent_preview_events:
+                if event.action_type == "preview_completed":
+                    summary.recent_preview_completed_events += 1
+                elif event.action_type == "preview_blocked":
+                    summary.recent_preview_blocked_events += 1
+                else:
+                    summary.recent_preview_failed_events += 1
+                if summary.last_preview_at is None or event.created_at >= summary.last_preview_at:
+                    invocation_status = str(event.detail_json.get("invocation_status") or "").strip().lower()
+                    summary.last_preview_status = invocation_status or None
+                    summary.last_preview_at = event.created_at
 
         for tool_registration in tool_registrations:
             bound_agent_count = binding_counts.get(str(tool_registration.id), 0)
@@ -278,10 +325,42 @@ class ToolRegistryService:
                     connector_reference=getattr(tool_registration, "connector_reference", None),
                 )):
                     summary.mcp_connector_configured_tools += 1
+                    connector_reference = normalize_connector_reference(
+                        transport_type=tool_registration.transport_type,
+                        connector_reference=getattr(tool_registration, "connector_reference", None),
+                    )
+                    if connector_reference and connector_runtime_by_slug.get(connector_reference) is not True:
+                        summary.mcp_connector_unhealthy_tools += 1
 
         summary.transport_breakdown = list(transport_breakdown.values())
         summary.surface_breakdown = list(surface_breakdown.values())
         return summary
+
+    async def _build_mcp_connector_runtime_by_slug(self) -> dict[str, bool]:
+        if self.mcp_connector_repository is None:
+            return {}
+
+        mcp_connectors = await self.mcp_connector_repository.list_mcp_connectors()
+        return {
+            mcp_connector.slug: is_mcp_connector_runtime_ready(mcp_connector)
+            for mcp_connector in mcp_connectors
+        }
+
+    async def _build_recent_preview_activity_by_tool_id(self) -> dict[str, dict[str, object]]:
+        if self.runtime_governance_event_repository is None:
+            return {}
+
+        recent_preview_events = await self.runtime_governance_event_repository.list_runtime_governance_events(
+            resource_type="tool_registration",
+            action_types=["preview_completed", "preview_blocked", "preview_failed"],
+            created_after=datetime.now(timezone.utc).replace(microsecond=0)
+            - timedelta(hours=max(self.settings.tool_preview_review_window_hours, 1)),
+            limit=500,
+        )
+        return build_recent_preview_activity_by_resource_id(
+            recent_preview_events,
+            status_field_name="invocation_status",
+        )
 
     async def ensure_mcp_connector_ready(
         self,
@@ -359,6 +438,8 @@ def normalize_connector_reference(*, transport_type: str, connector_reference: s
 def _matches_tool_runtime_state(
     tool_registration: ToolRegistrationResponse,
     runtime_state: str,
+    *,
+    connector_runtime_by_slug: dict[str, bool] | None = None,
 ) -> bool:
     if runtime_state == "approval_required":
         return tool_registration.requires_admin_approval
@@ -384,6 +465,16 @@ def _matches_tool_runtime_state(
                 connector_reference=tool_registration.connector_reference,
             ))
         )
+    if runtime_state == "mcp_connector_unhealthy":
+        connector_reference = normalize_connector_reference(
+            transport_type=tool_registration.transport_type,
+            connector_reference=tool_registration.connector_reference,
+        )
+        return (
+            tool_registration.transport_type == "mcp_reserved"
+            and bool(connector_reference)
+            and (connector_runtime_by_slug or {}).get(connector_reference) is not True
+        )
     if runtime_state == "runtime_ready":
         return tool_registration.is_enabled and (
             tool_registration.transport_type == "native"
@@ -399,7 +490,9 @@ def build_tool_registration_response(
     tool_registration: ToolRegistration,
     *,
     bound_agent_count: int = 0,
+    preview_activity: dict[str, object] | None = None,
 ) -> ToolRegistrationResponse:
+    preview_activity = preview_activity or {}
     return ToolRegistrationResponse(
         id=tool_registration.id,
         name=tool_registration.name,
@@ -413,6 +506,11 @@ def build_tool_registration_response(
         requires_admin_approval=tool_registration.requires_admin_approval,
         is_enabled=tool_registration.is_enabled,
         bound_agent_count=bound_agent_count,
+        recent_preview_completed_events=int(preview_activity.get("completed", 0)),
+        recent_preview_blocked_events=int(preview_activity.get("blocked", 0)),
+        recent_preview_failed_events=int(preview_activity.get("failed", 0)),
+        last_preview_status=preview_activity.get("last_status"),
+        last_preview_at=preview_activity.get("last_at"),
         created_at=tool_registration.created_at,
         updated_at=tool_registration.updated_at,
     )

@@ -84,7 +84,7 @@ services:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
       args:
-        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-}
+        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-retrieval-llamaindex,agent-langgraph}
     restart: unless-stopped
     environment:
       ENVIRONMENT: ${NODE_ENV:-development}
@@ -103,6 +103,10 @@ services:
       CHAT_MODEL_API_BASE_URL: ${CHAT_MODEL_API_BASE_URL:-}
       CHAT_MODEL_API_KEY: ${CHAT_MODEL_API_KEY:-}
       CHAT_MODEL_REQUEST_TIMEOUT_SECONDS: ${CHAT_MODEL_REQUEST_TIMEOUT_SECONDS:-60}
+      AUTH_PRIMARY_MODE: ${AUTH_PRIMARY_MODE:-directory_local}
+      AUTH_PROVIDER_DISPLAY_NAME: ${AUTH_PROVIDER_DISPLAY_NAME:-Enterprise Identity}
+      AUTH_PROVIDER_SIGN_IN_URL: ${AUTH_PROVIDER_SIGN_IN_URL:-}
+      ALLOW_LEGACY_ACTOR_HEADERS: ${ALLOW_LEGACY_ACTOR_HEADERS:-false}
     depends_on:
       - postgres
       - redis
@@ -135,6 +139,8 @@ services:
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
     depends_on:
       - temporal
+      - postgres
+      - minio
 
   web:
     build:

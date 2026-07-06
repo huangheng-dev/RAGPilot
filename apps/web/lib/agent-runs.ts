@@ -1,5 +1,4 @@
-import { readApiErrorMessage } from "@/lib/api-errors";
-import { buildSessionActorHeaders } from "@/lib/local-session";
+import { authenticatedApiRequest } from "@/lib/authenticated-api";
 import type { UrlObject } from "url";
 
 export type AgentRunTargetSurface = "chat" | "documents" | "operations" | "admin";
@@ -64,30 +63,8 @@ export const EMPTY_AGENT_RUN_METRICS: AgentRunMetricsResponse = {
   latest_launched_at: null
 };
 
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const apiBaseUrl = buildApiBaseUrl();
-
 async function agentRunApiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...buildSessionActorHeaders(init?.headers)
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return (await response.json()) as T;
+  return await authenticatedApiRequest<T>(path, init);
 }
 
 export async function listAgentRuns(

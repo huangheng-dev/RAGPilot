@@ -1,7 +1,6 @@
 "use client";
 
-import { readApiErrorMessage } from "@/lib/api-errors";
-import { buildSessionActorHeaders } from "@/lib/local-session";
+import { authenticatedApiRequest } from "@/lib/authenticated-api";
 
 export type RetrievalInspectorResult = {
   document_chunk_id: string;
@@ -74,6 +73,18 @@ export type RetrievalComparisonResponse = {
 
 export type RetrievalEvaluationMode = "inspect" | "compare";
 export type RetrievalEvaluationValidationStatus = "ready" | "review" | "hold" | "empty" | "failed";
+export type RetrievalEvaluationFollowUpStatus = "pending" | "resolved";
+export type RetrievalEvaluationFollowUpAction = {
+  action_key:
+    | "review_knowledge_base_governance"
+    | "review_retrieval_profile_governance"
+    | "rerun_retrieval_inspection"
+    | "rerun_retrieval_comparison"
+    | "validate_in_chat";
+  action_category: "governance" | "analysis" | "validation";
+  action_label: string;
+  action_reason: string;
+};
 
 export type RetrievalEvaluationRecord = {
   id: string;
@@ -85,6 +96,7 @@ export type RetrievalEvaluationRecord = {
   query_text: string;
   baseline_engine_name: string;
   candidate_engine_name: string | null;
+  retrieval_profile_id: string | null;
   retrieval_profile_name: string | null;
   retrieval_profile_source: string | null;
   result_count: number;
@@ -94,6 +106,15 @@ export type RetrievalEvaluationRecord = {
   top_result_matches: boolean | null;
   recommendation_reason: string | null;
   evaluation_payload_json: Record<string, unknown>;
+  follow_up_status: RetrievalEvaluationFollowUpStatus;
+  resolved_at: string | null;
+  resolved_by_user_id: string | null;
+  source_documents: Array<{
+    document_id: string;
+    document_title: string;
+    hit_count: number;
+  }>;
+  recommended_actions: RetrievalEvaluationFollowUpAction[];
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
@@ -107,16 +128,35 @@ export type RetrievalEvaluationStatusBreakdown = {
   failed: number;
 };
 
+export type RetrievalEvaluationFollowUpBreakdown = {
+  pending: number;
+  resolved: number;
+};
+
 export type RetrievalEvaluationTuningCandidate = {
+  recommended_actions: Array<{
+    action_key:
+      | "review_knowledge_base_governance"
+      | "review_retrieval_profile_governance"
+      | "rerun_retrieval_inspection"
+      | "rerun_retrieval_comparison"
+      | "validate_in_chat";
+    action_category: "governance" | "analysis" | "validation";
+    action_label: string;
+    action_reason: string;
+  }>;
   query_text: string;
   evaluation_count: number;
   latest_evaluation_mode: RetrievalEvaluationMode;
   latest_validation_status: RetrievalEvaluationValidationStatus;
+  follow_up_status: RetrievalEvaluationFollowUpStatus;
   ready_count: number;
   review_count: number;
   hold_count: number;
   empty_count: number;
   failed_count: number;
+  pending_evaluation_count: number;
+  resolved_evaluation_count: number;
   attention_score: number;
   baseline_engine_name: string;
   candidate_engine_name: string | null;
@@ -143,34 +183,32 @@ export type RetrievalEvaluationSummary = {
   knowledge_base_id: string | null;
   total_evaluations: number;
   total_queries: number;
+  intelligence_status: "stable" | "review" | "hold";
+  intelligence_reason: string;
+  primary_query_text: string | null;
+  primary_baseline_engine_name: string | null;
+  primary_candidate_engine_name: string | null;
+  primary_retrieval_profile_name: string | null;
   status_breakdown: RetrievalEvaluationStatusBreakdown;
+  follow_up_breakdown: RetrievalEvaluationFollowUpBreakdown;
+  primary_recommended_actions: RetrievalEvaluationFollowUpAction[];
   candidates: RetrievalEvaluationTuningCandidate[];
+  recent_evaluations: RetrievalEvaluationRecord[];
 };
 
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const apiBaseUrl = buildApiBaseUrl();
+export type RetrievalEvaluationQueryFollowUpUpdate = {
+  tenant_id: string;
+  workspace_id: string;
+  knowledge_base_id: string | null;
+  query_text: string;
+  follow_up_status: RetrievalEvaluationFollowUpStatus;
+  updated_count: number;
+  acted_at: string;
+  acted_by_user_id: string | null;
+};
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...buildSessionActorHeaders(init?.headers)
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return (await response.json()) as T;
+  return await authenticatedApiRequest<T>(path, init);
 }
 
 export async function inspectRetrieval(payload: {
@@ -258,6 +296,10 @@ export async function listRetrievalEvaluations(payload: {
   tenant_id: string;
   workspace_id: string;
   knowledge_base_id?: string | null;
+  evaluation_mode?: RetrievalEvaluationMode | null;
+  validation_status?: RetrievalEvaluationValidationStatus | null;
+  follow_up_status?: RetrievalEvaluationFollowUpStatus | null;
+  query?: string | null;
   limit?: number;
 }) {
   const searchParams = new URLSearchParams({
@@ -268,6 +310,18 @@ export async function listRetrievalEvaluations(payload: {
   if (payload.knowledge_base_id) {
     searchParams.set("knowledge_base_id", payload.knowledge_base_id);
   }
+  if (payload.evaluation_mode) {
+    searchParams.set("evaluation_mode", payload.evaluation_mode);
+  }
+  if (payload.validation_status) {
+    searchParams.set("validation_status", payload.validation_status);
+  }
+  if (payload.follow_up_status) {
+    searchParams.set("follow_up_status", payload.follow_up_status);
+  }
+  if (payload.query?.trim()) {
+    searchParams.set("query", payload.query.trim());
+  }
 
   return await apiRequest<RetrievalEvaluationRecord[]>(`/retrieve/evaluations?${searchParams.toString()}`);
 }
@@ -276,6 +330,10 @@ export async function summarizeRetrievalEvaluations(payload: {
   tenant_id: string;
   workspace_id: string;
   knowledge_base_id?: string | null;
+  evaluation_mode?: RetrievalEvaluationMode | null;
+  validation_status?: RetrievalEvaluationValidationStatus | null;
+  follow_up_status?: RetrievalEvaluationFollowUpStatus | null;
+  query?: string | null;
   limit?: number;
   sample_size?: number;
 }) {
@@ -288,6 +346,49 @@ export async function summarizeRetrievalEvaluations(payload: {
   if (payload.knowledge_base_id) {
     searchParams.set("knowledge_base_id", payload.knowledge_base_id);
   }
+  if (payload.evaluation_mode) {
+    searchParams.set("evaluation_mode", payload.evaluation_mode);
+  }
+  if (payload.validation_status) {
+    searchParams.set("validation_status", payload.validation_status);
+  }
+  if (payload.follow_up_status) {
+    searchParams.set("follow_up_status", payload.follow_up_status);
+  }
+  if (payload.query?.trim()) {
+    searchParams.set("query", payload.query.trim());
+  }
 
   return await apiRequest<RetrievalEvaluationSummary>(`/retrieve/evaluations/summary?${searchParams.toString()}`);
+}
+
+export async function updateRetrievalEvaluationFollowUpStatus(payload: {
+  retrieval_evaluation_id: string;
+  follow_up_status: RetrievalEvaluationFollowUpStatus;
+}) {
+  return await apiRequest<RetrievalEvaluationRecord>(`/retrieve/evaluations/${payload.retrieval_evaluation_id}/follow-up`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      follow_up_status: payload.follow_up_status,
+    })
+  });
+}
+
+export async function updateRetrievalQueryFollowUpStatus(payload: {
+  tenant_id: string;
+  workspace_id: string;
+  knowledge_base_id?: string | null;
+  query_text: string;
+  follow_up_status: RetrievalEvaluationFollowUpStatus;
+}) {
+  return await apiRequest<RetrievalEvaluationQueryFollowUpUpdate>("/retrieve/evaluations/follow-up/query", {
+    method: "PATCH",
+    body: JSON.stringify({
+      tenant_id: payload.tenant_id,
+      workspace_id: payload.workspace_id,
+      knowledge_base_id: payload.knowledge_base_id ?? null,
+      query_text: payload.query_text.trim(),
+      follow_up_status: payload.follow_up_status,
+    })
+  });
 }

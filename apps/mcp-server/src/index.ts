@@ -6,15 +6,14 @@ const plannedTools = [
   "report_generator"
 ];
 
-console.log("RagPilot MCP server scaffold loaded.");
+console.log("RAGPilot MCP server boundary loaded.");
 console.log(
   JSON.stringify(
     {
-      status: "placeholder",
+      status: "reserved_boundary",
       plannedTools
     },
     null,
     2
   )
 );
-

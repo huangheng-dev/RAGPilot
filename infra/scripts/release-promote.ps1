@@ -1,6 +1,7 @@
 param(
   [string]$RemoteUrl = "",
   [string]$RemoteName = "origin",
+  [string]$Branch = "main",
   [string]$Tag = "v0.1.0",
   [switch]$AllowLocalBaselineCommit,
   [switch]$Push,
@@ -18,11 +19,20 @@ if (-not (Test-Path ".git")) {
   throw "The repository is not initialized as Git."
 }
 
-Write-Host "Running RagPilot release promotion helper..." -ForegroundColor Cyan
+Write-Host "Running RAGPilot release promotion helper..." -ForegroundColor Cyan
+Write-Host ""
+
+Write-Host "Running release status check..." -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/release-status.ps1"
+if ($LASTEXITCODE -ne 0) {
+  throw "Release status check failed."
+}
 Write-Host ""
 
 if ($DryRun) {
   Write-Host "Dry run mode is active. No Git remote, push, or tag mutation will be executed." -ForegroundColor Yellow
+  Write-Host "Dry run release branch: $Branch" -ForegroundColor Yellow
+  Write-Host "Dry run release tag: $Tag" -ForegroundColor Yellow
   Write-Host ""
 }
 
@@ -96,13 +106,13 @@ if ($Push) {
   if (-not $DryRun -or $blockers.Count -eq 0) {
     Write-Host "Running first public push..." -ForegroundColor Cyan
     if ($SkipPreflight -and $DryRun) {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -SkipPreflight -DryRun
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -Branch $Branch -SkipPreflight -DryRun
     } elseif ($SkipPreflight) {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -SkipPreflight
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -Branch $Branch -SkipPreflight
     } elseif ($DryRun) {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -DryRun
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -Branch $Branch -DryRun
     } else {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/push-first-public.ps1" -RemoteName $RemoteName -Branch $Branch
     }
     if ($LASTEXITCODE -ne 0) {
       throw "First public push failed."
@@ -130,9 +140,9 @@ if ($CreateTag) {
   if (-not $DryRun -or $blockers.Count -eq 0) {
     Write-Host "Creating first public tag..." -ForegroundColor Cyan
     if ($DryRun) {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -RemoteName $RemoteName -DryRun
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -Branch $Branch -RemoteName $RemoteName -DryRun
     } else {
-      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -RemoteName $RemoteName
+      & powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/create-first-tag.ps1" -Tag $Tag -Branch $Branch -RemoteName $RemoteName
     }
     if ($LASTEXITCODE -ne 0) {
       throw "First public tag failed."

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from temporalio.client import Client
 
 from ragpilot_api.shared.settings import Settings, get_settings
@@ -30,3 +32,19 @@ class TemporalWorkflowClient:
             task_queue=self.settings.temporal_task_queue,
         )
         return temporal_workflow_id
+
+    async def cancel_workflow(
+        self,
+        *,
+        temporal_workflow_id: str,
+        reason: str,
+    ) -> None:
+        client = await Client.connect(
+            self.settings.temporal_address,
+            namespace=self.settings.temporal_namespace,
+        )
+        workflow_handle = client.get_workflow_handle(temporal_workflow_id)
+        await workflow_handle.terminate(
+            reason=reason,
+            rpc_timeout=timedelta(seconds=10),
+        )

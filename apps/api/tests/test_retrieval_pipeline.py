@@ -82,7 +82,7 @@ def test_rerank_retrieval_results_promotes_query_aligned_candidate_within_window
             {
                 "document_chunk_id": "query-aligned",
                 "document_title": "Durable ingestion workflows",
-                "content": "Temporal powers durable ingestion workflows in RagPilot.",
+                "content": "Temporal powers durable ingestion workflows in RAGPilot.",
                 "score": 0.78,
                 "vector_score": 0.7,
                 "lexical_score": 3.0,

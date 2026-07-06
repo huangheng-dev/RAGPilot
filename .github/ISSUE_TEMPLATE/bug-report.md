@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible product, API, or workflow defect in RagPilot
+about: Report a reproducible product, API, or workflow defect in RAGPilot
 title: "[Bug] "
 labels: ["bug"]
 assignees: []

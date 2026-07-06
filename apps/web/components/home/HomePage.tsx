@@ -4,32 +4,40 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Route } from "next";
 import type { ComponentProps } from "react";
-import { ArrowRight, Database, RefreshCw, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { AgentRunButtonLink } from "@/components/agents/AgentRunButtonLink";
-import { ConsoleOutlineBadge, ConsolePageHeader, ConsoleStatusBar, ConsoleSurface, ConsoleSurfaceHeader } from "@/components/console/ConsolePrimitives";
+import {
+  ConsoleEmptyState,
+  ConsolePage,
+  ConsoleSurface,
+  ConsoleToolbar,
+  ConsoleToolbarGroup
+} from "@/components/console/ConsolePrimitives";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { AgentRunRecordInput } from "@/lib/agent-runs";
+import {
+  getAgentExecutionStageLabelKey,
+  listAgentExecutions,
+  readAgentExecutionEvidenceSummary,
+  type AgentExecutionResponse
+} from "@/lib/agent-executions";
+import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
+import { authenticatedApiRequest } from "@/lib/authenticated-api";
 import { useAuth } from "@/lib/auth/provider";
-import { readApiErrorMessage } from "@/lib/api-errors";
-import { buildOperationsHref } from "@/lib/console-route-builders";
+import { buildAgentsHref } from "@/lib/console-route-builders";
 import { useI18n } from "@/lib/i18n/provider";
-import { buildSessionActorHeaders } from "@/lib/local-session";
 import { cn } from "@/lib/utils";
-import { buildGroundedValidationDraftQuestion } from "@/lib/workspace-follow-up";
 import { buildHomeWorkspaceHref } from "@/lib/workspace-handoffs";
-import { formatTimestamp } from "@/lib/workspace-formatters";
+import { formatStatusLabel, formatTimestamp, getStatusBadgeClass } from "@/lib/workspace-formatters";
 import type {
+  Conversation,
   ConversationMetrics,
+  DocumentRecord,
   DocumentMetrics,
   KnowledgeBase,
   Tenant,
-  WorkflowMetrics,
   Workspace
 } from "@/components/workspace/workspace-types";
 
@@ -40,16 +48,6 @@ const EMPTY_DOCUMENT_METRICS: DocumentMetrics = {
   failed_documents: 0
 };
 
-const EMPTY_WORKFLOW_METRICS: WorkflowMetrics = {
-  total_runs: 0,
-  active_runs: 0,
-  queued_runs: 0,
-  running_runs: 0,
-  retry_runs: 0,
-  completed_runs: 0,
-  failed_runs: 0
-};
-
 const EMPTY_CONVERSATION_METRICS: ConversationMetrics = {
   total_conversations: 0,
   active_conversations: 0,
@@ -57,30 +55,8 @@ const EMPTY_CONVERSATION_METRICS: ConversationMetrics = {
   latest_activity_at: null
 };
 
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const apiBaseUrl = buildApiBaseUrl();
-
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...buildSessionActorHeaders(init?.headers)
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return (await response.json()) as T;
+  return await authenticatedApiRequest<T>(path, init);
 }
 
 async function listTenants() {
@@ -99,136 +75,117 @@ async function loadDocumentMetrics(knowledgeBaseId: string) {
   return await apiRequest<DocumentMetrics>(`/documents/metrics?knowledge_base_id=${knowledgeBaseId}`);
 }
 
-async function loadWorkflowMetrics(tenantId: string) {
-  return await apiRequest<WorkflowMetrics>(`/workflow-runs/metrics?tenant_id=${tenantId}`);
-}
-
 async function loadConversationMetrics(tenantId: string, workspaceId: string) {
   return await apiRequest<ConversationMetrics>(
     `/chat/conversations/metrics?tenant_id=${tenantId}&workspace_id=${workspaceId}`
   );
 }
 
-async function loadHomeDirectory() {
-  const tenants = await listTenants();
-  const workspaceGroups = await Promise.all(
-    tenants.map(async (tenant) => ({
-      tenantId: tenant.id,
-      workspaces: await listWorkspaces(tenant.id)
-    }))
-  );
-  const workspaces = workspaceGroups.flatMap((group) => group.workspaces);
+async function listRecentConversations(tenantId: string, workspaceId: string, limit = 5) {
+  const searchParams = new URLSearchParams({
+    tenant_id: tenantId,
+    workspace_id: workspaceId,
+    limit: String(limit),
+    offset: "0"
+  });
 
-  const knowledgeBaseGroups = await Promise.all(
-    workspaces.map(async (workspace) => ({
-      workspaceId: workspace.id,
-      knowledgeBases: await listKnowledgeBases(workspace.id)
-    }))
-  );
-  const knowledgeBases = knowledgeBaseGroups.flatMap((group) => group.knowledgeBases);
-
-  return {
-    tenants,
-    workspaces,
-    knowledgeBases
-  };
+  return await apiRequest<Conversation[]>(`/chat/conversations?${searchParams.toString()}`);
 }
 
-type StatusTone = "healthy" | "attention" | "pending";
+async function listRecentDocuments(knowledgeBaseId: string, limit = 5) {
+  const searchParams = new URLSearchParams({
+    knowledge_base_id: knowledgeBaseId,
+    sort: "updated-desc",
+    limit: String(limit),
+    offset: "0"
+  });
+
+  return await apiRequest<DocumentRecord[]>(`/documents?${searchParams.toString()}`);
+}
+
+type AgentDefinition = {
+  id: string;
+  name: string;
+  slug: string;
+  mode: "grounded_chat" | "document_intake" | "workflow_recovery";
+  status: "draft" | "active" | "paused";
+  objective: string;
+  updated_at: string;
+  tools: string[];
+};
+
+function normalizeArray<T>(value: T[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+async function listTenantAgents(tenantId: string) {
+  return await apiRequest<AgentDefinition[]>(`/agents?tenant_id=${tenantId}`);
+}
 
 type AppHref = ComponentProps<typeof Link>["href"];
 
-type HomeTaskPacket = {
-  title: string;
-  detail: string;
-  tone: StatusTone;
-  metricLabel: string;
-  metricValue: string;
-  primaryActionLabel: string;
-  primaryActionHref: AppHref;
-  primaryActionRunRecord?: AgentRunRecordInput | null;
-  secondaryActions: Array<{
-    label: string;
-    href: AppHref;
-    runRecord?: AgentRunRecordInput | null;
-  }>;
-};
-
-function getToneClassName(tone: StatusTone) {
-  if (tone === "healthy") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-
-  if (tone === "attention") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-
-  return "border-slate-200 bg-slate-100 text-slate-600";
-}
-
-function OverviewMetricCard({
-  label,
-  value,
-  hint
+function HomeSectionCard({
+  actionHref,
+  actionLabel,
+  children,
+  contentClassName,
+  count,
+  title
 }: {
-  hint: string;
-  label: string;
-  value: number;
+  actionHref: AppHref;
+  actionLabel: string;
+  children: React.ReactNode;
+  contentClassName?: string;
+  count: number;
+  title: string;
 }) {
   return (
-    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
-      <div className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
-      <div className="mt-2 text-sm text-slate-500">{hint}</div>
-    </div>
+    <ConsoleSurface>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+        <div className="flex items-center gap-3">
+          <div className="text-base font-semibold text-slate-950">{title}</div>
+          <Badge className="border-slate-200 bg-slate-50 text-slate-700" variant="outline">
+            {count}
+          </Badge>
+        </div>
+        <Button asChild className="bg-white" size="sm" type="button" variant="outline">
+          <Link href={actionHref}>{actionLabel}</Link>
+        </Button>
+      </div>
+      <div className={cn("p-6", contentClassName ?? "space-y-3")}>{children}</div>
+    </ConsoleSurface>
   );
 }
 
-function CommandPacketCard({
-  detail,
-  metricLabel,
-  metricValue,
-  primaryActionHref,
-  primaryActionLabel,
-  primaryActionRunRecord,
-  secondaryActions,
+function HomeListItem({
+  href,
   title,
-  tone
-}: HomeTaskPacket) {
+  meta,
+  badges,
+  detail
+}: {
+  href: AppHref;
+  title: string;
+  meta?: string;
+  badges?: React.ReactNode;
+  detail?: string;
+}) {
   return (
-    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-950">{title}</div>
-          <div className="mt-2 text-sm leading-6 text-slate-500">{detail}</div>
-        </div>
-        <Badge className={cn("border", getToneClassName(tone))} variant="outline">
-          {metricValue}
-        </Badge>
+    <Link
+      className="flex items-start justify-between gap-4 rounded-[18px] border border-slate-100 bg-slate-50/70 px-4 py-4 transition hover:border-slate-200 hover:bg-white"
+      href={href}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-950">{title}</div>
+        {detail ? <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{detail}</div> : null}
+        {(badges || meta) ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            {badges}
+            {meta ? <span>{meta}</span> : null}
+          </div>
+        ) : null}
       </div>
-      <div className="mt-4 rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{metricLabel}</div>
-        <div className="mt-2 text-sm font-semibold text-slate-950">{metricValue}</div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <AgentRunButtonLink href={primaryActionHref} runRecord={primaryActionRunRecord} size="sm" type="button">
-          {primaryActionLabel}
-        </AgentRunButtonLink>
-        {secondaryActions.map((action) => (
-          <AgentRunButtonLink
-            className="bg-white"
-            href={action.href}
-            key={action.label}
-            runRecord={action.runRecord}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {action.label}
-          </AgentRunButtonLink>
-        ))}
-      </div>
-    </div>
+    </Link>
   );
 }
 
@@ -244,13 +201,12 @@ export default function HomePage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState<string>("");
   const [documentMetrics, setDocumentMetrics] = useState<DocumentMetrics>(EMPTY_DOCUMENT_METRICS);
-  const [workflowMetrics, setWorkflowMetrics] = useState<WorkflowMetrics>(EMPTY_WORKFLOW_METRICS);
   const [conversationMetrics, setConversationMetrics] = useState<ConversationMetrics>(EMPTY_CONVERSATION_METRICS);
-  const [statusMessage, setStatusMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isLoadingDirectory, setIsLoadingDirectory] = useState(true);
-  const [isRefreshingScope, setIsRefreshingScope] = useState(false);
-  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+  const [recentConversations, setRecentConversations] = useState<Conversation[]>([]);
+  const [recentDocuments, setRecentDocuments] = useState<DocumentRecord[]>([]);
+  const [tenantAgents, setTenantAgents] = useState<AgentDefinition[]>([]);
+  const [recentAgentExecutions, setRecentAgentExecutions] = useState<AgentExecutionResponse[]>([]);
+  const [, setIsLoadingDirectory] = useState(true);
 
   useEffect(() => {
     if (!isReady || session) {
@@ -260,27 +216,21 @@ export default function HomePage() {
     router.replace(("/login?return_to=" + returnTo) as Route);
   }, [isReady, returnTo, router, session]);
 
-  const filteredWorkspaces = useMemo(
-    () => workspaces.filter((workspace) => workspace.tenant_id === selectedTenantId),
-    [selectedTenantId, workspaces]
+  const activeAgents = useMemo(
+    () =>
+      tenantAgents
+        .filter((agent) => agent.status === "active")
+        .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()),
+    [tenantAgents]
   );
 
-  const filteredKnowledgeBases = useMemo(
-    () => knowledgeBases.filter((knowledgeBase) => knowledgeBase.workspace_id === selectedWorkspaceId),
-    [knowledgeBases, selectedWorkspaceId]
-  );
-
-  const selectedTenant = useMemo(
-    () => tenants.find((tenant) => tenant.id === selectedTenantId) ?? null,
-    [selectedTenantId, tenants]
-  );
-  const selectedWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null,
-    [selectedWorkspaceId, workspaces]
-  );
-  const selectedKnowledgeBase = useMemo(
-    () => knowledgeBases.find((knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId) ?? null,
-    [knowledgeBases, selectedKnowledgeBaseId]
+  const agentNameById = useMemo(
+    () =>
+      tenantAgents.reduce<Record<string, string>>((accumulator, agent) => {
+        accumulator[agent.id] = agent.name;
+        return accumulator;
+      }, {}),
+    [tenantAgents]
   );
 
   useEffect(() => {
@@ -322,7 +272,7 @@ export default function HomePage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function refreshDirectory() {
+    async function refreshTenants() {
       if (!isReady || !session) {
         if (isMounted) {
           setIsLoadingDirectory(false);
@@ -330,38 +280,19 @@ export default function HomePage() {
         return;
       }
       setIsLoadingDirectory(true);
-      setErrorMessage(null);
-      setStatusMessage(t("home.status.refreshingDirectory"));
 
       try {
-        const directory = await loadHomeDirectory();
+        const nextTenants = await listTenants();
         if (!isMounted) {
           return;
         }
 
-        setTenants(directory.tenants);
-        setWorkspaces(directory.workspaces);
-        setKnowledgeBases(directory.knowledgeBases);
-        setLastRefreshedAt(new Date().toISOString());
-
-        if (directory.tenants.length === 0) {
-          setStatusMessage(t("home.status.noTenants"));
-        } else {
-          setStatusMessage(
-            t("home.status.loaded", {
-              tenantCount: String(directory.tenants.length),
-              workspaceCount: String(directory.workspaces.length),
-              knowledgeBaseCount: String(directory.knowledgeBases.length)
-            })
-          );
-        }
-      } catch (error) {
+        setTenants(normalizeArray(nextTenants));
+      } catch {
         if (!isMounted) {
           return;
         }
-
-        setErrorMessage(error instanceof Error ? error.message : t("home.status.failed"));
-        setStatusMessage(t("home.status.failed"));
+        setTenants([]);
       } finally {
         if (isMounted) {
           setIsLoadingDirectory(false);
@@ -369,12 +300,12 @@ export default function HomePage() {
       }
     }
 
-    void refreshDirectory();
+    void refreshTenants();
 
     return () => {
       isMounted = false;
     };
-  }, [isReady, session, t]);
+  }, [isReady, session]);
 
   useEffect(() => {
     if (tenants.length === 0) {
@@ -388,32 +319,93 @@ export default function HomePage() {
   }, [selectedTenantId, tenants]);
 
   useEffect(() => {
-    if (filteredWorkspaces.length === 0) {
+    if (!selectedTenantId) {
+      setWorkspaces([]);
       setSelectedWorkspaceId("");
-      return;
-    }
-
-    if (!filteredWorkspaces.some((workspace) => workspace.id === selectedWorkspaceId)) {
-      setSelectedWorkspaceId(filteredWorkspaces[0].id);
-    }
-  }, [filteredWorkspaces, selectedWorkspaceId]);
-
-  useEffect(() => {
-    if (filteredKnowledgeBases.length === 0) {
+      setKnowledgeBases([]);
       setSelectedKnowledgeBaseId("");
       return;
     }
 
-    if (!filteredKnowledgeBases.some((knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId)) {
-      setSelectedKnowledgeBaseId(filteredKnowledgeBases[0].id);
+    let isMounted = true;
+
+    async function refreshWorkspaces() {
+      try {
+        const nextWorkspaces = normalizeArray(await listWorkspaces(selectedTenantId));
+        if (!isMounted) {
+          return;
+        }
+
+        setWorkspaces(nextWorkspaces);
+        setSelectedWorkspaceId((currentWorkspaceId) =>
+          nextWorkspaces.some((workspace) => workspace.id === currentWorkspaceId)
+            ? currentWorkspaceId
+            : (nextWorkspaces[0]?.id ?? "")
+        );
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setWorkspaces([]);
+        setSelectedWorkspaceId("");
+      }
     }
-  }, [filteredKnowledgeBases, selectedKnowledgeBaseId]);
+
+    void refreshWorkspaces();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedTenantId]);
+
+  useEffect(() => {
+    if (!selectedWorkspaceId) {
+      setKnowledgeBases([]);
+      setSelectedKnowledgeBaseId("");
+      return;
+    }
+
+    let isMounted = true;
+
+    async function refreshKnowledgeBases() {
+      try {
+        const nextKnowledgeBases = normalizeArray(await listKnowledgeBases(selectedWorkspaceId));
+        if (!isMounted) {
+          return;
+        }
+
+        setKnowledgeBases(nextKnowledgeBases);
+        setSelectedKnowledgeBaseId((currentKnowledgeBaseId) =>
+          nextKnowledgeBases.some((knowledgeBase) => knowledgeBase.id === currentKnowledgeBaseId)
+            ? currentKnowledgeBaseId
+            : (nextKnowledgeBases[0]?.id ?? "")
+        );
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setKnowledgeBases([]);
+        setSelectedKnowledgeBaseId("");
+      }
+    }
+
+    void refreshKnowledgeBases();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedWorkspaceId]);
 
   useEffect(() => {
     if (!selectedTenantId || !selectedWorkspaceId || !selectedKnowledgeBaseId) {
       setDocumentMetrics(EMPTY_DOCUMENT_METRICS);
-      setWorkflowMetrics(EMPTY_WORKFLOW_METRICS);
       setConversationMetrics(EMPTY_CONVERSATION_METRICS);
+      setRecentConversations([]);
+      setRecentDocuments([]);
+      setTenantAgents([]);
+      setRecentAgentExecutions([]);
       return;
     }
 
@@ -421,24 +413,24 @@ export default function HomePage() {
 
     async function refreshScopeMetrics() {
       if (!session) {
-        if (isMounted) {
-          setIsRefreshingScope(false);
-        }
         return;
       }
-      setIsRefreshingScope(true);
-      setErrorMessage(null);
-      setStatusMessage(t("home.status.refreshingScope"));
 
       try {
         const [
           nextDocumentMetrics,
-          nextWorkflowMetrics,
-          nextConversationMetrics
+          nextConversationMetrics,
+          nextRecentConversations,
+          nextRecentDocuments,
+          nextTenantAgents,
+          nextRecentAgentExecutions
         ] = await Promise.all([
           loadDocumentMetrics(selectedKnowledgeBaseId),
-          loadWorkflowMetrics(selectedTenantId),
-          loadConversationMetrics(selectedTenantId, selectedWorkspaceId)
+          loadConversationMetrics(selectedTenantId, selectedWorkspaceId),
+          listRecentConversations(selectedTenantId, selectedWorkspaceId),
+          listRecentDocuments(selectedKnowledgeBaseId),
+          listTenantAgents(selectedTenantId),
+          listAgentExecutions(selectedTenantId, undefined, 5)
         ]);
 
         if (!isMounted) {
@@ -446,23 +438,22 @@ export default function HomePage() {
         }
 
         setDocumentMetrics(nextDocumentMetrics);
-        setWorkflowMetrics(nextWorkflowMetrics);
         setConversationMetrics(nextConversationMetrics);
-        setStatusMessage(t("home.status.scopedRefreshed"));
+        setRecentConversations(normalizeArray(nextRecentConversations));
+        setRecentDocuments(normalizeArray(nextRecentDocuments));
+        setTenantAgents(normalizeArray(nextTenantAgents));
+        setRecentAgentExecutions(normalizeArray(nextRecentAgentExecutions));
       } catch (error) {
         if (!isMounted) {
           return;
         }
 
         setDocumentMetrics(EMPTY_DOCUMENT_METRICS);
-        setWorkflowMetrics(EMPTY_WORKFLOW_METRICS);
         setConversationMetrics(EMPTY_CONVERSATION_METRICS);
-        setErrorMessage(error instanceof Error ? error.message : t("home.status.scopedFailed"));
-        setStatusMessage(t("home.status.scopedFailed"));
-      } finally {
-        if (isMounted) {
-          setIsRefreshingScope(false);
-        }
+        setRecentConversations([]);
+        setRecentDocuments([]);
+        setTenantAgents([]);
+        setRecentAgentExecutions([]);
       }
     }
 
@@ -471,7 +462,7 @@ export default function HomePage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedKnowledgeBaseId, selectedTenantId, selectedWorkspaceId, session, t]);
+  }, [selectedKnowledgeBaseId, selectedTenantId, selectedWorkspaceId, session]);
 
   if (!isReady || !session) {
     return null;
@@ -489,253 +480,186 @@ export default function HomePage() {
     workspaceId: selectedWorkspaceId || null,
     knowledgeBaseId: selectedKnowledgeBaseId || null
   });
-  const hasRecoveryPressure = workflowMetrics.failed_runs > 0 || documentMetrics.failed_documents > 0;
-  const hasMonitoringPressure =
-    workflowMetrics.active_runs > 0 ||
-    workflowMetrics.queued_runs > 0 ||
-    documentMetrics.active_documents > 0;
-  const monitoringOperationsHref = buildOperationsHref({
+  const agentsHref = buildAgentsHref({
     tenantId: selectedTenantId || null,
-    lane: hasMonitoringPressure ? "pressure" : "overview",
-    status:
-      workflowMetrics.active_runs > 0
-        ? "running"
-        : workflowMetrics.queued_runs > 0
-          ? "queued"
-          : "all"
+    status: "active"
   });
-  const scopedWorkflowHref = buildHomeWorkspaceHref({
-    view: "workflows",
-    tenantId: selectedTenantId || null,
-    workspaceId: selectedWorkspaceId || null,
-    knowledgeBaseId: selectedKnowledgeBaseId || null,
-    handoffIntent:
-      hasRecoveryPressure ? "workflow_recovery" : "agent_brief",
-    workflowStatus:
-      workflowMetrics.failed_runs > 0
-        ? "failed"
-        : workflowMetrics.active_runs > 0
-          ? "running"
-          : null
-  });
+  const latestActivityLabel = conversationMetrics.latest_activity_at
+    ? formatTimestamp(conversationMetrics.latest_activity_at)
+    : t("home.core.noActivity");
 
-  const statusMeta = lastRefreshedAt ? formatTimestamp(lastRefreshedAt) : undefined;
+  const hasActiveAgents = activeAgents.length > 0;
 
   return (
     <ConsoleShell activeHref="/">
       <PageTitleSync title={t("home.title")} />
-      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-6">
-        <ConsolePageHeader
-          actions={
-            <>
-              <Button asChild type="button">
-                <Link href={chatHref}>
-                  {t("home.hero.openChat")}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild type="button" variant="outline">
-                <Link href={documentsHref}>{t("home.hero.openDocuments")}</Link>
-              </Button>
-              <Button asChild type="button" variant="outline">
-                <Link href={monitoringOperationsHref}>{t("home.hero.openOperations")}</Link>
-              </Button>
-            </>
-          }
-          description={t("home.hero.description")}
-          eyebrow={t("home.hero.eyebrow")}
-          icon={<Sparkles className="h-4 w-4" />}
-          title={t("home.hero.title")}
-        />
+      <ConsolePage>
+        <ConsoleToolbar className="justify-end">
+          <ConsoleToolbarGroup className="w-full justify-end">
+            <Button asChild size="sm" type="button">
+              <Link href={chatHref}>{t("home.commandCenter.retrieval.primaryChat")}</Link>
+            </Button>
+            <Button asChild className="bg-white" size="sm" type="button" variant="outline">
+              <Link href={documentsHref}>{t("home.commandCenter.retrieval.primaryDocuments")}</Link>
+            </Button>
+            <Button asChild className="bg-white" size="sm" type="button" variant="outline">
+              <Link href={agentsHref}>{t("home.commandCenter.agents.primaryAgents")}</Link>
+            </Button>
+          </ConsoleToolbarGroup>
+        </ConsoleToolbar>
 
-        <ConsoleStatusBar
-          error={errorMessage}
-          message={isLoadingDirectory ? t("home.status.loading") : statusMessage}
-          meta={statusMeta}
-        />
+        <div className="grid gap-5 xl:grid-cols-3">
+          <HomeSectionCard
+            actionHref={chatHref}
+            actionLabel={t("home.overview.viewMore")}
+            count={conversationMetrics.total_conversations}
+            title={t("home.overview.chats")}
+          >
+            {recentConversations.length === 0 ? (
+              <ConsoleEmptyState>{latestActivityLabel}</ConsoleEmptyState>
+            ) : (
+              recentConversations.map((conversation) => (
+                <HomeListItem
+                  badges={<span>{t("home.overview.messageCount", { count: String(conversation.message_count) })}</span>}
+                  href={buildHomeWorkspaceHref({
+                    view: "chat",
+                    tenantId: selectedTenantId || null,
+                    workspaceId: selectedWorkspaceId || null,
+                    knowledgeBaseId: selectedKnowledgeBaseId || null,
+                    conversationId: conversation.id
+                  })}
+                  key={conversation.id}
+                  meta={formatTimestamp(conversation.latest_activity_at ?? conversation.updated_at)}
+                  title={conversation.title}
+                />
+              ))
+            )}
+          </HomeSectionCard>
+          <HomeSectionCard
+            actionHref={documentsHref}
+            actionLabel={t("home.overview.viewMore")}
+            count={documentMetrics.total_documents}
+            title={t("home.overview.documents")}
+          >
+            {recentDocuments.length === 0 ? (
+              <ConsoleEmptyState>{t("home.overview.emptyDocuments")}</ConsoleEmptyState>
+            ) : (
+              recentDocuments.map((document) => (
+                <HomeListItem
+                  badges={
+                    <>
+                      <Badge className={cn("border", getStatusBadgeClass(document.ingestion_status))} variant="outline">
+                        {formatStatusLabel(document.ingestion_status)}
+                      </Badge>
+                      <Badge className={cn("border", getStatusBadgeClass(document.indexing_status))} variant="outline">
+                        {formatStatusLabel(document.indexing_status)}
+                      </Badge>
+                    </>
+                  }
+                  href={buildHomeWorkspaceHref({
+                    view: "documents",
+                    tenantId: selectedTenantId || null,
+                    workspaceId: selectedWorkspaceId || null,
+                    knowledgeBaseId: selectedKnowledgeBaseId || null,
+                    documentId: document.id
+                  })}
+                  key={document.id}
+                  meta={formatTimestamp(document.updated_at)}
+                  title={document.title}
+                />
+              ))
+            )}
+          </HomeSectionCard>
+          <HomeSectionCard
+            actionHref={agentsHref}
+            actionLabel={t("home.overview.viewMore")}
+            count={recentAgentExecutions.length > 0 ? recentAgentExecutions.length : activeAgents.length}
+            title={t("home.overview.agents")}
+          >
+            {recentAgentExecutions.length === 0 && activeAgents.length === 0 ? (
+              <ConsoleEmptyState>
+                {hasActiveAgents
+                  ? t("home.commandCenter.agents.readyDetail", {
+                      name: activeAgents[0]?.name ?? t("home.overview.agents")
+                    })
+                  : t("home.overview.emptyAgents")}
+              </ConsoleEmptyState>
+            ) : recentAgentExecutions.length > 0 ? (
+              recentAgentExecutions.map((agentExecution) => {
+                const evidenceSummary = readAgentExecutionEvidenceSummary(agentExecution.result_payload_json);
+                const followUpActions = buildAgentExecutionFollowUpActions({
+                  sourceContext: { surface: "home" },
+                  execution: agentExecution,
+                  executionInput: evidenceSummary?.executionInput,
+                  recommendedActions: evidenceSummary?.recommendedActionSpecs ?? []
+                });
+                const primaryAction = followUpActions[0] ?? null;
+                const previewText =
+                  evidenceSummary?.answerPreview?.trim() ||
+                  agentExecution.summary?.trim() ||
+                  agentExecution.error_message?.trim() ||
+                  t("agents.executions.pendingSummary");
 
-        <ConsoleSurface>
-          <ConsoleSurfaceHeader
-            action={
-              <div className="flex flex-wrap items-center gap-2">
-                <ConsoleOutlineBadge>{selectedKnowledgeBase?.slug ?? t("home.scope.notAvailable")}</ConsoleOutlineBadge>
-                <Button disabled={isLoadingDirectory || isRefreshingScope} onClick={() => window.location.reload()} size="sm" type="button" variant="outline">
-                  <RefreshCw className={cn("h-4 w-4", isLoadingDirectory || isRefreshingScope ? "animate-spin" : "")} />
-                  {isRefreshingScope ? t("home.scope.refreshing") : t("home.scope.refresh")}
-                </Button>
-              </div>
-            }
-            description={t("home.hero.currentScopeDescription")}
-            title={t("home.hero.currentScope")}
-          />
-          <div className="grid gap-4 p-6 md:grid-cols-3">
-            <OverviewMetricCard
-              hint={conversationMetrics.latest_activity_at ? t("home.signals.latestConversationDetail", { value: formatTimestamp(conversationMetrics.latest_activity_at) }) : t("home.core.noActivity")}
-              label={t("home.core.chatsTitle")}
-              value={conversationMetrics.total_conversations}
-            />
-            <OverviewMetricCard
-              hint={t("home.core.documentsDetail", {
-                total: String(documentMetrics.total_documents),
-                ready: String(documentMetrics.completed_documents),
-                failed: String(documentMetrics.failed_documents)
-              })}
-              label={t("home.core.documentsTitle")}
-              value={documentMetrics.total_documents}
-            />
-            <OverviewMetricCard
-              hint={t("home.core.workflowsDetail", {
-                total: String(workflowMetrics.total_runs),
-                active: String(workflowMetrics.active_runs),
-                failed: String(workflowMetrics.failed_runs)
-              })}
-              label={t("home.core.workflowsTitle")}
-              value={workflowMetrics.total_runs}
-            />
-          </div>
-        </ConsoleSurface>
-
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <ConsoleSurface>
-            <ConsoleSurfaceHeader description={t("home.scope.description")} title={t("home.scope.title")} />
-            <div className="grid gap-5 p-6 lg:grid-cols-2">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{t("home.scope.tenant")}</div>
-                  <Select disabled={tenants.length === 0 || isLoadingDirectory} onValueChange={setSelectedTenantId} value={selectedTenantId || undefined}>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder={t("home.scope.selectTenant")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tenants.map((tenant) => (
-                        <SelectItem key={tenant.id} value={tenant.id}>
-                          {tenant.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{t("home.scope.workspace")}</div>
-                  <Select
-                    disabled={filteredWorkspaces.length === 0 || isLoadingDirectory}
-                    onValueChange={setSelectedWorkspaceId}
-                    value={selectedWorkspaceId || undefined}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder={t("home.scope.selectWorkspace")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredWorkspaces.map((workspace) => (
-                        <SelectItem key={workspace.id} value={workspace.id}>
-                          {workspace.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{t("home.scope.knowledgeBase")}</div>
-                  <Select
-                    disabled={filteredKnowledgeBases.length === 0 || isLoadingDirectory}
-                    onValueChange={setSelectedKnowledgeBaseId}
-                    value={selectedKnowledgeBaseId || undefined}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder={t("home.scope.selectKnowledgeBase")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredKnowledgeBases.map((knowledgeBase) => (
-                        <SelectItem key={knowledgeBase.id} value={knowledgeBase.id}>
-                          {knowledgeBase.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5">
-                <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
-                  <Database className="h-4 w-4" />
-                  {t("home.scope.liveScope")}
-                </div>
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-950">{selectedTenant?.name ?? t("home.scope.notAvailable")}</div>
-                    <div className="mt-1 text-sm text-slate-500">{selectedTenant?.slug ?? t("home.scope.notAvailable")}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-950">{selectedWorkspace?.name ?? t("home.scope.notAvailable")}</div>
-                    <div className="mt-1 text-sm text-slate-500">{selectedWorkspace?.description ?? selectedWorkspace?.slug ?? t("home.scope.notAvailable")}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-950">{selectedKnowledgeBase?.name ?? t("home.scope.notAvailable")}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {selectedKnowledgeBase?.description ?? selectedKnowledgeBase?.slug ?? t("home.scope.notAvailable")}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-5 text-sm leading-6 text-slate-500">{t("home.scope.liveScopeDescription")}</div>
-              </div>
-            </div>
-          </ConsoleSurface>
-
-          <ConsoleSurface>
-            <ConsoleSurfaceHeader
-              description={t("home.core.description")}
-              title={t("home.core.title")}
-            />
-            <div className="grid gap-4 p-6">
-              <CommandPacketCard
-                detail={t("home.core.chatsDetail", {
-                  messageCount: String(conversationMetrics.total_messages),
-                  activity: conversationMetrics.latest_activity_at
-                    ? formatTimestamp(conversationMetrics.latest_activity_at)
-                    : t("home.core.noActivity")
-                })}
-                metricLabel={t("home.core.chatsMetric")}
-                metricValue={String(conversationMetrics.total_conversations)}
-                primaryActionHref={chatHref}
-                primaryActionLabel={t("home.hero.openChat")}
-                secondaryActions={[]}
-                title={t("home.core.chatsTitle")}
-                tone={"healthy"}
-              />
-              <CommandPacketCard
-                detail={t("home.core.documentsDetail", {
-                  total: String(documentMetrics.total_documents),
-                  ready: String(documentMetrics.completed_documents),
-                  failed: String(documentMetrics.failed_documents)
-                })}
-                metricLabel={t("home.core.documentsMetric")}
-                metricValue={String(documentMetrics.total_documents)}
-                primaryActionHref={documentsHref}
-                primaryActionLabel={t("home.hero.openDocuments")}
-                secondaryActions={[]}
-                title={t("home.core.documentsTitle")}
-                tone={documentMetrics.failed_documents > 0 ? "attention" : "healthy"}
-              />
-              <CommandPacketCard
-                detail={t("home.core.workflowsDetail", {
-                  total: String(workflowMetrics.total_runs),
-                  active: String(workflowMetrics.active_runs),
-                  failed: String(workflowMetrics.failed_runs)
-                })}
-                metricLabel={t("home.core.workflowsMetric")}
-                metricValue={String(workflowMetrics.total_runs)}
-                primaryActionHref={scopedWorkflowHref}
-                primaryActionLabel={t("home.hero.openOperations")}
-                secondaryActions={[]}
-                title={t("home.core.workflowsTitle")}
-                tone={workflowMetrics.failed_runs > 0 ? "attention" : hasMonitoringPressure ? "pending" : "healthy"}
-              />
-            </div>
-          </ConsoleSurface>
+                return (
+                  <HomeListItem
+                    badges={
+                      <>
+                        <Badge className={cn("border", getStatusBadgeClass(agentExecution.execution_status))} variant="outline">
+                          {t(`agents.executions.statuses.${agentExecution.execution_status}`)}
+                        </Badge>
+                        <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
+                          {t(`agents.modes.${agentExecution.execution_mode}`)}
+                        </Badge>
+                        {agentExecution.task_state ? (
+                          <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
+                            {t(getAgentExecutionStageLabelKey(agentExecution.task_state.stage_key))}
+                          </Badge>
+                        ) : null}
+                      </>
+                    }
+                    detail={previewText}
+                    href={
+                      primaryAction?.href ??
+                      buildAgentsHref({
+                        tenantId: selectedTenantId || null,
+                        status: "active",
+                        agentId: agentExecution.agent_definition_id
+                      })
+                    }
+                    key={agentExecution.id}
+                    meta={formatTimestamp(agentExecution.updated_at)}
+                  title={agentNameById[agentExecution.agent_definition_id] ?? t("agents.executions.unknownAgent")}
+                />
+              );
+            })
+            ) : (
+              activeAgents.slice(0, 5).map((agent) => (
+                <HomeListItem
+                  badges={
+                    <>
+                      <Badge className={cn("border", getStatusBadgeClass(agent.status))} variant="outline">
+                        {formatStatusLabel(agent.status)}
+                      </Badge>
+                      <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
+                        {t(`agents.modes.${agent.mode}`)}
+                      </Badge>
+                    </>
+                  }
+                  detail={agent.objective?.trim().length ? agent.objective : t("home.overview.noAgentObjective")}
+                  href={buildAgentsHref({
+                    tenantId: selectedTenantId || null,
+                    status: "active",
+                    agentId: agent.id
+                  })}
+                  key={agent.id}
+                  meta={formatTimestamp(agent.updated_at)}
+                  title={agent.name}
+                />
+              ))
+            )}
+          </HomeSectionCard>
         </div>
-      </div>
+      </ConsolePage>
     </ConsoleShell>
   );
 }

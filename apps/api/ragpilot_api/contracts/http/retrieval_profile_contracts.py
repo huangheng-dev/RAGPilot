@@ -2,13 +2,16 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 RetrievalMode = Literal["hybrid", "vector", "lexical"]
+RetrievalProfileGovernanceActionType = Literal["enable_profile", "disable_profile", "promote_default"]
 
 
 class RetrievalProfileCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     retrieval_mode: RetrievalMode = "hybrid"
@@ -22,6 +25,8 @@ class RetrievalProfileCreateRequest(BaseModel):
 
 
 class RetrievalProfileUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     retrieval_mode: RetrievalMode
@@ -49,3 +54,15 @@ class RetrievalProfileResponse(BaseModel):
     bound_knowledge_base_count: int = 0
     created_at: datetime
     updated_at: datetime
+
+
+class RetrievalProfileGovernanceActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_type: RetrievalProfileGovernanceActionType
+
+
+class RetrievalProfileGovernanceActionResponse(BaseModel):
+    action_type: RetrievalProfileGovernanceActionType
+    summary: str
+    retrieval_profile: RetrievalProfileResponse

@@ -1,6 +1,11 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+AuthPrimaryMode = Literal["directory_local", "password_local", "oidc", "saml"]
+ExternalAuthPrimaryMode = Literal["oidc", "saml"]
 
 
 class Settings(BaseSettings):
@@ -31,9 +36,22 @@ class Settings(BaseSettings):
     chat_model_api_base_url: str | None = None
     chat_model_api_key: str | None = None
     chat_model_request_timeout_seconds: int = 60
+    model_preview_review_window_hours: int = 24
+    mcp_preview_review_window_hours: int = 24
+    tool_preview_review_window_hours: int = 24
     tool_runtime_request_timeout_seconds: int = 30
     tool_runtime_max_attempts: int = 2
     tool_runtime_retryable_status_codes: str = "502,503,504"
+    auth_primary_mode: AuthPrimaryMode = "directory_local"
+    auth_provider_display_name: str = "Enterprise Identity"
+    auth_provider_sign_in_url: str | None = None
+    auth_provider_post_sign_out_url: str | None = None
+    auth_failed_sign_in_window_minutes: int = 15
+    auth_failed_sign_in_max_attempts: int = 5
+    auth_failed_sign_in_lockout_minutes: int = 15
+    auth_session_review_max_active_sessions_per_user: int = 4
+    auth_session_review_max_distinct_devices_per_user: int = 3
+    allow_legacy_actor_headers: bool = False
     cors_allowed_origins: str = "http://127.0.0.1:3001,http://localhost:3001"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

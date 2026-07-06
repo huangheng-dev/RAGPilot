@@ -1,6 +1,7 @@
 "use client";
 
 import { PaginationControls } from "./PaginationControls";
+import { Search } from "lucide-react";
 import {
   formatStatusLabel,
   formatSubjectTypeLabel,
@@ -79,22 +80,25 @@ export function WorkflowTimelinePanel({
 }: WorkflowTimelinePanelProps) {
   const { t } = useI18n();
   return (
-    <Card className="border-slate-200 shadow-sm">
+      <Card className="border-slate-200 shadow-sm">
       <CardHeader className="gap-4 border-b border-slate-200">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4">
           <div>
             <CardTitle>{t("workspace.workflowTimeline.title")}</CardTitle>
             <CardDescription className="mt-1">
               {t("workspace.workflowTimeline.description")}
             </CardDescription>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,180px))]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              className="min-w-64 bg-white"
+              className="min-w-64 bg-white pl-9"
               onChange={(event) => onWorkflowQueryChange(event.target.value)}
               placeholder={t("workspace.workflowTimeline.searchPlaceholder")}
               value={workflowQuery}
             />
+            </div>
             <Select onValueChange={onWorkflowTypeFilterChange} value={workflowTypeFilter}>
               <SelectTrigger className="w-full min-w-[180px] bg-white">
                 <SelectValue placeholder={t("workspace.workflowTimeline.workflowType")} />
@@ -112,6 +116,7 @@ export function WorkflowTimelinePanel({
                 <SelectItem value="all">{t("workspace.workflowTimeline.allStatuses")}</SelectItem>
                 <SelectItem value="completed">{t("workspace.workflowTimeline.completed")}</SelectItem>
                 <SelectItem value="failed">{t("workspace.workflowTimeline.failed")}</SelectItem>
+                <SelectItem value="cancelled">{t("workspace.workflowTimeline.cancelled")}</SelectItem>
                 <SelectItem value="running">{t("workspace.workflowTimeline.running")}</SelectItem>
                 <SelectItem value="queued">{t("workspace.workflowTimeline.queued")}</SelectItem>
                 <SelectItem value="pending">{t("workspace.workflowTimeline.pending")}</SelectItem>

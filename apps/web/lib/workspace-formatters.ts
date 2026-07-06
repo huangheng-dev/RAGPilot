@@ -30,6 +30,7 @@ export function formatStatusLabel(value: string) {
     const zhStatusLabels: Record<string, string> = {
       active: "活跃",
       archived: "已归档",
+      cancelled: "已取消",
       completed: "已完成",
       created: "已创建",
       draft: "草稿",
@@ -173,6 +174,10 @@ export function getStatusBadgeClass(status: string) {
 
   if (status === "failed") {
     return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+
+  if (status === "cancelled") {
+    return "border-slate-300 bg-slate-100 text-slate-700";
   }
 
   if (status === "running" || status === "queued") {

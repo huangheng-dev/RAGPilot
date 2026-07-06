@@ -1,9 +1,50 @@
-import { readApiErrorMessage } from "@/lib/api-errors";
-import { buildSessionActorHeaders } from "@/lib/local-session";
+import { authenticatedApiRequest } from "@/lib/authenticated-api";
 
 export type AgentExecutionMode = "grounded_chat" | "document_intake" | "workflow_recovery";
 export type AgentExecutionStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type AgentExecutionTriggerSource = "agents_console" | "workspace" | "home" | "admin" | "operations";
+export type AgentExecutionTaskStage =
+  | "queued_for_execution"
+  | "running_execution"
+  | "grounded_answer_ready"
+  | "intake_review_ready"
+  | "recovery_brief_ready"
+  | "execution_failed"
+  | "execution_completed";
+export type AgentExecutionOutputKind =
+  | "answer_preview"
+  | "retrieval_evidence"
+  | "document_intake"
+  | "workflow_recovery"
+  | "tool_runtime";
+export type AgentExecutionOutputStatus = "ready" | "attention" | "pending";
+
+export type AgentExecutionTaskState = {
+  lane: AgentExecutionMode;
+  stage_key: AgentExecutionTaskStage;
+  output_count: number;
+  recommended_action_count: number;
+  tool_trace_count: number;
+  retrieval_result_count: number | null;
+  fallback_applied: boolean;
+  duration_seconds: number | null;
+};
+
+export type AgentExecutionOutput = {
+  output_key: string;
+  kind: AgentExecutionOutputKind;
+  status: AgentExecutionOutputStatus;
+  metric_value: string | null;
+  preview: string | null;
+};
+
+export function getAgentExecutionStageLabelKey(stageKey: AgentExecutionTaskStage) {
+  return `agents.executions.stageLabels.${stageKey}`;
+}
+
+export function getAgentExecutionOutputKindLabelKey(kind: AgentExecutionOutputKind) {
+  return `agents.executions.outputKinds.${kind}`;
+}
 
 export type AgentExecutionResponse = {
   id: string;
@@ -20,6 +61,8 @@ export type AgentExecutionResponse = {
   execution_input: string | null;
   summary: string | null;
   result_payload_json: Record<string, unknown>;
+  task_state: AgentExecutionTaskState | null;
+  generated_outputs: AgentExecutionOutput[];
   error_message: string | null;
   launched_by_user_id: string | null;
   started_at: string | null;
@@ -133,30 +176,8 @@ export type AgentExecutionRuntimeBindingSummary = {
   apiBaseUrl: string | null;
 };
 
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const apiBaseUrl = buildApiBaseUrl();
-
 async function agentExecutionApiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...buildSessionActorHeaders(init?.headers)
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return (await response.json()) as T;
+  return await authenticatedApiRequest<T>(path, init);
 }
 
 export async function listAgentExecutions(

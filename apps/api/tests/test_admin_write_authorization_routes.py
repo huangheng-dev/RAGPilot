@@ -22,8 +22,8 @@ def test_tenant_create_route_rejects_reviewer_role(monkeypatch) -> None:
     client = TestClient(app)
     response = client.post(
         "/api/v1/tenants",
-        json={"name": "RagPilot Demo", "slug": "ragpilot-demo"},
-        headers={"X-RagPilot-Role": "reviewer"},
+        json={"name": "RAGPilot Demo", "slug": "ragpilot-demo"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -50,8 +50,8 @@ def test_tenant_create_route_uses_database_policy_when_seeded(monkeypatch) -> No
     client = TestClient(app)
     response = client.post(
         "/api/v1/tenants",
-        json={"name": "RagPilot Demo", "slug": "ragpilot-demo"},
-        headers={"X-RagPilot-Role": "super_admin"},
+        json={"name": "RAGPilot Demo", "slug": "ragpilot-demo"},
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -70,7 +70,7 @@ def test_tenant_update_route_rejects_missing_actor_role(monkeypatch) -> None:
     client = TestClient(app)
     response = client.patch(
         f"/api/v1/tenants/{uuid4()}",
-        json={"name": "RagPilot Demo", "slug": "ragpilot-demo"},
+        json={"name": "RAGPilot Demo", "slug": "ragpilot-demo"},
     )
 
     app.dependency_overrides.clear()
@@ -92,11 +92,11 @@ def test_workspace_create_route_rejects_operator_role(monkeypatch) -> None:
         "/api/v1/workspaces",
         json={
             "tenant_id": str(tenant_id),
-            "name": "RagPilot Operations",
+            "name": "RAGPilot Operations",
             "slug": "ragpilot-operations",
             "description": "Operator workspace",
         },
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -117,11 +117,11 @@ def test_workspace_update_route_rejects_operator_role(monkeypatch) -> None:
         f"/api/v1/workspaces/{uuid4()}",
         params={"tenant_id": str(uuid4())},
         json={
-            "name": "RagPilot Operations",
+            "name": "RAGPilot Operations",
             "slug": "ragpilot-operations",
             "description": "Operator workspace",
         },
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -142,7 +142,7 @@ def test_workspace_lifecycle_route_rejects_reviewer_role(monkeypatch) -> None:
         f"/api/v1/workspaces/{uuid4()}/lifecycle",
         params={"tenant_id": str(uuid4())},
         json={"is_archived": True},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -171,7 +171,7 @@ def test_workspace_lifecycle_route_uses_database_policy_when_seeded(monkeypatch)
         f"/api/v1/workspaces/{uuid4()}/lifecycle",
         params={"tenant_id": str(uuid4())},
         json={"is_archived": True},
-        headers={"X-RagPilot-Role": "super_admin"},
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -195,11 +195,11 @@ def test_knowledge_base_create_route_rejects_operator_role(monkeypatch) -> None:
         json={
             "tenant_id": str(tenant_id),
             "workspace_id": str(workspace_id),
-            "name": "RagPilot Handbook",
+            "name": "RAGPilot Handbook",
             "slug": "ragpilot-handbook",
             "description": "Default knowledge base",
         },
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -220,11 +220,11 @@ def test_knowledge_base_update_route_rejects_operator_role(monkeypatch) -> None:
         f"/api/v1/knowledge-bases/{uuid4()}",
         params={"workspace_id": str(uuid4())},
         json={
-            "name": "RagPilot Handbook",
+            "name": "RAGPilot Handbook",
             "slug": "ragpilot-handbook",
             "description": "Default knowledge base",
         },
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -245,7 +245,7 @@ def test_knowledge_base_publication_route_rejects_reviewer_role(monkeypatch) -> 
         f"/api/v1/knowledge-bases/{uuid4()}/publication",
         params={"workspace_id": str(uuid4())},
         json={"publication_status": "published"},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -274,9 +274,77 @@ def test_knowledge_base_publication_route_uses_database_policy_when_seeded(monke
         f"/api/v1/knowledge-bases/{uuid4()}/publication",
         params={"workspace_id": str(uuid4())},
         json={"publication_status": "published"},
-        headers={"X-RagPilot-Role": "super_admin"},
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
 
     assert response.status_code == 403
+
+
+def test_tenant_create_route_rejects_missing_actor_identity(monkeypatch) -> None:
+    class FakeTenantService:
+        async def create_tenant(self, request):
+            raise AssertionError("create_tenant should not be called without actor identity.")
+
+    monkeypatch.setattr(tenant_routes, "build_tenant_service", lambda session: FakeTenantService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/tenants",
+        json={"name": "RAGPilot Demo", "slug": "ragpilot-demo"},
+        headers={"X-RAGPilot-Role": "super_admin"},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+
+
+def test_workspace_lifecycle_route_rejects_extra_fields(monkeypatch) -> None:
+    class FakeWorkspaceService:
+        async def set_workspace_archive_state(self, *, workspace_id, tenant_id, request):
+            raise AssertionError("set_workspace_archive_state should not run when extra fields are submitted.")
+
+    monkeypatch.setattr(workspace_routes, "build_workspace_service", lambda session: FakeWorkspaceService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/workspaces/{uuid4()}/lifecycle",
+        params={"tenant_id": str(uuid4())},
+        json={"is_archived": True, "unexpected_field": "blocked"},
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+
+
+def test_knowledge_base_create_route_rejects_extra_fields(monkeypatch) -> None:
+    class FakeKnowledgeBaseService:
+        async def create_knowledge_base(self, request):
+            raise AssertionError("create_knowledge_base should not run when extra fields are submitted.")
+
+    monkeypatch.setattr(knowledge_base_routes, "build_knowledge_base_service", lambda session: FakeKnowledgeBaseService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/knowledge-bases",
+        json={
+            "tenant_id": str(uuid4()),
+            "workspace_id": str(uuid4()),
+            "name": "RAGPilot Handbook",
+            "slug": "ragpilot-handbook",
+            "description": "Default knowledge base",
+            "unexpected_field": "blocked",
+        },
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422

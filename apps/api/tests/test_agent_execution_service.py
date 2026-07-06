@@ -6,7 +6,10 @@ from uuid import uuid4
 import pytest
 
 from ragpilot_api.application.model_gateway.contracts import RuntimeModelBinding
-from ragpilot_api.application.agents.agent_execution_service import AgentExecutionService
+from ragpilot_api.application.agents.agent_execution_service import (
+    AgentExecutionService,
+    build_agent_execution_response,
+)
 from ragpilot_api.contracts.http.agent_execution_contracts import AgentExecutionCreateRequest
 
 
@@ -333,7 +336,7 @@ async def test_agent_execution_service_generates_grounded_chat_preview() -> None
                         "document_id": uuid4(),
                         "document_version_id": uuid4(),
                         "knowledge_base_id": knowledge_base_id,
-                        "document_title": "RagPilot Handbook",
+                        "document_title": "RAGPilot Handbook",
                         "chunk_index": 0,
                         "content": "Temporal powers ingestion workflows.",
                         "score": 0.97,
@@ -744,7 +747,7 @@ async def test_agent_execution_service_marks_langgraph_grounded_chat_as_native_f
                         "document_id": uuid4(),
                         "document_version_id": uuid4(),
                         "knowledge_base_id": knowledge_base_id,
-                        "document_title": "RagPilot Handbook",
+                        "document_title": "RAGPilot Handbook",
                         "chunk_index": 0,
                         "content": "Temporal powers ingestion workflows.",
                         "score": 0.97,
@@ -889,3 +892,75 @@ async def test_agent_execution_service_uses_configured_agent_runtime_engine_boun
     assert payload["agent_runtime_resolution"]["fallback_applied"] is False
     assert payload["execution_lane"] == "workflow_recovery"
     assert payload["recommended_action_specs"][0]["action_key"] == "triage_failed_workflows"
+
+
+def test_build_agent_execution_response_exposes_grounded_task_digest() -> None:
+    execution = build_agent_execution(
+        execution_mode="grounded_chat",
+        execution_status="completed",
+        started_at=datetime.now(timezone.utc) - timedelta(seconds=12),
+        completed_at=datetime.now(timezone.utc),
+        result_payload_json={
+            "execution_lane": "grounded_chat",
+            "answer_preview": "Temporal powers ingestion workflows.",
+            "retrieval_result_count": 2,
+            "retrieval_results": [
+                {"retrieval_method": "hybrid"},
+                {"retrieval_method": "vector"},
+            ],
+            "recommended_action_specs": [{"action_key": "resume_grounded_chat"}],
+            "tool_runtime": {
+                "total_bound_tools": 1,
+                "completed_tools": 1,
+                "blocked_tools": 0,
+                "failed_tools": 0,
+                "unavailable_tools": 0,
+                "traces": [{"invocation_status": "completed"}],
+            },
+            "agent_runtime_resolution": {
+                "fallback_applied": True,
+            },
+        },
+    )
+
+    response = build_agent_execution_response(execution)
+
+    assert response.task_state is not None
+    assert response.task_state.stage_key == "grounded_answer_ready"
+    assert response.task_state.output_count == 3
+    assert response.task_state.recommended_action_count == 1
+    assert response.task_state.tool_trace_count == 1
+    assert response.task_state.retrieval_result_count == 2
+    assert response.task_state.fallback_applied is True
+    assert len(response.generated_outputs) == 3
+    assert response.generated_outputs[0].kind == "answer_preview"
+    assert response.generated_outputs[1].kind == "retrieval_evidence"
+    assert response.generated_outputs[2].kind == "tool_runtime"
+
+
+def test_build_agent_execution_response_exposes_workflow_recovery_output_digest() -> None:
+    execution = build_agent_execution(
+        execution_mode="workflow_recovery",
+        execution_status="completed",
+        result_payload_json={
+            "execution_lane": "workflow_recovery",
+            "workflow_metrics": {
+                "failed_runs": 2,
+                "queued_runs": 1,
+                "retry_runs": 3,
+            },
+            "recent_failed_runs": [
+                {"workflow_type": "document_ingestion"},
+                {"workflow_type": "document_indexing"},
+            ],
+        },
+    )
+
+    response = build_agent_execution_response(execution)
+
+    assert response.task_state is not None
+    assert response.task_state.stage_key == "recovery_brief_ready"
+    assert len(response.generated_outputs) == 1
+    assert response.generated_outputs[0].kind == "workflow_recovery"
+    assert response.generated_outputs[0].status == "attention"
+    assert response.generated_outputs[0].metric_value == "2 failed"

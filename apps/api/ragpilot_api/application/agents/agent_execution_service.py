@@ -18,7 +18,9 @@ from ragpilot_api.application.tool_runtime.tool_runtime_service import ToolRunti
 from ragpilot_api.contracts.http.agent_execution_contracts import (
     AgentExecutionCreateRequest,
     AgentExecutionMetricsResponse,
+    AgentExecutionOutputResponse,
     AgentExecutionResponse,
+    AgentExecutionTaskStateResponse,
 )
 from ragpilot_api.infrastructure.database.models import AgentDefinition, AgentExecution
 from ragpilot_api.infrastructure.database.repositories.agent_execution_repository import AgentExecutionRepository
@@ -850,6 +852,7 @@ class AgentExecutionService:
 
 
 def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExecutionResponse:
+    generated_outputs = build_agent_execution_outputs(agent_execution)
     return AgentExecutionResponse(
         id=agent_execution.id,
         tenant_id=agent_execution.tenant_id,
@@ -865,6 +868,8 @@ def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExec
         execution_input=agent_execution.execution_input,
         summary=agent_execution.summary,
         result_payload_json=dict(agent_execution.result_payload_json or {}),
+        task_state=build_agent_execution_task_state(agent_execution, output_count=len(generated_outputs)),
+        generated_outputs=generated_outputs,
         error_message=agent_execution.error_message,
         launched_by_user_id=agent_execution.launched_by_user_id,
         started_at=agent_execution.started_at,
@@ -872,6 +877,226 @@ def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExec
         created_at=agent_execution.created_at,
         updated_at=agent_execution.updated_at,
     )
+
+
+def build_agent_execution_task_state(
+    agent_execution: AgentExecution,
+    *,
+    output_count: int,
+) -> AgentExecutionTaskStateResponse | None:
+    payload = dict(agent_execution.result_payload_json or {})
+    lane = payload.get("execution_lane")
+    resolved_lane = lane if lane in {"grounded_chat", "document_intake", "workflow_recovery"} else agent_execution.execution_mode
+
+    if resolved_lane not in {"grounded_chat", "document_intake", "workflow_recovery"}:
+        return None
+
+    recommended_action_count = len(payload.get("recommended_action_specs") or payload.get("recommended_actions") or [])
+    tool_runtime = payload.get("tool_runtime") if isinstance(payload.get("tool_runtime"), dict) else {}
+    tool_traces = tool_runtime.get("traces") if isinstance(tool_runtime.get("traces"), list) else []
+    retrieval_result_count = _read_int(payload.get("retrieval_result_count"))
+    runtime_resolution = (
+        payload.get("agent_runtime_resolution")
+        if isinstance(payload.get("agent_runtime_resolution"), dict)
+        else {}
+    )
+    fallback_applied = bool(runtime_resolution.get("fallback_applied"))
+    duration_seconds = None
+    if agent_execution.started_at is not None and agent_execution.completed_at is not None:
+        duration_seconds = max(
+            int((agent_execution.completed_at - agent_execution.started_at).total_seconds()),
+            0,
+        )
+
+    if agent_execution.execution_status == "failed":
+        stage_key = "execution_failed"
+    elif agent_execution.execution_status == "queued":
+        stage_key = "queued_for_execution"
+    elif agent_execution.execution_status == "running":
+        stage_key = "running_execution"
+    elif resolved_lane == "grounded_chat" and isinstance(payload.get("answer_preview"), str) and payload.get("answer_preview"):
+        stage_key = "grounded_answer_ready"
+    elif resolved_lane == "document_intake" and isinstance(payload.get("document_metrics"), dict):
+        stage_key = "intake_review_ready"
+    elif resolved_lane == "workflow_recovery" and isinstance(payload.get("workflow_metrics"), dict):
+        stage_key = "recovery_brief_ready"
+    else:
+        stage_key = "execution_completed"
+
+    return AgentExecutionTaskStateResponse(
+        lane=resolved_lane,
+        stage_key=stage_key,
+        output_count=output_count,
+        recommended_action_count=max(recommended_action_count, 0),
+        tool_trace_count=len(tool_traces),
+        retrieval_result_count=retrieval_result_count,
+        fallback_applied=fallback_applied,
+        duration_seconds=duration_seconds,
+    )
+
+
+def build_agent_execution_outputs(agent_execution: AgentExecution) -> list[AgentExecutionOutputResponse]:
+    payload = dict(agent_execution.result_payload_json or {})
+    outputs: list[AgentExecutionOutputResponse] = []
+
+    answer_preview = payload.get("answer_preview")
+    if isinstance(answer_preview, str) and answer_preview.strip():
+        retrieval_result_count = _read_int(payload.get("retrieval_result_count"))
+        outputs.append(
+            AgentExecutionOutputResponse(
+                output_key="answer_preview",
+                kind="answer_preview",
+                status="ready",
+                metric_value=(
+                    f"{retrieval_result_count} sources"
+                    if retrieval_result_count is not None
+                    else None
+                ),
+                preview=answer_preview.strip(),
+            )
+        )
+
+    retrieval_results = payload.get("retrieval_results") if isinstance(payload.get("retrieval_results"), list) else []
+    if retrieval_results:
+        retrieval_result_count = _read_int(payload.get("retrieval_result_count")) or len(retrieval_results)
+        retrieval_methods = sorted(
+            {
+                str(result.get("retrieval_method")).strip()
+                for result in retrieval_results
+                if isinstance(result, dict)
+                and isinstance(result.get("retrieval_method"), str)
+                and str(result.get("retrieval_method")).strip()
+            }
+        )
+        outputs.append(
+            AgentExecutionOutputResponse(
+                output_key="retrieval_evidence",
+                kind="retrieval_evidence",
+                status="ready" if retrieval_result_count > 0 else "pending",
+                metric_value=f"{retrieval_result_count} hits",
+                preview=", ".join(retrieval_methods[:3]) if retrieval_methods else None,
+            )
+        )
+
+    document_metrics = payload.get("document_metrics") if isinstance(payload.get("document_metrics"), dict) else {}
+    recent_documents = payload.get("recent_documents") if isinstance(payload.get("recent_documents"), list) else []
+    if document_metrics or recent_documents:
+        failed_documents = _read_int(document_metrics.get("failed_documents")) or 0
+        active_documents = _read_int(document_metrics.get("active_documents")) or 0
+        total_documents = _read_int(document_metrics.get("total_documents"))
+        status = "attention" if failed_documents > 0 else "pending" if active_documents > 0 else "ready"
+        document_titles = [
+            str(document.get("title")).strip()
+            for document in recent_documents
+            if isinstance(document, dict)
+            and isinstance(document.get("title"), str)
+            and str(document.get("title")).strip()
+        ]
+        outputs.append(
+            AgentExecutionOutputResponse(
+                output_key="document_intake",
+                kind="document_intake",
+                status=status,
+                metric_value=(
+                    f"{failed_documents} failed"
+                    if failed_documents > 0
+                    else f"{active_documents} active"
+                    if active_documents > 0
+                    else f"{total_documents} total"
+                    if total_documents is not None
+                    else None
+                ),
+                preview=", ".join(document_titles[:2]) if document_titles else None,
+            )
+        )
+
+    workflow_metrics = payload.get("workflow_metrics") if isinstance(payload.get("workflow_metrics"), dict) else {}
+    recent_failed_runs = payload.get("recent_failed_runs") if isinstance(payload.get("recent_failed_runs"), list) else []
+    if workflow_metrics or recent_failed_runs:
+        failed_runs = _read_int(workflow_metrics.get("failed_runs")) or 0
+        queued_runs = _read_int(workflow_metrics.get("queued_runs")) or 0
+        retry_runs = _read_int(workflow_metrics.get("retry_runs")) or 0
+        status = "attention" if failed_runs > 0 else "pending" if queued_runs > 0 else "ready"
+        run_types = [
+            str(workflow_run.get("workflow_type")).strip()
+            for workflow_run in recent_failed_runs
+            if isinstance(workflow_run, dict)
+            and isinstance(workflow_run.get("workflow_type"), str)
+            and str(workflow_run.get("workflow_type")).strip()
+        ]
+        outputs.append(
+            AgentExecutionOutputResponse(
+                output_key="workflow_recovery",
+                kind="workflow_recovery",
+                status=status,
+                metric_value=(
+                    f"{failed_runs} failed"
+                    if failed_runs > 0
+                    else f"{queued_runs} queued"
+                    if queued_runs > 0
+                    else f"{retry_runs} retries"
+                    if retry_runs > 0
+                    else None
+                ),
+                preview=", ".join(run_types[:2]) if run_types else None,
+            )
+        )
+
+    tool_runtime = payload.get("tool_runtime") if isinstance(payload.get("tool_runtime"), dict) else {}
+    if tool_runtime:
+        blocked_tools = _read_int(tool_runtime.get("blocked_tools")) or 0
+        failed_tools = _read_int(tool_runtime.get("failed_tools")) or 0
+        unavailable_tools = _read_int(tool_runtime.get("unavailable_tools")) or 0
+        completed_tools = _read_int(tool_runtime.get("completed_tools")) or 0
+        total_bound_tools = _read_int(tool_runtime.get("total_bound_tools")) or 0
+        tool_status = (
+            "attention"
+            if blocked_tools > 0 or failed_tools > 0 or unavailable_tools > 0
+            else "ready"
+            if completed_tools > 0
+            else "pending"
+        )
+        traces = tool_runtime.get("traces") if isinstance(tool_runtime.get("traces"), list) else []
+        first_issue = next(
+            (
+                str(trace.get("governance_issue")).strip().replace("_", " ")
+                for trace in traces
+                if isinstance(trace, dict)
+                and isinstance(trace.get("governance_issue"), str)
+                and str(trace.get("governance_issue")).strip()
+            ),
+            None,
+        )
+        outputs.append(
+            AgentExecutionOutputResponse(
+                output_key="tool_runtime",
+                kind="tool_runtime",
+                status=tool_status,
+                metric_value=(
+                    f"{completed_tools}/{total_bound_tools} completed"
+                    if total_bound_tools > 0
+                    else None
+                ),
+                preview=first_issue,
+            )
+        )
+
+    return outputs
+
+
+def _read_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
 
 
 def sanitize_json_value(value):

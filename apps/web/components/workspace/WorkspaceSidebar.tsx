@@ -5,6 +5,13 @@ import { BookOpen, Building2, FileText, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DialogFormActions,
+  DialogFormField,
+  DialogFormGrid,
+  DialogFormLayout,
+  FormDialog
+} from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,28 +97,20 @@ type WorkspaceSidebarProps = {
   knowledgeBaseForm: KnowledgeBaseFormControls;
   managementPanel: ContextManagementPanel;
   onFileSelection: (event: ChangeEvent<HTMLInputElement>) => void;
+  onImportWebPage: () => void | Promise<void>;
   onSwitchWorkspaceContext: (selection: WorkspaceSelection) => void | Promise<void>;
   onUploadDocument: () => void | Promise<void>;
+  onWebImportTitleChange: Dispatch<SetStateAction<string>>;
+  onWebImportUrlChange: Dispatch<SetStateAction<string>>;
   retrievalProfiles: PlatformRetrievalProfile[];
   setManagementPanel: Dispatch<SetStateAction<ContextManagementPanel>>;
   setShowConsoleControls: Dispatch<SetStateAction<boolean>>;
   showConsoleControls: boolean;
   tenantForm: TenantFormControls;
   uploadFile: File | null;
+  webImportTitle: string;
+  webImportUrl: string;
   workspaceForm: WorkspaceFormControls;
-};
-
-type ManagementDialogProps = {
-  children: ReactNode;
-  description: string;
-  onClose: () => void;
-  title: string;
-};
-
-type ManagementFieldProps = {
-  children: ReactNode;
-  label: string;
-  hint?: string;
 };
 
 function resolveDisplayDescription(
@@ -136,32 +135,16 @@ function ManagementDialog({
   description,
   onClose,
   title
-}: ManagementDialogProps) {
-  const { t } = useI18n();
-
+}: {
+  children: ReactNode;
+  description: string;
+  onClose: () => void;
+  title: string;
+}) {
   return (
-    <>
-      <button
-        aria-label={`${t("workspace.sidebar.closeContextControls")} ${title}`}
-        className="fixed inset-0 z-[60] bg-slate-950/45 backdrop-blur-sm"
-        onClick={onClose}
-        type="button"
-      />
-      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6">
-        <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-[680px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:max-h-[calc(100vh-3rem)]">
-          <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-            <div>
-              <div className="text-base font-semibold text-slate-950 dark:text-slate-50">{title}</div>
-              <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{description}</div>
-            </div>
-            <Button onClick={onClose} size="icon" type="button" variant="ghost">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">{children}</div>
-        </div>
-      </div>
-    </>
+    <FormDialog description={description} onClose={onClose} open size="lg" title={title}>
+      {children}
+    </FormDialog>
   );
 }
 
@@ -169,17 +152,15 @@ function ManagementField({
   children,
   hint,
   label
-}: ManagementFieldProps) {
-  const { language } = useI18n();
-
+}: {
+  children: ReactNode;
+  label: string;
+  hint?: string;
+}) {
   return (
-    <div className="space-y-2">
-      <div>
-        <div className={cn("text-xs font-semibold tracking-[0.16em] text-slate-500 dark:text-slate-400", language === "en" && "uppercase")}>{label}</div>
-        {hint ? <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</div> : null}
-      </div>
+    <DialogFormField hint={hint} label={label}>
       {children}
-    </div>
+    </DialogFormField>
   );
 }
 
@@ -197,14 +178,19 @@ export function WorkspaceSidebar({
   knowledgeBaseForm,
   managementPanel,
   onFileSelection,
+  onImportWebPage,
   onSwitchWorkspaceContext,
   onUploadDocument,
+  onWebImportTitleChange,
+  onWebImportUrlChange,
   retrievalProfiles,
   setManagementPanel,
   setShowConsoleControls,
   showConsoleControls,
   tenantForm,
   uploadFile,
+  webImportTitle,
+  webImportUrl,
   workspaceForm
 }: WorkspaceSidebarProps) {
   const { t } = useI18n();
@@ -549,6 +535,37 @@ export function WorkspaceSidebar({
                 {isUploading ? t("workspace.sidebar.indexingDocument") : t("workspace.sidebar.uploadAndIndex")}
               </Button>
             </div>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                {t("workspace.sidebar.webImportTitle")}
+              </div>
+              <div className="space-y-2">
+                <Input
+                  className="bg-white dark:border-slate-700 dark:bg-slate-950"
+                  disabled={!canManageDocuments || isUploading || isContextControlDisabled}
+                  onChange={(event) => onWebImportUrlChange(event.target.value)}
+                  placeholder={t("workspace.sidebar.webImportUrlPlaceholder")}
+                  type="url"
+                  value={webImportUrl}
+                />
+                <Input
+                  className="bg-white dark:border-slate-700 dark:bg-slate-950"
+                  disabled={!canManageDocuments || isUploading || isContextControlDisabled}
+                  onChange={(event) => onWebImportTitleChange(event.target.value)}
+                  placeholder={t("workspace.sidebar.webImportDocumentTitlePlaceholder")}
+                  value={webImportTitle}
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={!canManageDocuments || !webImportUrl.trim() || isUploading || isContextControlDisabled}
+                onClick={onImportWebPage}
+                type="button"
+                variant="outline"
+              >
+                {isUploading ? t("workspace.sidebar.importingWebPage") : t("workspace.sidebar.importWebPage")}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -559,7 +576,8 @@ export function WorkspaceSidebar({
           onClose={() => setManagementPanel(null)}
           title={t("workspace.sidebar.modal.tenantEditTitle")}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <DialogFormLayout>
+          <DialogFormGrid>
             <ManagementField label={t("workspace.sidebar.modal.tenantName")}>
               <Input onChange={(event) => tenantForm.setEditName(event.target.value)} placeholder={t("workspace.sidebar.modal.tenantNamePlaceholder")} value={tenantForm.editName} />
             </ManagementField>
@@ -570,8 +588,8 @@ export function WorkspaceSidebar({
                 value={tenantForm.editSlug}
               />
             </ManagementField>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+          </DialogFormGrid>
+          <DialogFormActions className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button onClick={() => setManagementPanel(null)} type="button" variant="outline">
               {t("workspace.sidebar.modal.cancel")}
             </Button>
@@ -582,7 +600,8 @@ export function WorkspaceSidebar({
             >
               {isUpdatingContext ? t("workspace.sidebar.modal.saving") : t("workspace.sidebar.modal.saveTenant")}
             </Button>
-          </div>
+          </DialogFormActions>
+          </DialogFormLayout>
         </ManagementDialog>
       ) : null}
 
@@ -592,7 +611,8 @@ export function WorkspaceSidebar({
           onClose={() => setManagementPanel(null)}
           title={t("workspace.sidebar.modal.tenantCreateTitle")}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <DialogFormLayout>
+          <DialogFormGrid>
             <ManagementField label={t("workspace.sidebar.modal.tenantName")}>
               <Input
                 onChange={(event) => {
@@ -613,8 +633,8 @@ export function WorkspaceSidebar({
                 value={tenantForm.newSlug}
               />
             </ManagementField>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+          </DialogFormGrid>
+          <DialogFormActions className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button onClick={() => setManagementPanel(null)} type="button" variant="outline">
               {t("workspace.sidebar.modal.cancel")}
             </Button>
@@ -625,7 +645,8 @@ export function WorkspaceSidebar({
             >
               {isCreatingContext ? t("workspace.sidebar.modal.creating") : t("workspace.sidebar.modal.createTenant")}
             </Button>
-          </div>
+          </DialogFormActions>
+          </DialogFormLayout>
         </ManagementDialog>
       ) : null}
 
@@ -635,7 +656,8 @@ export function WorkspaceSidebar({
           onClose={() => setManagementPanel(null)}
           title={t("workspace.sidebar.modal.workspaceEditTitle")}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <DialogFormLayout>
+          <DialogFormGrid>
             <ManagementField label={t("workspace.sidebar.modal.workspaceName")}>
               <Input onChange={(event) => workspaceForm.setEditName(event.target.value)} placeholder={t("workspace.sidebar.modal.workspaceNamePlaceholder")} value={workspaceForm.editName} />
             </ManagementField>
@@ -646,7 +668,7 @@ export function WorkspaceSidebar({
                 value={workspaceForm.editSlug}
               />
             </ManagementField>
-          </div>
+          </DialogFormGrid>
           <ManagementField hint={t("workspace.sidebar.modal.workspaceDescriptionHint")} label={t("workspace.sidebar.modal.workspaceDescription")}>
             <Textarea
               className="min-h-28"
@@ -655,7 +677,7 @@ export function WorkspaceSidebar({
               value={workspaceForm.editDescription}
             />
           </ManagementField>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <DialogFormActions className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button onClick={() => setManagementPanel(null)} type="button" variant="outline">
               {t("workspace.sidebar.modal.cancel")}
             </Button>
@@ -666,7 +688,8 @@ export function WorkspaceSidebar({
             >
               {isUpdatingContext ? t("workspace.sidebar.modal.saving") : t("workspace.sidebar.modal.saveWorkspace")}
             </Button>
-          </div>
+          </DialogFormActions>
+          </DialogFormLayout>
         </ManagementDialog>
       ) : null}
 
@@ -676,7 +699,8 @@ export function WorkspaceSidebar({
           onClose={() => setManagementPanel(null)}
           title={t("workspace.sidebar.modal.workspaceCreateTitle")}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <DialogFormLayout>
+          <DialogFormGrid>
             <ManagementField label={t("workspace.sidebar.modal.workspaceName")}>
               <Input
                 onChange={(event) => {
@@ -697,7 +721,7 @@ export function WorkspaceSidebar({
                 value={workspaceForm.newSlug}
               />
             </ManagementField>
-          </div>
+          </DialogFormGrid>
           <ManagementField hint={t("workspace.sidebar.modal.workspaceDescriptionHint")} label={t("workspace.sidebar.modal.workspaceDescription")}>
             <Textarea
               className="min-h-28"
@@ -706,7 +730,7 @@ export function WorkspaceSidebar({
               value={workspaceForm.newDescription}
             />
           </ManagementField>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <DialogFormActions className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button onClick={() => setManagementPanel(null)} type="button" variant="outline">
               {t("workspace.sidebar.modal.cancel")}
             </Button>
@@ -717,7 +741,8 @@ export function WorkspaceSidebar({
             >
               {isCreatingContext ? t("workspace.sidebar.modal.creating") : t("workspace.sidebar.modal.createWorkspace")}
             </Button>
-          </div>
+          </DialogFormActions>
+          </DialogFormLayout>
         </ManagementDialog>
       ) : null}
 
@@ -727,7 +752,8 @@ export function WorkspaceSidebar({
           onClose={() => setManagementPanel(null)}
           title={t("workspace.sidebar.modal.knowledgeBaseEditTitle")}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <DialogFormLayout>
+          <DialogFormGrid>
             <ManagementField label={t("workspace.sidebar.modal.knowledgeBaseName")}>
               <Input
                 onChange={(event) => knowledgeBaseForm.setEditName(event.target.value)}
@@ -742,7 +768,7 @@ export function WorkspaceSidebar({
                 value={knowledgeBaseForm.editSlug}
               />
             </ManagementField>
-          </div>
+          </DialogFormGrid>
           <ManagementField hint={t("workspace.sidebar.modal.knowledgeBaseDescriptionHint")} label={t("workspace.sidebar.modal.knowledgeBaseDescription")}>
             <Textarea
               className="min-h-28"
@@ -772,7 +798,7 @@ export function WorkspaceSidebar({
               </SelectContent>
             </Select>
           </ManagementField>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <DialogFormActions className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button onClick={() => setManagementPanel(null)} type="button" variant="outline">
               {t("workspace.sidebar.modal.cancel")}
             </Button>
@@ -783,7 +809,8 @@ export function WorkspaceSidebar({
             >
               {isUpdatingContext ? t("workspace.sidebar.modal.saving") : t("workspace.sidebar.modal.saveKnowledgeBase")}
             </Button>
-          </div>
+          </DialogFormActions>
+          </DialogFormLayout>
         </ManagementDialog>
       ) : null}
 
@@ -793,7 +820,8 @@ export function WorkspaceSidebar({
           onClose={() => setManagementPanel(null)}
           title={t("workspace.sidebar.modal.knowledgeBaseCreateTitle")}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <DialogFormLayout>
+          <DialogFormGrid>
             <ManagementField label={t("workspace.sidebar.modal.knowledgeBaseName")}>
               <Input
                 onChange={(event) => {
@@ -814,7 +842,7 @@ export function WorkspaceSidebar({
                 value={knowledgeBaseForm.newSlug}
               />
             </ManagementField>
-          </div>
+          </DialogFormGrid>
           <ManagementField hint={t("workspace.sidebar.modal.knowledgeBaseDescriptionHint")} label={t("workspace.sidebar.modal.knowledgeBaseDescription")}>
             <Textarea
               className="min-h-28"
@@ -844,7 +872,7 @@ export function WorkspaceSidebar({
               </SelectContent>
             </Select>
           </ManagementField>
-          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <DialogFormActions className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button onClick={() => setManagementPanel(null)} type="button" variant="outline">
               {t("workspace.sidebar.modal.cancel")}
             </Button>
@@ -855,7 +883,8 @@ export function WorkspaceSidebar({
             >
               {isCreatingContext ? t("workspace.sidebar.modal.creating") : t("workspace.sidebar.modal.createKnowledgeBase")}
             </Button>
-          </div>
+          </DialogFormActions>
+          </DialogFormLayout>
         </ManagementDialog>
       ) : null}
     </>

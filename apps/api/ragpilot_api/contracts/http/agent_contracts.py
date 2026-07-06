@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 AgentMode = Literal["grounded_chat", "document_intake", "workflow_recovery"]
@@ -12,6 +12,7 @@ AgentTool = Literal["chat", "documents", "operations", "admin"]
 AgentRuntimeReadinessIssue = Literal[
     "model_missing",
     "model_disabled",
+    "model_runtime_unconfigured",
     "retrieval_profile_missing",
     "retrieval_profile_disabled",
     "scope_missing",
@@ -25,6 +26,8 @@ AgentRuntimeReadinessIssue = Literal[
 
 
 class AgentDefinitionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -40,6 +43,8 @@ class AgentDefinitionCreateRequest(BaseModel):
 
 
 class AgentDefinitionUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     mode: AgentMode
@@ -67,6 +72,7 @@ class AgentDefinitionResponse(BaseModel):
     knowledge_base_scope: str | None
     tools: list[AgentTool]
     tool_registration_ids: list[UUID]
+    runtime_governance: "AgentRuntimeGovernanceDigestResponse | None" = None
     created_at: datetime
     updated_at: datetime
 
@@ -96,9 +102,19 @@ class AgentRuntimeResolvedModelEndpointResponse(BaseModel):
     slug: str
     provider_type: str
     model_name: str
+    base_url: str | None
+    credential_mode: str
+    credential_key_hint: str | None
     capabilities: list[str]
     is_enabled: bool
     is_default: bool
+    runtime_ready: bool
+    runtime_issue: Literal["missing_base_url", "missing_credential_hint", "managed_reserved"] | None
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: Literal["completed", "blocked", "failed"] | None = None
+    last_preview_at: datetime | None = None
 
 
 class AgentRuntimeResolvedRetrievalProfileResponse(BaseModel):
@@ -111,9 +127,43 @@ class AgentRuntimeResolvedRetrievalProfileResponse(BaseModel):
     source: Literal["knowledge_base", "platform_default"]
 
 
+class AgentRuntimeFocusToolRegistrationResponse(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    transport_type: Literal["native", "http", "mcp_reserved"]
+    surface_area: Literal["chat", "documents", "operations", "admin", "agents"]
+    endpoint_url: str | None
+    connector_reference: str | None
+    requires_admin_approval: bool
+    is_enabled: bool
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: Literal["completed", "blocked", "failed"] | None = None
+    last_preview_at: datetime | None = None
+
+
+class AgentRuntimeFocusMcpConnectorResponse(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    connector_type: Literal["streamable_http", "sse", "managed_reserved"]
+    base_url: str | None
+    auth_mode: Literal["none", "environment", "managed_reserved"]
+    credential_key_hint: str | None
+    is_enabled: bool
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: Literal["completed", "blocked", "failed"] | None = None
+    last_preview_at: datetime | None = None
+
+
 class AgentRuntimeIssueCountsResponse(BaseModel):
     model_missing: int = 0
     model_disabled: int = 0
+    model_runtime_unconfigured: int = 0
     retrieval_profile_missing: int = 0
     retrieval_profile_disabled: int = 0
     scope_missing: int = 0
@@ -148,6 +198,34 @@ class AgentRuntimeGovernanceItemResponse(BaseModel):
     missing_tool_registration_count: int
     reserved_mcp_tool_count: int
     integration_pending_mcp_tool_count: int
+    disabled_tool_registration_id: UUID | None
+    approval_required_tool_registration_id: UUID | None
+    reserved_mcp_tool_registration_id: UUID | None
+    integration_pending_mcp_tool_registration_id: UUID | None
+    integration_pending_mcp_connector_reference: str | None
+    focus_tool_registration: AgentRuntimeFocusToolRegistrationResponse | None
+    focus_mcp_connector: AgentRuntimeFocusMcpConnectorResponse | None
+    resolved_scope: AgentRuntimeResolvedScopeResponse
+    resolved_model_endpoint: AgentRuntimeResolvedModelEndpointResponse | None
+    resolved_retrieval_profile: AgentRuntimeResolvedRetrievalProfileResponse | None
+
+
+class AgentRuntimeGovernanceDigestResponse(BaseModel):
+    is_ready: bool
+    issues: list[AgentRuntimeReadinessIssue]
+    blocking_issues: list[AgentRuntimeReadinessIssue]
+    approval_required_tool_count: int
+    disabled_registered_tool_count: int
+    missing_tool_registration_count: int
+    reserved_mcp_tool_count: int
+    integration_pending_mcp_tool_count: int
+    disabled_tool_registration_id: UUID | None
+    approval_required_tool_registration_id: UUID | None
+    reserved_mcp_tool_registration_id: UUID | None
+    integration_pending_mcp_tool_registration_id: UUID | None
+    integration_pending_mcp_connector_reference: str | None
+    focus_tool_registration: AgentRuntimeFocusToolRegistrationResponse | None
+    focus_mcp_connector: AgentRuntimeFocusMcpConnectorResponse | None
     resolved_scope: AgentRuntimeResolvedScopeResponse
     resolved_model_endpoint: AgentRuntimeResolvedModelEndpointResponse | None
     resolved_retrieval_profile: AgentRuntimeResolvedRetrievalProfileResponse | None
@@ -163,6 +241,7 @@ class AgentRuntimeGovernanceSummaryResponse(BaseModel):
     active_agents_without_scope: int
     agents_missing_model: int
     agents_using_disabled_model: int
+    agents_using_unconfigured_model: int
     agents_missing_retrieval_profile: int
     agents_using_disabled_retrieval_profile: int
     agents_missing_tool_registration: int
@@ -182,3 +261,6 @@ class AgentRuntimeGovernanceSummaryResponse(BaseModel):
 class AgentRuntimeGovernanceResponse(BaseModel):
     summary: AgentRuntimeGovernanceSummaryResponse
     items: list[AgentRuntimeGovernanceItemResponse]
+
+
+AgentDefinitionResponse.model_rebuild()

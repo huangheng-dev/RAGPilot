@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   formatFileSize,
   formatNumber,
@@ -13,9 +15,11 @@ import { formatOperatorErrorMessage } from "../../lib/api-errors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { WorkspaceExecutionPacket } from "@/components/workspace/WorkspaceExecutionPacket";
 import { WorkspaceRecommendedAgentsPanel } from "@/components/workspace/WorkspaceRecommendedAgentsPanel";
 import { useI18n } from "@/lib/i18n/provider";
+import { resolveWorkflowFollowUpStage } from "@/lib/workspace-workflow-follow-up";
 import { cn } from "@/lib/utils";
 import type { WorkspaceAgentRecommendation, WorkspaceView } from "@/components/workspace/workspace-types";
 
@@ -50,7 +54,14 @@ type WorkflowRunSummary = {
   id: string;
   workflow_status: string;
   workflow_type: string;
+  recommended_next_view?: WorkspaceView | null;
+  recommended_primary_action?: "retry_workflow" | "open_workflows" | "open_document" | "open_chat" | "monitor_workflow" | null;
+  follow_up_reason?: string | null;
+  latest_active_step_name?: string | null;
+  latest_completed_step_name?: string | null;
+  failure_focus_step_name?: string | null;
   error_message?: string | null;
+  operator_notes?: string | null;
   created_at: string;
 };
 
@@ -79,6 +90,7 @@ type SelectedDocumentPanelProps = {
   emptyState: string;
   focusedChunkId?: string | null;
   canManageDocuments: boolean;
+  isActivatingRecommendation?: boolean;
   isRunningDocumentAction: boolean;
   onDeleteDocument: () => void | Promise<void>;
   onOpenChatView?: () => void;
@@ -96,12 +108,21 @@ type SelectedDocumentPanelProps = {
   title?: string;
 };
 
+type DocumentPanelAction = {
+  key: string;
+  label: string;
+  onClick: () => void | Promise<void>;
+  disabled?: boolean;
+  variant?: "default" | "outline";
+};
+
 export function SelectedDocumentPanel({
   chunkPreviewClassName,
   detail,
   emptyState,
   focusedChunkId = null,
   canManageDocuments,
+  isActivatingRecommendation = false,
   isRunningDocumentAction,
   onDeleteDocument,
   onOpenChatView,
@@ -119,10 +140,13 @@ export function SelectedDocumentPanel({
   title,
 }: SelectedDocumentPanelProps) {
   const { t } = useI18n();
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const latestWorkflowRun = relatedWorkflowRuns[0] ?? null;
   const topRecommendation = recommendedAgents[0] ?? null;
-  const chunkCount = detail?.chunk_count ?? detail?.chunks.length ?? 0;
-  const tokenCountTotal = detail?.token_count_total ?? detail?.chunks.reduce((sum, chunk) => sum + (chunk.token_count ?? 0), 0) ?? 0;
+  const chunks = Array.isArray(detail?.chunks) ? detail.chunks : [];
+  const recentVersions = Array.isArray(detail?.recent_versions) ? detail.recent_versions : [];
+  const chunkCount = detail?.chunk_count ?? chunks.length;
+  const tokenCountTotal = detail?.token_count_total ?? chunks.reduce((sum, chunk) => sum + (chunk.token_count ?? 0), 0);
   const isDeletedDocument = Boolean(detail?.document.is_deleted);
   const isDocumentFailed = detail?.document.ingestion_status === "failed" || detail?.document.indexing_status === "failed";
   const isLatestWorkflowFailed = latestWorkflowRun?.workflow_status === "failed";
@@ -168,6 +192,10 @@ export function SelectedDocumentPanel({
       return topRecommendation.targetView;
     }
 
+    if (latestWorkflowRun?.recommended_next_view) {
+      return latestWorkflowRun.recommended_next_view;
+    }
+
     if (isDocumentFailed || isLatestWorkflowFailed) {
       return "workflows";
     }
@@ -201,23 +229,62 @@ export function SelectedDocumentPanel({
     }
 
     if (isDocumentFailed || isLatestWorkflowFailed) {
-      return t("workspace.selectedDocument.packet.failedDescription");
+      return latestWorkflowRun?.follow_up_reason ?? t("workspace.selectedDocument.packet.failedDescription");
     }
 
     if (isDocumentReady) {
-      return t("workspace.selectedDocument.packet.readyDescription");
+      return latestWorkflowRun?.follow_up_reason ?? t("workspace.selectedDocument.packet.readyDescription");
     }
 
-    return t("workspace.selectedDocument.packet.intakeDescription");
+    return latestWorkflowRun?.follow_up_reason ?? t("workspace.selectedDocument.packet.intakeDescription");
   }
 
-  function buildExecutionPacketPrimaryAction() {
+  function buildWorkflowDirectedAction(): DocumentPanelAction | null {
+    if (!latestWorkflowRun) {
+      return null;
+    }
+
+    if (latestWorkflowRun.recommended_primary_action === "open_chat" && onOpenChatView) {
+      return {
+        key: "open-chat",
+        label: t("workspace.selectedDocument.continueInChat"),
+        onClick: onOpenChatView,
+      };
+    }
+
+    if (
+      (latestWorkflowRun.recommended_primary_action === "open_workflows" ||
+        latestWorkflowRun.recommended_primary_action === "monitor_workflow") &&
+      onOpenWorkflowView
+    ) {
+      return {
+        key: "open-workflows",
+        label: t("workspace.selectedDocument.openWorkflowSupervision"),
+        onClick: onOpenWorkflowView,
+        variant: "outline",
+      };
+    }
+
+    if (latestWorkflowRun.recommended_primary_action === "retry_workflow" && onInspectWorkflowRun) {
+      return {
+        key: "inspect-latest-run",
+        label: t("workspace.selectedDocument.inspectLatestRun"),
+        onClick: () => onInspectWorkflowRun(latestWorkflowRun.id),
+        variant: "outline",
+      };
+    }
+
+    return null;
+  }
+
+  function buildExecutionPacketPrimaryAction(): DocumentPanelAction | null {
     if (isDeletedDocument) {
       if (!canManageDocuments) {
         return null;
       }
 
       return {
+        key: "restore-document",
         label: t("workspace.selectedDocument.restore"),
         onClick: onRestoreDocument,
       };
@@ -225,13 +292,21 @@ export function SelectedDocumentPanel({
 
     if (topRecommendation && onActivateRecommendedAgent) {
       return {
+        key: `activate-recommendation-${topRecommendation.agent.id}`,
         label: getRecommendationActionLabel(topRecommendation.targetView),
+        disabled: isActivatingRecommendation,
         onClick: () => onActivateRecommendedAgent(topRecommendation),
       };
     }
 
+    const workflowDirectedAction = buildWorkflowDirectedAction();
+    if (workflowDirectedAction) {
+      return workflowDirectedAction;
+    }
+
     if (isDocumentReady && onOpenChatView) {
       return {
+        key: "open-chat",
         label: t("workspace.selectedDocument.continueInChat"),
         onClick: onOpenChatView,
       };
@@ -239,6 +314,7 @@ export function SelectedDocumentPanel({
 
     if (isDocumentFailed && onOpenFailedDocumentsQueue) {
       return {
+        key: "open-failed-queue",
         label: t("workspace.selectedDocument.openFailedQueue"),
         onClick: onOpenFailedDocumentsQueue,
         variant: "outline" as const,
@@ -247,6 +323,7 @@ export function SelectedDocumentPanel({
 
     if ((isDocumentFailed || isLatestWorkflowFailed) && onOpenWorkflowView) {
       return {
+        key: "open-workflows",
         label: t("workspace.selectedDocument.openWorkflowSupervision"),
         onClick: onOpenWorkflowView,
         variant: "outline" as const,
@@ -255,6 +332,7 @@ export function SelectedDocumentPanel({
 
     if (latestWorkflowRun && onInspectWorkflowRun) {
       return {
+        key: "inspect-latest-run",
         label: t("workspace.selectedDocument.inspectLatestRun"),
         onClick: () => onInspectWorkflowRun(latestWorkflowRun.id),
         variant: "outline" as const,
@@ -265,31 +343,65 @@ export function SelectedDocumentPanel({
   }
 
   function buildExecutionPacketSecondaryActions() {
-    const actions: Array<{ label: string; onClick: () => void | Promise<void>; variant?: "default" | "outline" }> = [];
+    const actions: DocumentPanelAction[] = [];
     const primaryAction = buildExecutionPacketPrimaryAction();
+
+    function pushAction(action: DocumentPanelAction | null) {
+      if (!action) {
+        return;
+      }
+
+      if (primaryAction?.key === action.key) {
+        return;
+      }
+
+      if (actions.some((item) => item.key === action.key)) {
+        return;
+      }
+
+      actions.push(action);
+    }
 
     if (isDeletedDocument) {
       return actions;
     }
 
-    if (isDocumentReady && onOpenChatView && primaryAction?.label !== t("workspace.selectedDocument.continueInChat")) {
-      actions.push({
+    if (isDocumentReady && onOpenChatView) {
+      pushAction({
+        key: "open-chat",
         label: t("workspace.selectedDocument.continueInChat"),
+        disabled: isActivatingRecommendation,
         onClick: onOpenChatView,
       });
     }
 
-    if (onOpenWorkflowView && primaryAction?.label !== t("workspace.selectedDocument.openWorkflowSupervision")) {
-      actions.push({
+    if (isDocumentFailed && onOpenFailedDocumentsQueue) {
+      pushAction({
+        key: "open-failed-queue",
+        label: t("workspace.selectedDocument.openFailedQueue"),
+        disabled: isActivatingRecommendation,
+        onClick: onOpenFailedDocumentsQueue,
+        variant: "outline",
+      });
+    }
+
+    pushAction(buildWorkflowDirectedAction());
+
+    if (onOpenWorkflowView) {
+      pushAction({
+        key: "open-workflows",
         label: t("workspace.selectedDocument.openWorkflowSupervision"),
+        disabled: isActivatingRecommendation,
         onClick: onOpenWorkflowView,
         variant: "outline",
       });
     }
 
-    if (latestWorkflowRun && onInspectWorkflowRun && primaryAction?.label !== t("workspace.selectedDocument.inspectLatestRun")) {
-      actions.push({
+    if (latestWorkflowRun && onInspectWorkflowRun) {
+      pushAction({
+        key: "inspect-latest-run",
         label: t("workspace.selectedDocument.inspectLatestRun"),
+        disabled: isActivatingRecommendation,
         onClick: () => onInspectWorkflowRun(latestWorkflowRun.id),
         variant: "outline",
       });
@@ -303,7 +415,59 @@ export function SelectedDocumentPanel({
       return null;
     }
 
-    if (isDocumentFailed || isLatestWorkflowFailed) {
+    if (latestWorkflowRun) {
+      const latestWorkflowStage = resolveWorkflowFollowUpStage(latestWorkflowRun.workflow_status);
+
+      if (latestWorkflowStage === "recovery") {
+        if (!onOpenFailedDocumentsQueue && !onOpenWorkflowView) {
+          return null;
+        }
+
+        return (
+          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+            <div className="font-medium text-amber-900">{t("workspace.selectedDocument.operatorNextStep")}</div>
+            <div className="mt-1 text-amber-800">
+              {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.operatorNextStepDescription")}
+            </div>
+          </div>
+        );
+      }
+
+      if (latestWorkflowStage === "monitoring") {
+        return (
+          <div className="mb-3 rounded-md border border-sky-200 bg-sky-50/70 px-3 py-3 text-xs text-slate-700">
+            <div className="font-medium text-slate-950">{t("workspace.selectedDocument.intakeFollowUpTitle")}</div>
+            <div className="mt-1 text-slate-600">
+              {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.intakeFollowUpDescription")}
+            </div>
+          </div>
+        );
+      }
+
+      if (latestWorkflowStage === "ready") {
+        return (
+          <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 py-3 text-xs text-slate-700">
+            <div className="font-medium text-slate-950">{t("workspace.selectedDocument.readyFollowUpTitle")}</div>
+            <div className="mt-1 text-slate-600">
+              {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.readyFollowUpDescription")}
+            </div>
+          </div>
+        );
+      }
+
+      if (latestWorkflowStage === "cancelled") {
+        return (
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-700">
+            <div className="font-medium text-slate-950">{t("workspace.selectedDocument.operatorNextStep")}</div>
+            <div className="mt-1 text-slate-600">
+              {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.operatorNextStepDescription")}
+            </div>
+          </div>
+        );
+      }
+    }
+
+    if (isDocumentFailed) {
       if (!onOpenFailedDocumentsQueue && !onOpenWorkflowView) {
         return null;
       }
@@ -311,9 +475,7 @@ export function SelectedDocumentPanel({
       return (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
           <div className="font-medium text-amber-900">{t("workspace.selectedDocument.operatorNextStep")}</div>
-          <div className="mt-1 text-amber-800">
-            {t("workspace.selectedDocument.operatorNextStepDescription")}
-          </div>
+          <div className="mt-1 text-amber-800">{t("workspace.selectedDocument.operatorNextStepDescription")}</div>
         </div>
       );
     }
@@ -327,7 +489,7 @@ export function SelectedDocumentPanel({
       );
     }
 
-    if (!isDocumentReady && !isDocumentFailed && !isLatestWorkflowFailed && (onOpenWorkflowView || latestWorkflowRun)) {
+    if (onOpenWorkflowView) {
       return (
         <div className="mb-3 rounded-md border border-sky-200 bg-sky-50/70 px-3 py-3 text-xs text-slate-700">
           <div className="font-medium text-slate-950">{t("workspace.selectedDocument.intakeFollowUpTitle")}</div>
@@ -337,6 +499,23 @@ export function SelectedDocumentPanel({
     }
 
     return null;
+  }
+
+  function resolveLatestWorkflowFollowUpTitle() {
+    if (!latestWorkflowRun) {
+      return t("workspace.selectedDocument.operatorNextStep");
+    }
+
+    const latestWorkflowStage = resolveWorkflowFollowUpStage(latestWorkflowRun.workflow_status);
+    if (latestWorkflowStage === "ready") {
+      return t("workspace.selectedDocument.readyFollowUpTitle");
+    }
+
+    if (latestWorkflowStage === "monitoring") {
+      return t("workspace.selectedDocument.intakeFollowUpTitle");
+    }
+
+    return t("workspace.selectedDocument.operatorNextStep");
   }
 
   return (
@@ -366,7 +545,7 @@ export function SelectedDocumentPanel({
                   <Button
                     className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700"
                     disabled={!canManageDocuments || isRunningDocumentAction}
-                    onClick={() => void onDeleteDocument()}
+                    onClick={() => setIsDeleteConfirmOpen(true)}
                     size="sm"
                     type="button"
                     variant="outline"
@@ -484,6 +663,7 @@ export function SelectedDocumentPanel({
                       <WorkspaceRecommendedAgentsPanel
                         description={t("workspace.selectedDocument.recommendedAgentsDescription")}
                         getActionLabel={getRecommendationActionLabel}
+                        isActivatingRecommendation={isActivatingRecommendation}
                         onActivateRecommendation={onActivateRecommendedAgent}
                         recommendations={recommendedAgents}
                         title={t("workspace.selectedDocument.recommendedAgents")}
@@ -509,6 +689,20 @@ export function SelectedDocumentPanel({
                           {formatOperatorErrorMessage(latestWorkflowRun.error_message)}
                         </div>
                       ) : null}
+                      {latestWorkflowRun.follow_up_reason ? (
+                        <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                          <div className="font-medium text-slate-900">{resolveLatestWorkflowFollowUpTitle()}</div>
+                          <div className="mt-1 leading-6">{latestWorkflowRun.follow_up_reason}</div>
+                        </div>
+                      ) : null}
+                      {latestWorkflowRun.operator_notes ? (
+                        <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                          <div className="font-medium text-slate-900">{t("workspace.selectedDocument.operatorHandoff")}</div>
+                          <div className="mt-1 whitespace-pre-wrap break-words leading-6">
+                            {latestWorkflowRun.operator_notes}
+                          </div>
+                        </div>
+                      ) : null}
                       {onInspectWorkflowRun ? (
                         <Button className="mt-3" onClick={() => void onInspectWorkflowRun(latestWorkflowRun.id)} size="sm" type="button" variant="outline">
                           {t("workspace.selectedDocument.inspectLatestRun")}
@@ -522,10 +716,10 @@ export function SelectedDocumentPanel({
                 <div className="rounded-md bg-white px-3 py-3 text-xs text-slate-600">
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-medium text-slate-900">{t("workspace.selectedDocument.recentVersions")}</div>
-                    <div className="text-slate-500">{detail.recent_versions?.length ?? 0}</div>
+                    <div className="text-slate-500">{recentVersions.length}</div>
                   </div>
                   <div className="mt-3 space-y-2">
-                    {detail.recent_versions?.map((version) => (
+                    {recentVersions.map((version) => (
                       <div key={version.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
                         <div className="flex items-start justify-between gap-3">
                             <div>
@@ -556,23 +750,10 @@ export function SelectedDocumentPanel({
                     ))}
                   </div>
                 </div>
-                <div className="rounded-md bg-white px-3 py-3 text-xs text-slate-600">
-                  <div className="font-medium text-slate-900">{t("workspace.selectedDocument.storageLocation")}</div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.bucket")}</div>
-                      <div className="mt-1 break-all font-medium text-slate-900">{detail.storage_bucket ?? t("workspace.selectedDocument.notAvailable")}</div>
-                    </div>
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.key")}</div>
-                      <div className="mt-1 break-all font-medium text-slate-900">{detail.storage_key ?? t("workspace.selectedDocument.notAvailable")}</div>
-                    </div>
-                  </div>
-                </div>
               </>
             )}
             <div className="space-y-2">
-              {detail.chunks.slice(0, 3).map((chunk) => (
+              {chunks.slice(0, 3).map((chunk) => (
                 <div
                   key={chunk.id}
                   className={cn(
@@ -600,7 +781,7 @@ export function SelectedDocumentPanel({
                   )}
                 </div>
               ))}
-              {detail.chunks.length === 0 && (
+              {chunks.length === 0 && (
                 <div className="rounded-md bg-white px-3 py-3 text-sm text-slate-500">
                   {t("workspace.selectedDocument.chunksAppearAfterIngestion")}
                 </div>
@@ -610,6 +791,23 @@ export function SelectedDocumentPanel({
         ) : (
           <div className="text-sm text-slate-500">{emptyState}</div>
         )}
+        <ConfirmDialog
+          cancelLabel={t("workspace.headerBar.cancel")}
+          confirmLabel={t("workspace.selectedDocument.delete")}
+          description={
+            detail
+              ? t("workspace.confirm.deleteConversation", { title: detail.document.title })
+              : t("workspace.confirm.deleteSelectedDocument")
+          }
+          isLoading={isRunningDocumentAction}
+          onCancel={() => setIsDeleteConfirmOpen(false)}
+          onConfirm={async () => {
+            await onDeleteDocument();
+            setIsDeleteConfirmOpen(false);
+          }}
+          open={isDeleteConfirmOpen && Boolean(detail) && !isDeletedDocument}
+          title={t("workspace.selectedDocument.delete")}
+        />
       </CardContent>
     </Card>
   );

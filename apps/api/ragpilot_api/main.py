@@ -8,7 +8,7 @@ from ragpilot_api.shared.settings import get_settings
 settings = get_settings()
 
 app = FastAPI(
-    title="RagPilot API",
+    title="RAGPilot API",
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -31,5 +31,5 @@ async def service_root() -> dict[str, str]:
     return {
         "service": settings.service_name,
         "environment": settings.environment,
-        "message": "RagPilot API is online.",
+        "message": "RAGPilot API is online.",
     }

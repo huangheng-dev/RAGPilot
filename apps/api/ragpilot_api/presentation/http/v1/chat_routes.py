@@ -23,6 +23,7 @@ from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository
 from ragpilot_api.infrastructure.database.repositories.model_endpoint_repository import ModelEndpointRepository
 from ragpilot_api.infrastructure.database.repositories.message_repository import MessageRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
+from ragpilot_api.infrastructure.database.repositories.retrieval_evaluation_repository import RetrievalEvaluationRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_repository import RetrievalRepository
 from ragpilot_api.infrastructure.database.session import get_database_session
@@ -31,6 +32,7 @@ from ragpilot_api.presentation.http.request_actor import (
     get_request_actor,
     require_authenticated_actor,
     require_actor_capability_from_policy,
+    require_actor_tenant_access,
 )
 from ragpilot_api.shared.settings import get_settings
 
@@ -48,6 +50,7 @@ def build_chat_service(session: AsyncSession) -> ChatService:
         model_endpoint_repository=ModelEndpointRepository(session),
         knowledge_base_repository=KnowledgeBaseRepository(session),
         retrieval_profile_repository=RetrievalProfileRepository(session),
+        retrieval_evaluation_repository=RetrievalEvaluationRepository(session),
     )
 
 
@@ -57,12 +60,16 @@ async def create_conversation(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> ConversationResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "send_chat_messages",
         RolePermissionRepository(session),
     )
-    return await build_chat_service(session).create_conversation(request)
+    require_actor_tenant_access(actor, request.tenant_id)
+    return await build_chat_service(session).create_conversation(
+        request.model_copy(update={"created_by_user_id": actor.user_id})
+    )
 
 
 @router.post("/messages", response_model=ChatAskResponse, status_code=status.HTTP_200_OK)
@@ -71,13 +78,17 @@ async def ask_question(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> ChatAskResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "send_chat_messages",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, request.tenant_id)
     try:
-        return await build_chat_service(session).ask_question(request)
+        return await build_chat_service(session).ask_question(
+            request.model_copy(update={"created_by_user_id": actor.user_id})
+        )
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except ResourceConflictError as error:
@@ -93,11 +104,13 @@ async def list_conversations(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[ConversationResponse]:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_chat",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     return await build_chat_service(session).list_conversations(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
@@ -113,11 +126,13 @@ async def get_conversation_metrics(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> ConversationMetricsResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_chat",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     return await build_chat_service(session).get_conversation_metrics(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
@@ -132,11 +147,13 @@ async def update_conversation(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> ConversationResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "send_chat_messages",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     return await build_chat_service(session).update_conversation(
         conversation_id=conversation_id,
         tenant_id=tenant_id,
@@ -151,11 +168,13 @@ async def delete_conversation(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> None:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "send_chat_messages",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     await build_chat_service(session).delete_conversation(
         conversation_id=conversation_id,
         tenant_id=tenant_id,
@@ -169,11 +188,13 @@ async def list_messages(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[MessageResponse]:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_chat",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     return await build_chat_service(session).list_messages(
         tenant_id=tenant_id,
         conversation_id=conversation_id,
@@ -194,6 +215,7 @@ async def submit_message_feedback(
         "access_chat",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     try:
         return await build_chat_service(session).submit_message_feedback(
             tenant_id=tenant_id,
@@ -215,11 +237,13 @@ async def get_message_feedback_summary(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> MessageFeedbackSummaryResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(
         actor,
         "access_chat",
         RolePermissionRepository(session),
     )
+    require_actor_tenant_access(actor, tenant_id)
     return await build_chat_service(session).get_message_feedback_summary(
         tenant_id=tenant_id,
         workspace_id=workspace_id,

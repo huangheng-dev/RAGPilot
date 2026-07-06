@@ -1,11 +1,17 @@
 from collections import Counter
+from datetime import datetime, timezone
 from uuid import UUID
 
 from ragpilot_api.contracts.http.retrieval_contracts import (
     RetrievalCompareRequest,
     RetrievalCompareResponse,
     RetrievalComparisonSummaryResponse,
+    RetrievalEvaluationFollowUpActionResponse,
+    RetrievalEvaluationFollowUpBreakdownResponse,
     RetrievalEvaluationCreateRequest,
+    RetrievalEvaluationQueryFollowUpUpdateRequest,
+    RetrievalEvaluationQueryFollowUpUpdateResponse,
+    RetrievalEvaluationFollowUpUpdateRequest,
     RetrievalEvaluationResponse,
     RetrievalEvaluationSourceDocumentResponse,
     RetrievalEvaluationStatusBreakdownResponse,
@@ -133,7 +139,7 @@ class RetrievalService:
             evaluation_payload_json=request.evaluation_payload_json,
             created_by_user_id=created_by_user_id,
         )
-        return build_retrieval_evaluation_response(evaluation)
+        return self._build_retrieval_evaluation_response(evaluation)
 
     async def list_evaluations(
         self,
@@ -141,6 +147,10 @@ class RetrievalService:
         tenant_id,
         workspace_id,
         knowledge_base_id=None,
+        evaluation_mode=None,
+        validation_status=None,
+        follow_up_status=None,
+        query: str | None = None,
         limit: int = 10,
     ) -> list[RetrievalEvaluationResponse]:
         if self.retrieval_evaluation_repository is None:
@@ -150,9 +160,13 @@ class RetrievalService:
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
+            evaluation_mode=evaluation_mode,
+            validation_status=validation_status,
+            follow_up_status=follow_up_status,
+            query=query,
             limit=limit,
         )
-        return [build_retrieval_evaluation_response(item) for item in evaluations]
+        return [self._build_retrieval_evaluation_response(item) for item in evaluations]
 
     async def summarize_evaluations(
         self,
@@ -160,6 +174,10 @@ class RetrievalService:
         tenant_id,
         workspace_id,
         knowledge_base_id=None,
+        evaluation_mode=None,
+        validation_status=None,
+        follow_up_status=None,
+        query: str | None = None,
         limit: int = 5,
         sample_size: int = 120,
     ) -> RetrievalEvaluationSummaryResponse:
@@ -170,9 +188,14 @@ class RetrievalService:
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
+            evaluation_mode=evaluation_mode,
+            validation_status=validation_status,
+            follow_up_status=follow_up_status,
+            query=query,
             limit=sample_size,
         )
         status_breakdown_counter = Counter(item.validation_status for item in evaluations)
+        follow_up_breakdown_counter = Counter(item.follow_up_status for item in evaluations)
         grouped_evaluations: dict[str, list[RetrievalEvaluation]] = {}
         for evaluation in evaluations:
             query_key = evaluation.query_text.strip().lower()
@@ -182,6 +205,7 @@ class RetrievalService:
         for grouped_items in grouped_evaluations.values():
             latest_item = grouped_items[0]
             grouped_status_counter = Counter(item.validation_status for item in grouped_items)
+            grouped_follow_up_counter = Counter(item.follow_up_status for item in grouped_items)
             attention_score = (
                 grouped_status_counter.get("hold", 0) * 3
                 + grouped_status_counter.get("failed", 0) * 3
@@ -191,21 +215,26 @@ class RetrievalService:
             if attention_score == 0:
                 continue
 
+            retrieval_profile_id = self._extract_retrieval_profile_id(latest_item.evaluation_payload_json)
+            source_documents = self._extract_source_documents(latest_item.evaluation_payload_json)
             candidate_rows.append(
                 RetrievalEvaluationTuningCandidateResponse(
                     query_text=latest_item.query_text,
                     evaluation_count=len(grouped_items),
                     latest_evaluation_mode=latest_item.evaluation_mode,
                     latest_validation_status=latest_item.validation_status,
+                    follow_up_status=latest_item.follow_up_status,
                     ready_count=grouped_status_counter.get("ready", 0),
                     review_count=grouped_status_counter.get("review", 0),
                     hold_count=grouped_status_counter.get("hold", 0),
                     empty_count=grouped_status_counter.get("empty", 0),
                     failed_count=grouped_status_counter.get("failed", 0),
+                    pending_evaluation_count=grouped_follow_up_counter.get("pending", 0),
+                    resolved_evaluation_count=grouped_follow_up_counter.get("resolved", 0),
                     attention_score=attention_score,
                     baseline_engine_name=latest_item.baseline_engine_name,
                     candidate_engine_name=latest_item.candidate_engine_name,
-                    retrieval_profile_id=self._extract_retrieval_profile_id(latest_item.evaluation_payload_json),
+                    retrieval_profile_id=retrieval_profile_id,
                     retrieval_profile_name=latest_item.retrieval_profile_name,
                     retrieval_profile_source=latest_item.retrieval_profile_source,
                     recommendation_reason=latest_item.recommendation_reason,
@@ -214,7 +243,13 @@ class RetrievalService:
                     baseline_only_count=latest_item.baseline_only_count,
                     candidate_only_count=latest_item.candidate_only_count,
                     top_result_matches=latest_item.top_result_matches,
-                    latest_source_documents=self._extract_source_documents(latest_item.evaluation_payload_json),
+                    latest_source_documents=source_documents,
+                    recommended_actions=self._build_tuning_candidate_actions(
+                        latest_item=latest_item,
+                        grouped_status_counter=grouped_status_counter,
+                        retrieval_profile_id=retrieval_profile_id,
+                        source_document_count=len(source_documents),
+                    ),
                     last_evaluated_at=latest_item.created_at,
                 )
             )
@@ -224,12 +259,26 @@ class RetrievalService:
             reverse=True,
         )
 
+        intelligence_status, intelligence_reason = self._build_retrieval_intelligence_summary(
+            evaluations=evaluations,
+            candidate_rows=candidate_rows,
+            status_breakdown_counter=status_breakdown_counter,
+            follow_up_breakdown_counter=follow_up_breakdown_counter,
+        )
+        primary_candidate = candidate_rows[0] if candidate_rows else None
+
         return RetrievalEvaluationSummaryResponse(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             total_evaluations=len(evaluations),
             total_queries=len(grouped_evaluations),
+            intelligence_status=intelligence_status,
+            intelligence_reason=intelligence_reason,
+            primary_query_text=primary_candidate.query_text if primary_candidate is not None else None,
+            primary_baseline_engine_name=primary_candidate.baseline_engine_name if primary_candidate is not None else None,
+            primary_candidate_engine_name=primary_candidate.candidate_engine_name if primary_candidate is not None else None,
+            primary_retrieval_profile_name=primary_candidate.retrieval_profile_name if primary_candidate is not None else None,
             status_breakdown=RetrievalEvaluationStatusBreakdownResponse(
                 ready=status_breakdown_counter.get("ready", 0),
                 review=status_breakdown_counter.get("review", 0),
@@ -237,7 +286,113 @@ class RetrievalService:
                 empty=status_breakdown_counter.get("empty", 0),
                 failed=status_breakdown_counter.get("failed", 0),
             ),
+            follow_up_breakdown=RetrievalEvaluationFollowUpBreakdownResponse(
+                pending=follow_up_breakdown_counter.get("pending", 0),
+                resolved=follow_up_breakdown_counter.get("resolved", 0),
+            ),
+            primary_recommended_actions=primary_candidate.recommended_actions if primary_candidate is not None else [],
             candidates=candidate_rows[:limit],
+            recent_evaluations=[
+                self._build_retrieval_evaluation_response(item)
+                for item in evaluations[:limit]
+            ],
+        )
+
+    async def update_evaluation_follow_up(
+        self,
+        *,
+        retrieval_evaluation_id,
+        request: RetrievalEvaluationFollowUpUpdateRequest,
+        actor_user_id,
+    ) -> RetrievalEvaluationResponse:
+        if self.retrieval_evaluation_repository is None:
+            raise RuntimeError("Retrieval evaluation repository is not configured.")
+
+        evaluation = await self.retrieval_evaluation_repository.get_retrieval_evaluation_by_id(
+            retrieval_evaluation_id=retrieval_evaluation_id,
+        )
+        if evaluation is None:
+            raise ValueError("Retrieval evaluation not found.")
+
+        updated = await self.retrieval_evaluation_repository.update_follow_up_status(
+            retrieval_evaluation=evaluation,
+            follow_up_status=request.follow_up_status,
+            resolved_by_user_id=actor_user_id,
+        )
+        return self._build_retrieval_evaluation_response(updated)
+
+    async def update_query_follow_up(
+        self,
+        *,
+        request: RetrievalEvaluationQueryFollowUpUpdateRequest,
+        actor_user_id,
+    ) -> RetrievalEvaluationQueryFollowUpUpdateResponse:
+        if self.retrieval_evaluation_repository is None:
+            raise RuntimeError("Retrieval evaluation repository is not configured.")
+
+        normalized_query = request.query_text.strip()
+        updated_count = await self.retrieval_evaluation_repository.update_follow_up_status_for_query(
+            tenant_id=request.tenant_id,
+            workspace_id=request.workspace_id,
+            knowledge_base_id=request.knowledge_base_id,
+            query_text=normalized_query,
+            follow_up_status=request.follow_up_status,
+            resolved_by_user_id=actor_user_id,
+        )
+        if updated_count == 0:
+            raise ValueError("Retrieval evaluation candidate not found.")
+
+        return RetrievalEvaluationQueryFollowUpUpdateResponse(
+            tenant_id=request.tenant_id,
+            workspace_id=request.workspace_id,
+            knowledge_base_id=request.knowledge_base_id,
+            query_text=normalized_query,
+            follow_up_status=request.follow_up_status,
+            updated_count=updated_count,
+            acted_at=datetime.now(timezone.utc),
+            acted_by_user_id=actor_user_id,
+        )
+
+    def _build_retrieval_evaluation_response(
+        self,
+        evaluation: RetrievalEvaluation,
+    ) -> RetrievalEvaluationResponse:
+        retrieval_profile_id = self._extract_retrieval_profile_id(evaluation.evaluation_payload_json)
+        source_documents = self._extract_source_documents(evaluation.evaluation_payload_json)
+        recommended_actions = self._build_tuning_candidate_actions(
+            latest_item=evaluation,
+            grouped_status_counter=Counter([evaluation.validation_status]),
+            retrieval_profile_id=retrieval_profile_id,
+            source_document_count=len(source_documents),
+        )
+        return RetrievalEvaluationResponse(
+            id=evaluation.id,
+            tenant_id=evaluation.tenant_id,
+            workspace_id=evaluation.workspace_id,
+            knowledge_base_id=evaluation.knowledge_base_id,
+            evaluation_mode=evaluation.evaluation_mode,
+            validation_status=evaluation.validation_status,
+            query_text=evaluation.query_text,
+            baseline_engine_name=evaluation.baseline_engine_name,
+            candidate_engine_name=evaluation.candidate_engine_name,
+            retrieval_profile_id=retrieval_profile_id,
+            retrieval_profile_name=evaluation.retrieval_profile_name,
+            retrieval_profile_source=evaluation.retrieval_profile_source,
+            result_count=evaluation.result_count,
+            shared_result_count=evaluation.shared_result_count,
+            baseline_only_count=evaluation.baseline_only_count,
+            candidate_only_count=evaluation.candidate_only_count,
+            top_result_matches=evaluation.top_result_matches,
+            recommendation_reason=evaluation.recommendation_reason,
+            evaluation_payload_json=evaluation.evaluation_payload_json,
+            follow_up_status=evaluation.follow_up_status,
+            resolved_at=evaluation.resolved_at,
+            resolved_by_user_id=evaluation.resolved_by_user_id,
+            source_documents=source_documents,
+            recommended_actions=recommended_actions,
+            created_by_user_id=evaluation.created_by_user_id,
+            created_at=evaluation.created_at,
+            updated_at=evaluation.updated_at,
         )
 
     def _extract_retrieval_profile_id(self, evaluation_payload_json: dict | None) -> UUID | None:
@@ -336,6 +491,174 @@ class RetrievalService:
             )
 
         return source_documents
+
+    def _build_tuning_candidate_actions(
+        self,
+        *,
+        latest_item: RetrievalEvaluation,
+        grouped_status_counter: Counter,
+        retrieval_profile_id: UUID | None,
+        source_document_count: int,
+    ) -> list[RetrievalEvaluationFollowUpActionResponse]:
+        actions: list[RetrievalEvaluationFollowUpActionResponse] = []
+
+        def add_action(
+            *,
+            action_key: str,
+            action_category: str,
+            action_label: str,
+            action_reason: str,
+        ) -> None:
+            if any(item.action_key == action_key for item in actions):
+                return
+            actions.append(
+                RetrievalEvaluationFollowUpActionResponse(
+                    action_key=action_key,
+                    action_category=action_category,
+                    action_label=action_label,
+                    action_reason=action_reason,
+                )
+            )
+
+        has_blocked_evidence = grouped_status_counter.get("failed", 0) > 0 or grouped_status_counter.get("empty", 0) > 0
+        has_review_pressure = grouped_status_counter.get("hold", 0) > 0 or grouped_status_counter.get("review", 0) > 0
+        has_ready_signal = grouped_status_counter.get("ready", 0) > 0
+
+        if has_blocked_evidence:
+            add_action(
+                action_key="review_knowledge_base_governance",
+                action_category="governance",
+                action_label="Review source scope",
+                action_reason=(
+                    "Recent retrieval evaluations produced empty or failed evidence, so the knowledge-base source scope should be reviewed before more rollout."
+                ),
+            )
+
+        if retrieval_profile_id is not None and has_review_pressure:
+            add_action(
+                action_key="review_retrieval_profile_governance",
+                action_category="governance",
+                action_label="Review retrieval profile",
+                action_reason=(
+                    "Repeated review or hold outcomes suggest the governed retrieval profile needs adjustment before this query can be treated as stable."
+                ),
+            )
+
+        if latest_item.candidate_engine_name:
+            add_action(
+                action_key="rerun_retrieval_comparison",
+                action_category="analysis",
+                action_label="Compare engines again",
+                action_reason=(
+                    "Run a fresh engine comparison on the same query to confirm whether the candidate still diverges from the baseline."
+                ),
+            )
+        else:
+            add_action(
+                action_key="rerun_retrieval_inspection",
+                action_category="analysis",
+                action_label="Inspect retrieval again",
+                action_reason=(
+                    "Run the same retrieval inspection again after source or profile review so the evidence posture can be re-validated."
+                ),
+            )
+
+        if has_ready_signal:
+            add_action(
+                action_key="validate_in_chat",
+                action_category="validation",
+                action_label="Validate in chat",
+                action_reason=(
+                    "This query already has some ready evidence, so the grounded-chat lane can be used to confirm whether answer quality is now stable."
+                ),
+            )
+
+        if not actions:
+            add_action(
+                action_key="rerun_retrieval_inspection",
+                action_category="analysis",
+                action_label="Inspect retrieval again",
+                action_reason="Re-run this retrieval query to confirm the current evidence posture.",
+            )
+
+        if source_document_count == 0 and all(item.action_key != "review_knowledge_base_governance" for item in actions):
+            actions.insert(
+                0,
+                RetrievalEvaluationFollowUpActionResponse(
+                    action_key="review_knowledge_base_governance",
+                    action_category="governance",
+                    action_label="Review source scope",
+                    action_reason=(
+                        "No recent source documents were preserved in this evaluation history, so the governed knowledge-base scope should be reviewed directly."
+                    ),
+                ),
+            )
+
+        return actions[:3]
+
+    def _build_retrieval_intelligence_summary(
+        self,
+        *,
+        evaluations: list[RetrievalEvaluation],
+        candidate_rows: list[RetrievalEvaluationTuningCandidateResponse],
+        status_breakdown_counter: Counter,
+        follow_up_breakdown_counter: Counter,
+    ) -> tuple[str, str]:
+        primary_candidate = candidate_rows[0] if candidate_rows else None
+        if primary_candidate is not None:
+            if primary_candidate.latest_validation_status in {"hold", "failed", "empty"}:
+                engine_label = (
+                    f"{primary_candidate.baseline_engine_name} versus {primary_candidate.candidate_engine_name}"
+                    if primary_candidate.candidate_engine_name
+                    else primary_candidate.baseline_engine_name
+                )
+                return (
+                    "hold",
+                    primary_candidate.recommendation_reason
+                    or (
+                        f"The current highest-attention retrieval candidate still needs to stay on hold. "
+                        f"Review the evidence gap for '{primary_candidate.query_text}' before trusting {engine_label} in a broader lane."
+                    ),
+                )
+
+            if primary_candidate.latest_validation_status == "review":
+                return (
+                    "review",
+                    primary_candidate.recommendation_reason
+                    or (
+                        f"The current highest-attention retrieval candidate for '{primary_candidate.query_text}' "
+                        "still needs operator review before it can be treated as stable."
+                    ),
+                )
+
+        if follow_up_breakdown_counter.get("pending", 0) > 0:
+            return (
+                "review",
+                "Retrieval follow-up work is still pending in this scope, so answer trust should keep flowing through review before broader rollout.",
+            )
+
+        if status_breakdown_counter.get("hold", 0) > 0 or status_breakdown_counter.get("failed", 0) > 0:
+            return (
+                "hold",
+                "Recent retrieval evaluation history still includes hold or failed outcomes, so this scope should remain under a governed evidence posture.",
+            )
+
+        if status_breakdown_counter.get("review", 0) > 0 or status_breakdown_counter.get("empty", 0) > 0:
+            return (
+                "review",
+                "Recent retrieval evaluation history still includes review-oriented outcomes, so keep validating evidence before treating the lane as stable.",
+            )
+
+        if evaluations:
+            return (
+                "stable",
+                "Recent retrieval validation history is currently stable, and no high-attention follow-up candidate is waiting in this scope.",
+            )
+
+        return (
+            "stable",
+            "No retrieval evaluation history has been recorded in this scope yet. Run a governed validation query when you need to inspect trust posture.",
+        )
 
     def _build_comparison_recommendation(
         self,
@@ -471,29 +794,3 @@ class RetrievalService:
             )
             for row in rows
         ]
-
-
-def build_retrieval_evaluation_response(evaluation: RetrievalEvaluation) -> RetrievalEvaluationResponse:
-    return RetrievalEvaluationResponse(
-        id=evaluation.id,
-        tenant_id=evaluation.tenant_id,
-        workspace_id=evaluation.workspace_id,
-        knowledge_base_id=evaluation.knowledge_base_id,
-        evaluation_mode=evaluation.evaluation_mode,
-        validation_status=evaluation.validation_status,
-        query_text=evaluation.query_text,
-        baseline_engine_name=evaluation.baseline_engine_name,
-        candidate_engine_name=evaluation.candidate_engine_name,
-        retrieval_profile_name=evaluation.retrieval_profile_name,
-        retrieval_profile_source=evaluation.retrieval_profile_source,
-        result_count=evaluation.result_count,
-        shared_result_count=evaluation.shared_result_count,
-        baseline_only_count=evaluation.baseline_only_count,
-        candidate_only_count=evaluation.candidate_only_count,
-        top_result_matches=evaluation.top_result_matches,
-        recommendation_reason=evaluation.recommendation_reason,
-        evaluation_payload_json=evaluation.evaluation_payload_json,
-        created_by_user_id=evaluation.created_by_user_id,
-        created_at=evaluation.created_at,
-        updated_at=evaluation.updated_at,
-    )

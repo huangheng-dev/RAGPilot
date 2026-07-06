@@ -46,7 +46,7 @@ export function AgentRunButtonLink({
         navigation_href: linkHref
       });
     } catch {
-      // Navigation should not be blocked by telemetry persistence.
+      // Let navigation continue even if telemetry persistence fails.
     } finally {
       window.location.assign(linkHref);
       setIsSubmitting(false);

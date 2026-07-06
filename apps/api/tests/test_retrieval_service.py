@@ -30,7 +30,7 @@ async def test_retrieve_chunks_merges_vector_and_lexical_results_into_hybrid_ord
                     "document_id": uuid4(),
                     "document_version_id": uuid4(),
                     "knowledge_base_id": knowledge_base_id,
-                    "document_title": "RagPilot Handbook",
+                    "document_title": "RAGPilot Handbook",
                     "chunk_index": 0,
                     "content": "Temporal powers durable ingestion workflows.",
                     "token_count": 5,
@@ -48,7 +48,7 @@ async def test_retrieve_chunks_merges_vector_and_lexical_results_into_hybrid_ord
                     "document_id": uuid4(),
                     "document_version_id": uuid4(),
                     "knowledge_base_id": knowledge_base_id,
-                    "document_title": "RagPilot Handbook",
+                    "document_title": "RAGPilot Handbook",
                     "chunk_index": 0,
                     "content": "Temporal powers durable ingestion workflows.",
                     "token_count": 5,
@@ -130,7 +130,7 @@ async def test_retrieve_chunks_uses_vector_profile_when_knowledge_base_assigns_i
                     "document_id": uuid4(),
                     "document_version_id": uuid4(),
                     "knowledge_base_id": knowledge_base_id,
-                    "document_title": "RagPilot Handbook",
+                    "document_title": "RAGPilot Handbook",
                     "chunk_index": 0,
                     "content": "Temporal powers durable ingestion workflows.",
                     "token_count": 5,
@@ -300,7 +300,7 @@ async def test_compare_chunks_returns_structured_engine_diagnostics(
                         "document_id": uuid4(),
                         "document_version_id": uuid4(),
                         "knowledge_base_id": knowledge_base_id,
-                        "document_title": "RagPilot Handbook",
+                        "document_title": "RAGPilot Handbook",
                         "chunk_index": 0,
                         "content": "Temporal powers durable ingestion workflows.",
                         "token_count": 5,
@@ -339,7 +339,7 @@ async def test_compare_chunks_returns_structured_engine_diagnostics(
                         "document_id": uuid4(),
                         "document_version_id": uuid4(),
                         "knowledge_base_id": knowledge_base_id,
-                        "document_title": "RagPilot Handbook",
+                        "document_title": "RAGPilot Handbook",
                         "chunk_index": 0,
                         "content": "Temporal powers durable ingestion workflows.",
                         "token_count": 5,
@@ -509,6 +509,7 @@ async def test_record_evaluation_persists_retrieval_review_record() -> None:
     workspace_id = uuid4()
     knowledge_base_id = uuid4()
     actor_user_id = uuid4()
+    retrieval_profile_id = uuid4()
     now = datetime.now(timezone.utc)
     evaluation_repository = SimpleNamespace(
         create_retrieval_evaluation=AsyncMock(
@@ -530,7 +531,13 @@ async def test_record_evaluation_persists_retrieval_review_record() -> None:
                 candidate_only_count=0,
                 top_result_matches=True,
                 recommendation_reason="Candidate retrieval preserved the top result but needs review.",
-                evaluation_payload_json={"summary": {"shared_result_count": 1}},
+                evaluation_payload_json={
+                    "summary": {"shared_result_count": 1},
+                    "candidate": {"retrieval_profile_id": str(retrieval_profile_id)},
+                },
+                follow_up_status="pending",
+                resolved_at=None,
+                resolved_by_user_id=None,
                 created_by_user_id=actor_user_id,
                 created_at=now,
                 updated_at=now,
@@ -561,13 +568,20 @@ async def test_record_evaluation_persists_retrieval_review_record() -> None:
             candidate_only_count=0,
             top_result_matches=True,
             recommendation_reason="Candidate retrieval preserved the top result but needs review.",
-            evaluation_payload_json={"summary": {"shared_result_count": 1}},
+            evaluation_payload_json={
+                "summary": {"shared_result_count": 1},
+                "candidate": {"retrieval_profile_id": str(retrieval_profile_id)},
+            },
         ),
         created_by_user_id=actor_user_id,
     )
 
     assert response.validation_status == "review"
+    assert response.follow_up_status == "pending"
     assert response.candidate_engine_name == "llamaindex_pilot"
+    assert response.recommended_actions[0].action_key == "review_knowledge_base_governance"
+    assert response.recommended_actions[1].action_key == "review_retrieval_profile_governance"
+    assert response.recommended_actions[2].action_key == "rerun_retrieval_comparison"
     evaluation_repository.create_retrieval_evaluation.assert_awaited_once()
 
 
@@ -599,6 +613,9 @@ async def test_list_evaluations_returns_recent_records() -> None:
                     top_result_matches=None,
                     recommendation_reason="Three matching chunks were found.",
                     evaluation_payload_json={"results": []},
+                    follow_up_status="pending",
+                    resolved_at=None,
+                    resolved_by_user_id=None,
                     created_by_user_id=uuid4(),
                     created_at=now,
                     updated_at=now,
@@ -616,16 +633,30 @@ async def test_list_evaluations_returns_recent_records() -> None:
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
+        evaluation_mode="inspect",
+        validation_status="ready",
+        follow_up_status="pending",
+        query="Temporal",
         limit=5,
     )
 
     assert len(response) == 1
     assert response[0].evaluation_mode == "inspect"
     assert response[0].result_count == 3
+    assert response[0].follow_up_status == "pending"
+    assert response[0].retrieval_profile_id is None
+    assert response[0].source_documents == []
+    assert response[0].recommended_actions[0].action_key == "review_knowledge_base_governance"
+    assert response[0].recommended_actions[1].action_key == "rerun_retrieval_inspection"
+    assert response[0].recommended_actions[2].action_key == "validate_in_chat"
     evaluation_repository.list_retrieval_evaluations.assert_awaited_once_with(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
+        evaluation_mode="inspect",
+        validation_status="ready",
+        follow_up_status="pending",
+        query="Temporal",
         limit=5,
     )
 
@@ -659,13 +690,16 @@ async def test_summarize_evaluations_groups_attention_queries() -> None:
                     candidate_only_count=1,
                     top_result_matches=False,
                     recommendation_reason="Top-ranked retrieval differs.",
+                    follow_up_status="pending",
+                    resolved_at=None,
+                    resolved_by_user_id=None,
                     evaluation_payload_json={
                         "baseline": {
                             "retrieval_profile_id": str(retrieval_profile_id),
                             "results": [
                                 {
                                     "document_id": str(uuid4()),
-                                    "document_title": "RagPilot Handbook",
+                                    "document_title": "RAGPilot Handbook",
                                 }
                             ]
                         },
@@ -700,6 +734,9 @@ async def test_summarize_evaluations_groups_attention_queries() -> None:
                     candidate_only_count=0,
                     top_result_matches=True,
                     recommendation_reason="Needs review.",
+                    follow_up_status="resolved",
+                    resolved_at=now,
+                    resolved_by_user_id=uuid4(),
                     evaluation_payload_json={},
                     created_by_user_id=uuid4(),
                     created_at=now,
@@ -723,6 +760,9 @@ async def test_summarize_evaluations_groups_attention_queries() -> None:
                     candidate_only_count=None,
                     top_result_matches=None,
                     recommendation_reason="Ready.",
+                    follow_up_status="resolved",
+                    resolved_at=now,
+                    resolved_by_user_id=uuid4(),
                     evaluation_payload_json={},
                     created_by_user_id=uuid4(),
                     created_at=now,
@@ -741,24 +781,159 @@ async def test_summarize_evaluations_groups_attention_queries() -> None:
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
+        evaluation_mode="compare",
+        validation_status="hold",
+        follow_up_status="pending",
+        query="Temporal",
         limit=3,
         sample_size=100,
     )
 
     assert response.total_evaluations == 3
     assert response.total_queries == 2
+    assert response.intelligence_status == "hold"
+    assert response.primary_query_text == repeated_query
+    assert response.primary_baseline_engine_name == "native"
+    assert response.primary_candidate_engine_name == "llamaindex_pilot"
+    assert response.primary_retrieval_profile_name == "Standard Hybrid Retrieval"
     assert response.status_breakdown.ready == 1
     assert response.status_breakdown.review == 1
     assert response.status_breakdown.hold == 1
+    assert response.follow_up_breakdown.pending == 1
+    assert response.follow_up_breakdown.resolved == 2
+    assert response.primary_recommended_actions[0].action_key == "review_retrieval_profile_governance"
     assert len(response.candidates) == 1
     assert response.candidates[0].query_text == repeated_query
     assert response.candidates[0].evaluation_count == 2
+    assert response.candidates[0].follow_up_status == "pending"
+    assert response.candidates[0].pending_evaluation_count == 1
+    assert response.candidates[0].resolved_evaluation_count == 1
     assert response.candidates[0].attention_score == 5
     assert response.candidates[0].retrieval_profile_id == retrieval_profile_id
-    assert response.candidates[0].latest_source_documents[0].document_title == "RagPilot Handbook"
+    assert response.candidates[0].latest_source_documents[0].document_title == "RAGPilot Handbook"
+    assert response.candidates[0].recommended_actions[0].action_key == "review_retrieval_profile_governance"
+    assert response.candidates[0].recommended_actions[1].action_key == "rerun_retrieval_comparison"
+    assert len(response.candidates[0].recommended_actions) == 2
+    assert len(response.recent_evaluations) == 3
+    assert response.recent_evaluations[0].query_text == repeated_query
+    assert response.recent_evaluations[0].follow_up_status == "pending"
     evaluation_repository.list_retrieval_evaluations.assert_awaited_once_with(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
+        evaluation_mode="compare",
+        validation_status="hold",
+        follow_up_status="pending",
+        query="Temporal",
         limit=100,
+    )
+
+
+@pytest.mark.anyio
+async def test_update_evaluation_follow_up_marks_resolution_state() -> None:
+    tenant_id = uuid4()
+    workspace_id = uuid4()
+    knowledge_base_id = uuid4()
+    evaluation_id = uuid4()
+    actor_user_id = uuid4()
+    now = datetime.now(timezone.utc)
+    evaluation = SimpleNamespace(
+        id=evaluation_id,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        knowledge_base_id=knowledge_base_id,
+        evaluation_mode="inspect",
+        validation_status="ready",
+        query_text="Temporal ingestion workflows",
+        baseline_engine_name="native",
+        candidate_engine_name=None,
+        retrieval_profile_name="Standard Hybrid Retrieval",
+        retrieval_profile_source="knowledge_base",
+        result_count=2,
+        shared_result_count=None,
+        baseline_only_count=None,
+        candidate_only_count=None,
+        top_result_matches=None,
+        recommendation_reason="Ready for validation.",
+        evaluation_payload_json={"results": []},
+        follow_up_status="pending",
+        resolved_at=None,
+        resolved_by_user_id=None,
+        created_by_user_id=actor_user_id,
+        created_at=now,
+        updated_at=now,
+    )
+    evaluation_repository = SimpleNamespace(
+        get_retrieval_evaluation_by_id=AsyncMock(return_value=evaluation),
+        update_follow_up_status=AsyncMock(
+            return_value=SimpleNamespace(
+                **{
+                    **evaluation.__dict__,
+                    "follow_up_status": "resolved",
+                    "resolved_at": now,
+                    "resolved_by_user_id": actor_user_id,
+                }
+            )
+        ),
+    )
+    service = RetrievalService(
+        retrieval_repository=SimpleNamespace(),
+        settings=SimpleNamespace(retrieval_embedding_model="test-embedding"),
+        retrieval_evaluation_repository=evaluation_repository,
+    )
+
+    response = await service.update_evaluation_follow_up(
+        retrieval_evaluation_id=evaluation_id,
+        request=SimpleNamespace(follow_up_status="resolved"),
+        actor_user_id=actor_user_id,
+    )
+
+    assert response.follow_up_status == "resolved"
+    assert response.resolved_by_user_id == actor_user_id
+    evaluation_repository.get_retrieval_evaluation_by_id.assert_awaited_once_with(
+        retrieval_evaluation_id=evaluation_id,
+    )
+    evaluation_repository.update_follow_up_status.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_update_query_follow_up_marks_candidate_group_resolution_state() -> None:
+    tenant_id = uuid4()
+    workspace_id = uuid4()
+    knowledge_base_id = uuid4()
+    actor_user_id = uuid4()
+    evaluation_repository = SimpleNamespace(
+        update_follow_up_status_for_query=AsyncMock(return_value=3),
+    )
+    service = RetrievalService(
+        retrieval_repository=SimpleNamespace(),
+        settings=SimpleNamespace(retrieval_embedding_model="test-embedding"),
+        retrieval_evaluation_repository=evaluation_repository,
+    )
+
+    response = await service.update_query_follow_up(
+        request=SimpleNamespace(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
+            query_text="  Temporal ingestion workflows  ",
+            follow_up_status="resolved",
+        ),
+        actor_user_id=actor_user_id,
+    )
+
+    assert response.tenant_id == tenant_id
+    assert response.workspace_id == workspace_id
+    assert response.knowledge_base_id == knowledge_base_id
+    assert response.query_text == "Temporal ingestion workflows"
+    assert response.follow_up_status == "resolved"
+    assert response.updated_count == 3
+    assert response.acted_by_user_id == actor_user_id
+    evaluation_repository.update_follow_up_status_for_query.assert_awaited_once_with(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        knowledge_base_id=knowledge_base_id,
+        query_text="Temporal ingestion workflows",
+        follow_up_status="resolved",
+        resolved_by_user_id=actor_user_id,
     )

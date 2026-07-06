@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragpilot-worker
+  namespace: ragpilot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ragpilot-worker
+  template:
+    metadata:
+      labels:
+        app: ragpilot-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/your-org/ragpilot-worker:0.1.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: ragpilot-config
+            - secretRef:
+                name: ragpilot-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi

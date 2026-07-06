@@ -68,7 +68,10 @@ def test_tool_registration_list_route_forwards_approval_filter(monkeypatch) -> N
             "runtime_state": "mcp_integration_pending",
             "query": "browser",
         },
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={
+            "X-RAGPilot-Role": "reviewer",
+            "X-RAGPilot-Actor-Id": str(uuid4()),
+        },
     )
 
     app.dependency_overrides.clear()
@@ -101,6 +104,7 @@ def test_tool_governance_summary_route_returns_summary(monkeypatch) -> None:
                 "mcp_reserved_bound_tools": 0,
                 "mcp_integration_pending_tools": 1,
                 "mcp_connector_configured_tools": 1,
+                "mcp_connector_unhealthy_tools": 1,
                 "runtime_ready_tools": 1,
                 "transport_breakdown": [
                     {
@@ -131,7 +135,10 @@ def test_tool_governance_summary_route_returns_summary(monkeypatch) -> None:
     client = TestClient(app)
     response = client.get(
         "/api/v1/tool-registrations/governance-summary",
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={
+            "X-RAGPilot-Role": "reviewer",
+            "X-RAGPilot-Actor-Id": str(uuid4()),
+        },
     )
 
     app.dependency_overrides.clear()
@@ -139,6 +146,7 @@ def test_tool_governance_summary_route_returns_summary(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["mcp_reserved_tools"] == 1
     assert response.json()["mcp_integration_pending_tools"] == 1
+    assert response.json()["mcp_connector_unhealthy_tools"] == 1
     assert response.json()["http_tools_missing_endpoint_tools"] == 1
 
 
@@ -212,7 +220,10 @@ def test_tool_runtime_audit_route_returns_filtered_runtime_traces(monkeypatch) -
             "invocation_status": "failed",
             "limit": 10,
         },
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={
+            "X-RAGPilot-Role": "reviewer",
+            "X-RAGPilot-Actor-Id": str(uuid4()),
+        },
     )
 
     app.dependency_overrides.clear()
@@ -271,7 +282,10 @@ def test_tool_mcp_boundary_worklist_route_returns_reserved_queue(monkeypatch) ->
     response = client.get(
         "/api/v1/tool-registrations/mcp-boundary-worklist",
         params={"tenant_id": str(tenant_id), "limit": 8},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={
+            "X-RAGPilot-Role": "reviewer",
+            "X-RAGPilot-Actor-Id": str(uuid4()),
+        },
     )
 
     app.dependency_overrides.clear()
@@ -310,14 +324,23 @@ def test_tool_governance_action_route_forwards_action(monkeypatch) -> None:
                 },
             }
 
+    class FakeRuntimeGovernanceEventService:
+        async def create_runtime_governance_event(self, **kwargs):
+            return {"id": str(uuid4())}
+
     monkeypatch.setattr(tool_registration_routes, "build_tool_registry_service", lambda session: FakeToolRegistryService())
+    monkeypatch.setattr(
+        tool_registration_routes,
+        "build_runtime_governance_event_service",
+        lambda session: FakeRuntimeGovernanceEventService(),
+    )
     app.dependency_overrides[get_database_session] = override_database_session
 
     client = TestClient(app)
     response = client.post(
         f"/api/v1/tool-registrations/{tool_registration_id}/governance-action",
         json={"action_type": "quarantine_tool"},
-        headers={"X-RagPilot-Role": "super_admin"},
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -331,8 +354,64 @@ def test_tool_governance_action_route_forwards_action(monkeypatch) -> None:
     assert response.json()["tool_registration"]["requires_admin_approval"] is True
 
 
+def test_tool_governance_action_route_records_runtime_governance_event(monkeypatch) -> None:
+    tool_registration_id = uuid4()
+    captured: dict[str, object] = {}
+
+    class FakeToolRegistryService:
+        async def apply_tool_governance_action(self, *, tool_registration_id, action_type):
+            return {
+                "action_type": action_type,
+                "summary": "Reserved MCP boundary marked ready for integration.",
+                "tool_registration": {
+                    "id": str(tool_registration_id),
+                    "name": "Reserved Browser Tool",
+                    "slug": "reserved-browser-tool",
+                    "transport_type": "mcp_reserved",
+                    "surface_area": "agents",
+                    "endpoint_url": None,
+                    "connector_reference": "mcp.browser.primary",
+                    "description": "Reserved browser tool",
+                    "capabilities": ["browser.navigate"],
+                    "requires_admin_approval": True,
+                    "is_enabled": True,
+                    "bound_agent_count": 2,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+
+    class FakeRuntimeGovernanceEventService:
+        async def create_runtime_governance_event(self, **kwargs):
+            captured.update(kwargs)
+            return {"id": str(uuid4())}
+
+    monkeypatch.setattr(tool_registration_routes, "build_tool_registry_service", lambda session: FakeToolRegistryService())
+    monkeypatch.setattr(
+        tool_registration_routes,
+        "build_runtime_governance_event_service",
+        lambda session: FakeRuntimeGovernanceEventService(),
+    )
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/tool-registrations/{tool_registration_id}/governance-action",
+        json={"action_type": "ready_mcp_integration"},
+        headers={"X-RAGPilot-Role": "super_admin", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert captured["resource_type"] == "tool_registration"
+    assert captured["action_type"] == "ready_mcp_integration"
+    assert captured["detail"]["connector_reference"] == "mcp.browser.primary"
+
+
 def test_tool_preview_route_forwards_scope(monkeypatch) -> None:
     captured: dict[str, object] = {}
+    event_captured: dict[str, object] = {}
     tool_registration_id = uuid4()
     tenant_id = uuid4()
     workspace_id = uuid4()
@@ -377,7 +456,17 @@ def test_tool_preview_route_forwards_scope(monkeypatch) -> None:
                 "executed_at": datetime.now(timezone.utc).isoformat(),
             }
 
+    class FakeRuntimeGovernanceEventService:
+        async def create_runtime_governance_event(self, **kwargs):
+            event_captured.update(kwargs)
+            return {"id": str(uuid4())}
+
     monkeypatch.setattr(tool_registration_routes, "build_tool_runtime_service", lambda session: FakeToolRuntimeService())
+    monkeypatch.setattr(
+        tool_registration_routes,
+        "build_runtime_governance_event_service",
+        lambda session: FakeRuntimeGovernanceEventService(),
+    )
     app.dependency_overrides[get_database_session] = override_database_session
 
     client = TestClient(app)
@@ -389,7 +478,7 @@ def test_tool_preview_route_forwards_scope(monkeypatch) -> None:
             "knowledge_base_id": str(knowledge_base_id),
             "execution_input": "Inspect current scope.",
         },
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -404,6 +493,9 @@ def test_tool_preview_route_forwards_scope(monkeypatch) -> None:
         "actor_role": "operator",
     }
     assert response.json()["invocation_status"] == "completed"
+    assert event_captured["resource_type"] == "tool_registration"
+    assert event_captured["action_type"] == "preview_completed"
+    assert event_captured["detail"]["invocation_status"] == "completed"
 
 
 def test_tool_preview_route_requires_authenticated_role(monkeypatch) -> None:
@@ -423,3 +515,27 @@ def test_tool_preview_route_requires_authenticated_role(monkeypatch) -> None:
     app.dependency_overrides.clear()
 
     assert response.status_code == 401
+
+
+def test_tool_preview_route_rejects_extra_fields(monkeypatch) -> None:
+    class FakeToolRuntimeService:
+        async def preview_tool_invocation(self, **kwargs):
+            raise AssertionError("preview_tool_invocation should not run when extra fields are submitted.")
+
+    monkeypatch.setattr(tool_registration_routes, "build_tool_runtime_service", lambda session: FakeToolRuntimeService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/tool-registrations/{uuid4()}/preview",
+        json={
+            "tenant_id": str(uuid4()),
+            "execution_input": "Inspect current scope.",
+            "unexpected_field": "blocked",
+        },
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422

@@ -9,6 +9,8 @@ import type { WorkspaceView } from "@/components/workspace/workspace-types";
 type PacketTone = "healthy" | "review" | "attention";
 
 type WorkspaceExecutionPacketAction = {
+  key: string;
+  disabled?: boolean;
   label: string;
   onClick: () => void | Promise<void>;
   variant?: "default" | "outline";
@@ -107,14 +109,21 @@ export function WorkspaceExecutionPacket({
       {(primaryAction || secondaryActions.length > 0) && (
         <div className="mt-3 flex flex-wrap gap-2">
           {primaryAction ? (
-            <Button onClick={() => void primaryAction.onClick()} size="sm" type="button" variant={primaryAction.variant ?? "default"}>
+            <Button
+              disabled={primaryAction.disabled}
+              onClick={() => void primaryAction.onClick()}
+              size="sm"
+              type="button"
+              variant={primaryAction.variant ?? "default"}
+            >
               {primaryAction.label}
             </Button>
           ) : null}
           {secondaryActions.map((action) => (
             <Button
-              key={action.label}
+              key={action.key}
               className="bg-white"
+              disabled={action.disabled}
               onClick={() => void action.onClick()}
               size="sm"
               type="button"

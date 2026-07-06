@@ -30,8 +30,21 @@ if (-not ($existingRemotes -contains $RemoteName)) {
   throw "Remote '$RemoteName' is not configured."
 }
 
+$currentBranch = (& git branch --show-current).Trim()
+if ([string]::IsNullOrWhiteSpace($currentBranch)) {
+  throw "Git is not on a named branch. Check out the release branch before the first public push."
+}
+
+& git rev-parse --verify "refs/heads/$Branch" *> $null
+if ($LASTEXITCODE -ne 0) {
+  throw "Branch '$Branch' does not exist locally."
+}
+
 if ($DryRun) {
   Write-Host "Dry run: first public push validation passed." -ForegroundColor Yellow
+  if ($currentBranch -ne $Branch) {
+    Write-Host "Dry run: current branch is '$currentBranch' while release branch is '$Branch'." -ForegroundColor Yellow
+  }
   Write-Host "Dry run: would push branch '$Branch' to remote '$RemoteName'." -ForegroundColor Yellow
   exit 0
 }
@@ -45,6 +58,9 @@ if (-not $SkipPreflight) {
 }
 
 Write-Host "Pushing '$Branch' to '$RemoteName'..." -ForegroundColor Cyan
+if ($currentBranch -ne $Branch) {
+  Write-Host "Current branch is '$currentBranch'. RAGPilot will still push the configured release branch '$Branch'." -ForegroundColor Yellow
+}
 & git push -u $RemoteName $Branch
 if ($LASTEXITCODE -ne 0) {
   throw "First public push failed."

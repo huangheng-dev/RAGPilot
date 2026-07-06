@@ -1,11 +1,13 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal
 
 
 class RetrievalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     knowledge_base_id: UUID
     query_text: str = Field(min_length=1, max_length=8000)
@@ -69,6 +71,8 @@ class RetrievalEngineDiagnosticsResponse(BaseModel):
 
 
 class RetrievalCompareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     knowledge_base_id: UUID
     query_text: str = Field(min_length=1, max_length=8000)
@@ -100,9 +104,21 @@ class RetrievalCompareResponse(BaseModel):
 
 RetrievalEvaluationMode = Literal["inspect", "compare"]
 RetrievalValidationStatus = Literal["ready", "review", "hold", "empty", "failed"]
+RetrievalFollowUpStatus = Literal["pending", "resolved"]
+RetrievalEvaluationFollowUpActionKey = Literal[
+    "review_knowledge_base_governance",
+    "review_retrieval_profile_governance",
+    "rerun_retrieval_inspection",
+    "rerun_retrieval_comparison",
+    "validate_in_chat",
+]
+RetrievalEvaluationFollowUpActionCategory = Literal["governance", "analysis", "validation"]
+RetrievalIntelligenceStatus = Literal["stable", "review", "hold"]
 
 
 class RetrievalEvaluationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     workspace_id: UUID
     knowledge_base_id: UUID
@@ -122,6 +138,22 @@ class RetrievalEvaluationCreateRequest(BaseModel):
     evaluation_payload_json: dict = Field(default_factory=dict)
 
 
+class RetrievalEvaluationFollowUpUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    follow_up_status: RetrievalFollowUpStatus
+
+
+class RetrievalEvaluationQueryFollowUpUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: UUID
+    workspace_id: UUID
+    knowledge_base_id: UUID | None = None
+    query_text: str = Field(min_length=1, max_length=8000)
+    follow_up_status: RetrievalFollowUpStatus
+
+
 class RetrievalEvaluationResponse(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -132,6 +164,7 @@ class RetrievalEvaluationResponse(BaseModel):
     query_text: str
     baseline_engine_name: str
     candidate_engine_name: str | None = None
+    retrieval_profile_id: UUID | None = None
     retrieval_profile_name: str | None = None
     retrieval_profile_source: str | None = None
     result_count: int
@@ -141,6 +174,11 @@ class RetrievalEvaluationResponse(BaseModel):
     top_result_matches: bool | None = None
     recommendation_reason: str | None = None
     evaluation_payload_json: dict = Field(default_factory=dict)
+    follow_up_status: RetrievalFollowUpStatus
+    resolved_at: datetime | None = None
+    resolved_by_user_id: UUID | None = None
+    source_documents: list["RetrievalEvaluationSourceDocumentResponse"] = Field(default_factory=list)
+    recommended_actions: list["RetrievalEvaluationFollowUpActionResponse"] = Field(default_factory=list)
     created_by_user_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
@@ -154,10 +192,22 @@ class RetrievalEvaluationStatusBreakdownResponse(BaseModel):
     failed: int = 0
 
 
+class RetrievalEvaluationFollowUpBreakdownResponse(BaseModel):
+    pending: int = 0
+    resolved: int = 0
+
+
 class RetrievalEvaluationSourceDocumentResponse(BaseModel):
     document_id: UUID
     document_title: str
     hit_count: int = 1
+
+
+class RetrievalEvaluationFollowUpActionResponse(BaseModel):
+    action_key: RetrievalEvaluationFollowUpActionKey
+    action_category: RetrievalEvaluationFollowUpActionCategory
+    action_label: str
+    action_reason: str
 
 
 class RetrievalEvaluationTuningCandidateResponse(BaseModel):
@@ -165,11 +215,14 @@ class RetrievalEvaluationTuningCandidateResponse(BaseModel):
     evaluation_count: int
     latest_evaluation_mode: RetrievalEvaluationMode
     latest_validation_status: RetrievalValidationStatus
+    follow_up_status: RetrievalFollowUpStatus
     ready_count: int = 0
     review_count: int = 0
     hold_count: int = 0
     empty_count: int = 0
     failed_count: int = 0
+    pending_evaluation_count: int = 0
+    resolved_evaluation_count: int = 0
     attention_score: int = 0
     baseline_engine_name: str
     candidate_engine_name: str | None = None
@@ -183,6 +236,7 @@ class RetrievalEvaluationTuningCandidateResponse(BaseModel):
     candidate_only_count: int | None = None
     top_result_matches: bool | None = None
     latest_source_documents: list[RetrievalEvaluationSourceDocumentResponse] = Field(default_factory=list)
+    recommended_actions: list[RetrievalEvaluationFollowUpActionResponse] = Field(default_factory=list)
     last_evaluated_at: datetime
 
 
@@ -192,5 +246,25 @@ class RetrievalEvaluationSummaryResponse(BaseModel):
     knowledge_base_id: UUID | None = None
     total_evaluations: int = 0
     total_queries: int = 0
+    intelligence_status: RetrievalIntelligenceStatus = "stable"
+    intelligence_reason: str = ""
+    primary_query_text: str | None = None
+    primary_baseline_engine_name: str | None = None
+    primary_candidate_engine_name: str | None = None
+    primary_retrieval_profile_name: str | None = None
     status_breakdown: RetrievalEvaluationStatusBreakdownResponse
+    follow_up_breakdown: RetrievalEvaluationFollowUpBreakdownResponse
+    primary_recommended_actions: list[RetrievalEvaluationFollowUpActionResponse] = Field(default_factory=list)
     candidates: list[RetrievalEvaluationTuningCandidateResponse] = Field(default_factory=list)
+    recent_evaluations: list[RetrievalEvaluationResponse] = Field(default_factory=list)
+
+
+class RetrievalEvaluationQueryFollowUpUpdateResponse(BaseModel):
+    tenant_id: UUID
+    workspace_id: UUID
+    knowledge_base_id: UUID | None = None
+    query_text: str
+    follow_up_status: RetrievalFollowUpStatus
+    updated_count: int = Field(default=0, ge=0)
+    acted_at: datetime
+    acted_by_user_id: UUID | None = None

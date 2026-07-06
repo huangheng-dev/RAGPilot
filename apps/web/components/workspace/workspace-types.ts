@@ -35,6 +35,124 @@ export type WorkspaceAgentContext = {
   objective: string;
   knowledge_base_scope: string | null;
   tools: Array<"chat" | "documents" | "operations" | "admin">;
+  runtime_governance: WorkspaceAgentRuntimeGovernance | null;
+};
+
+export type WorkspaceAgentRuntimeResolvedScope = {
+  workspace_id: string | null;
+  workspace_slug: string | null;
+  workspace_name: string | null;
+  knowledge_base_id: string | null;
+  knowledge_base_slug: string | null;
+  knowledge_base_name: string | null;
+  scope_issue: "scope_missing" | "scope_invalid" | null;
+};
+
+export type WorkspaceAgentRuntimeResolvedModelEndpoint = {
+  id: string;
+  name: string;
+  slug: string;
+  provider_type: string;
+  model_name: string;
+  base_url: string | null;
+  credential_mode: string;
+  credential_key_hint: string | null;
+  capabilities: string[];
+  is_enabled: boolean;
+  is_default: boolean;
+  runtime_ready: boolean;
+  runtime_issue: "missing_base_url" | "missing_credential_hint" | "managed_reserved" | null;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: "completed" | "blocked" | "failed" | null;
+  last_preview_at: string | null;
+};
+
+export type WorkspaceAgentRuntimeResolvedRetrievalProfile = {
+  id: string;
+  name: string;
+  slug: string;
+  retrieval_mode: string;
+  is_enabled: boolean;
+  is_default: boolean;
+  source: "knowledge_base" | "platform_default";
+};
+
+export type WorkspaceAgentRuntimeGovernance = {
+  is_ready: boolean;
+  issues: Array<
+    | "model_missing"
+    | "model_disabled"
+    | "model_runtime_unconfigured"
+    | "retrieval_profile_missing"
+    | "retrieval_profile_disabled"
+    | "scope_missing"
+    | "scope_invalid"
+    | "tools_missing"
+    | "tool_registration_disabled"
+    | "tool_approval_required"
+    | "tool_mcp_reserved"
+    | "tool_mcp_integration_pending"
+  >;
+  blocking_issues: Array<
+    | "model_missing"
+    | "model_disabled"
+    | "model_runtime_unconfigured"
+    | "retrieval_profile_missing"
+    | "retrieval_profile_disabled"
+    | "scope_missing"
+    | "scope_invalid"
+    | "tools_missing"
+    | "tool_registration_disabled"
+    | "tool_approval_required"
+    | "tool_mcp_reserved"
+    | "tool_mcp_integration_pending"
+  >;
+  approval_required_tool_count: number;
+  disabled_registered_tool_count: number;
+  missing_tool_registration_count: number;
+  reserved_mcp_tool_count: number;
+  integration_pending_mcp_tool_count: number;
+  disabled_tool_registration_id: string | null;
+  approval_required_tool_registration_id: string | null;
+  reserved_mcp_tool_registration_id: string | null;
+  integration_pending_mcp_tool_registration_id: string | null;
+  integration_pending_mcp_connector_reference: string | null;
+  focus_tool_registration: {
+    id: string;
+    name: string;
+    slug: string;
+    transport_type: "native" | "http" | "mcp_reserved";
+    surface_area: "chat" | "documents" | "operations" | "admin" | "agents";
+    endpoint_url: string | null;
+    connector_reference: string | null;
+    requires_admin_approval: boolean;
+    is_enabled: boolean;
+    recent_preview_completed_events: number;
+    recent_preview_blocked_events: number;
+    recent_preview_failed_events: number;
+    last_preview_status: "completed" | "blocked" | "failed" | null;
+    last_preview_at: string | null;
+  } | null;
+  focus_mcp_connector: {
+    id: string;
+    name: string;
+    slug: string;
+    connector_type: "streamable_http" | "sse" | "managed_reserved";
+    base_url: string | null;
+    auth_mode: "none" | "environment" | "managed_reserved";
+    credential_key_hint: string | null;
+    is_enabled: boolean;
+    recent_preview_completed_events: number;
+    recent_preview_blocked_events: number;
+    recent_preview_failed_events: number;
+    last_preview_status: "completed" | "blocked" | "failed" | null;
+    last_preview_at: string | null;
+  } | null;
+  resolved_scope: WorkspaceAgentRuntimeResolvedScope;
+  resolved_model_endpoint: WorkspaceAgentRuntimeResolvedModelEndpoint | null;
+  resolved_retrieval_profile: WorkspaceAgentRuntimeResolvedRetrievalProfile | null;
 };
 
 export type WorkspaceAgentRecommendationReason =
@@ -100,7 +218,21 @@ export type MessageFeedbackSummaryItem = MessageFeedback & {
   conversation_id: string;
   conversation_title: string;
   assistant_excerpt: string;
+  knowledge_base_id: string | null;
   latest_user_question: string | null;
+  retrieval_profile_id: string | null;
+  retrieval_profile_name: string | null;
+  follow_up_status: "pending" | "resolved";
+  recommended_actions: Array<{
+    action_key:
+      | "review_knowledge_base_governance"
+      | "review_retrieval_profile_governance"
+      | "rerun_retrieval_comparison"
+      | "validate_in_chat";
+    action_category: "governance" | "analysis" | "validation";
+    action_label: string;
+    action_reason: string;
+  }>;
 };
 
 export type MessageFeedbackSummary = {
@@ -144,9 +276,64 @@ export type WorkflowRun = {
   subject_label: string | null;
   subject_workspace_id: string | null;
   subject_knowledge_base_id: string | null;
+  root_workflow_run_id: string | null;
+  latest_child_retry_run_id: string | null;
+  latest_child_retry_status: string | null;
+  active_child_retry_run_id: string | null;
+  has_active_retry_child: boolean;
+  retry_depth: number;
+  child_retry_run_count: number;
+  max_retry_depth: number;
+  remaining_retry_attempts: number;
   error_message: string | null;
+  operator_notes: string | null;
   is_retry_available: boolean;
   retry_unavailable_reason: string | null;
+  total_step_count: number;
+  completed_step_count: number;
+  failed_step_count: number;
+  active_step_count: number;
+  pending_step_count: number;
+  latest_active_step_name: string | null;
+  latest_active_step_started_at: string | null;
+  latest_completed_step_name: string | null;
+  latest_completed_step_completed_at: string | null;
+  highest_attempt_step_name: string | null;
+  highest_attempt_count: number;
+  latest_failed_step_name: string | null;
+  latest_failed_step_error_message: string | null;
+  failure_category:
+    | "source_deleted"
+    | "source_missing"
+    | "parser_failure"
+    | "embedding_failure"
+    | "indexing_failure"
+    | "runtime_timeout"
+    | "runtime_capacity"
+    | "unknown"
+    | null;
+  failure_recommended_action:
+    | "review_document_source"
+    | "review_parser_path"
+    | "review_runtime"
+    | "review_indexing"
+    | "retry_when_ready"
+    | "inspect_workflow"
+    | null;
+  failure_recommended_view: "chat" | "documents" | "workflows" | null;
+  failure_recommended_primary_action:
+    | "retry_workflow"
+    | "open_workflows"
+    | "open_document"
+    | "open_chat"
+    | "monitor_workflow"
+    | null;
+  failure_focus_step_name: string | null;
+  failure_focus_error_message: string | null;
+  failure_focus_attempt_count: number;
+  recovery_actions: WorkflowRecoveryAction[];
+  recovery_event_count: number;
+  latest_recovery_event_at: string | null;
   recovery_stage:
     | "retry_available"
     | "retry_blocked_document_deleted"
@@ -179,15 +366,76 @@ export type WorkflowStep = {
   step_status: string;
   attempt_count: number;
   error_message: string | null;
+  failure_category:
+    | "source_deleted"
+    | "source_missing"
+    | "parser_failure"
+    | "embedding_failure"
+    | "indexing_failure"
+    | "runtime_timeout"
+    | "runtime_capacity"
+    | "unknown"
+    | null;
+  failure_recommended_action:
+    | "review_document_source"
+    | "review_parser_path"
+    | "review_runtime"
+    | "review_indexing"
+    | "retry_when_ready"
+    | "inspect_workflow"
+    | null;
+  failure_recommended_view: "chat" | "documents" | "workflows" | null;
+  failure_recommended_primary_action:
+    | "retry_workflow"
+    | "open_workflows"
+    | "open_document"
+    | "open_chat"
+    | "monitor_workflow"
+    | null;
+  recovery_actions: WorkflowRecoveryAction[];
+  is_failure_focus: boolean;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
+export type WorkflowRunEvent = {
+  id: string;
+  tenant_id: string;
+  workflow_run_id: string;
+  actor_user_id: string | null;
+  actor_role: string | null;
+  action_type: "retry_requested" | "retry_blocked" | "retry_spawned" | "cancel_requested" | "operator_notes_updated";
+  detail: Record<string, unknown>;
+  created_at: string;
+};
+
+export type WorkflowRecoveryAction = {
+  action_key:
+    | "review_document_source"
+    | "review_parser_path"
+    | "review_runtime"
+    | "review_indexing"
+    | "retry_when_ready"
+    | "inspect_workflow";
+  target_view: "chat" | "documents" | "workflows" | null;
+  target_primary_action:
+    | "retry_workflow"
+    | "open_workflows"
+    | "open_document"
+    | "open_chat"
+    | "monitor_workflow"
+    | null;
+  is_primary: boolean;
+  is_enabled: boolean;
+  disabled_reason: string | null;
+};
+
 export type WorkflowRunDetail = WorkflowRun & {
   input_json: Record<string, unknown>;
   steps: WorkflowStep[];
+  events: WorkflowRunEvent[];
 };
 
 export type WorkflowRunActionResponse = WorkflowRun & {
@@ -200,6 +448,7 @@ export type DocumentRecord = {
   knowledge_base_id: string;
   title: string;
   source_uri: string | null;
+  source_kind: "file" | "web" | "other";
   ingestion_status: string;
   indexing_status: string;
   latest_version_number: number | null;
@@ -218,6 +467,8 @@ export type DocumentRecord = {
   created_at: string;
   updated_at: string;
 };
+
+export type DocumentSourceFilter = "all" | "file" | "web" | "other";
 
 export type DocumentChunk = {
   id: string;
@@ -290,6 +541,7 @@ export type WorkflowMetrics = {
   retry_runs: number;
   completed_runs: number;
   failed_runs: number;
+  cancelled_runs: number;
 };
 
 export type ConversationMetrics = {
@@ -377,33 +629,6 @@ export type DocumentActivity = {
   asset_file_name: string | null;
   summary: DocumentActivitySummary;
   events: DocumentActivityEvent[];
-};
-
-export type DocumentActionSummary = {
-  action: "delete" | "reindex" | "restore";
-  requestedCount: number;
-  successCount: number;
-  failureCount: number;
-  completedAt: string;
-  successfulDocumentIds: string[];
-  lastWorkflowRunId: string | null;
-  lastWorkflowStatus: string | null;
-  followUpView: "none" | "documents" | "workflows" | "chat";
-  followUpDraftQuestion: string | null;
-  failedItems: Array<{
-    documentId: string;
-    documentTitle: string;
-    message: string;
-  }>;
-};
-
-export type UploadFollowUpSummary = {
-  documentId: string | null;
-  documentTitle: string;
-  workflowRunId: string;
-  workflowStatus: "queued" | "running" | "pending" | "completed" | "failed";
-  completedAt: string;
-  followUpDraftQuestion: string | null;
 };
 
 export type RetrievalValidationSummary = {

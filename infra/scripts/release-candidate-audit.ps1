@@ -7,7 +7,7 @@ if (-not (Test-Path ".git")) {
   throw "The repository is not initialized as Git."
 }
 
-Write-Host "Auditing RagPilot public release candidate set..." -ForegroundColor Cyan
+Write-Host "Auditing RAGPilot public release candidate set..." -ForegroundColor Cyan
 
 $candidateFiles = @(& git ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) {
@@ -42,7 +42,18 @@ $forbiddenMatchers = @(
 )
 
 $allowedSpecialFiles = @(
-  ".env.example"
+  ".env.example",
+  ".env.production.example"
+)
+
+$requiredCandidateFiles = @(
+  "README.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "SECURITY.md",
+  "LICENSE",
+  ".env.example",
+  ".env.production.example"
 )
 
 $violations = @()
@@ -63,6 +74,17 @@ if ($violations.Count -gt 0) {
   Write-Host ""
   Write-Host "Forbidden public-release candidates detected:" -ForegroundColor Yellow
   $violations | Sort-Object -Unique | ForEach-Object { Write-Host $_ }
+  exit 1
+}
+
+$missingRequiredCandidates = @(
+  $requiredCandidateFiles | Where-Object { $candidateFiles -notcontains $_ }
+)
+
+if ($missingRequiredCandidates.Count -gt 0) {
+  Write-Host ""
+  Write-Host "Required public-release files are missing from the Git candidate set:" -ForegroundColor Yellow
+  $missingRequiredCandidates | ForEach-Object { Write-Host $_ }
   exit 1
 }
 

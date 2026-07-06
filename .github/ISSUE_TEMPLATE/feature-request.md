@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Propose a product or platform improvement for RagPilot
+about: Propose a product or platform improvement for RAGPilot
 title: "[Feature] "
 labels: ["enhancement"]
 assignees: []
@@ -12,7 +12,7 @@ Describe the requested capability briefly.
 
 ## Product Goal
 
-Explain which real RagPilot workflow this strengthens.
+Explain which real RAGPilot workflow this strengthens.
 
 The preferred direction is to support the main product chain:
 

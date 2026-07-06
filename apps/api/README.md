@@ -1,10 +1,10 @@
-# RagPilot API
+# RAGPilot API
 
-This service acts as the API gateway and business boundary for the current platform.
+This service acts as the API gateway and business boundary for RAGPilot.
 
-## Current Scope
+## API Scope
 
-The API currently supports:
+The API supports:
 
 - health checks
 - shared runtime configuration
@@ -17,10 +17,12 @@ The API currently supports:
 - chat APIs
 - workflow APIs
 - agent definition APIs
+- user and directory session APIs
 - model endpoint governance APIs
 - tool registration governance APIs
+- runtime governance and audit worklist APIs
 
-## Current Resource APIs
+## Resource APIs
 
 - `GET /api/v1/health`
 - `GET /api/v1/tenants`
@@ -40,6 +42,7 @@ The API currently supports:
 - `GET /api/v1/documents/metrics?knowledge_base_id={knowledge_base_id}`
 - `GET /api/v1/documents/{document_id}?knowledge_base_id={knowledge_base_id}`
 - `POST /api/v1/documents/upload`
+- `POST /api/v1/documents/import-webpage`
 - `POST /api/v1/documents/{document_id}/reindex?knowledge_base_id={knowledge_base_id}`
 - `DELETE /api/v1/documents/{document_id}?knowledge_base_id={knowledge_base_id}`
 - `POST /api/v1/retrieve`
@@ -70,7 +73,7 @@ The API currently supports:
 - `PATCH /api/v1/tool-registrations/{tool_registration_id}`
 - `DELETE /api/v1/tool-registrations/{tool_registration_id}`
 
-## Current API Behaviors
+## API Behaviors
 
 Document list supports:
 
@@ -88,24 +91,24 @@ Workflow list supports:
 - sorting
 - pagination
 
-Workflow metrics now also expose:
+Workflow metrics expose:
 
 - `queued_runs`
 - `running_runs`
 - `retry_runs`
 
-Chat conversation APIs now also expose a summary metrics endpoint so the web console can render tenant-level and workspace-level conversation activity without scraping conversation lists client-side.
+Chat conversation APIs expose a summary metrics endpoint so the web console can render tenant-level and workspace-level conversation activity without scraping conversation lists client-side.
 
 Conversation deletion is handled through the chat API and removes the persisted conversation together with its stored messages and citations inside the tenant scope.
 
-Conversation listing now also supports title search, limit controls, and recent-activity ordering so operator surfaces can keep active threads at the top.
+Conversation listing supports title search, limit controls, and recent-activity ordering so operator surfaces can keep active threads at the top.
 
-Conversation list payloads now also include:
+Conversation list payloads include:
 
 - `message_count`
 - `latest_activity_at`
 
-Implicit chat-created conversations now receive cleaner default titles derived from the first user prompt, which keeps workspace history easier to scan.
+Implicit chat-created conversations receive default titles derived from the first user prompt, which keeps workspace history easier to scan.
 
 Both list endpoints expose browser-readable paging headers:
 
@@ -114,13 +117,19 @@ Both list endpoints expose browser-readable paging headers:
 - `X-Offset`
 - `X-Result-Count`
 
-The current web console uses the single-document reindex and delete endpoints to drive batch document operations client-side.
+The web console uses the single-document reindex and delete endpoints to drive batch document operations client-side.
 
 Uploaded documents create a database workflow run and attempt to start a Temporal `document_ingestion` workflow path.
 
-The retrieval API now also supports structured engine comparison through `POST /api/v1/retrieve/compare`, which compares a baseline engine such as `native` against a candidate such as `llamaindex_pilot` and returns overlap diagnostics, per-engine method breakdowns, and top-result agreement.
+Single-page web imports reuse that same ingestion path through `POST /api/v1/documents/import-webpage`, preserving the fetched source URL on the managed document record instead of treating the page as a separate ingestion subsystem.
 
-Model-endpoint governance APIs currently persist:
+The retrieval API supports structured engine comparison through `POST /api/v1/retrieve/compare`, which compares a baseline engine such as `native` against a candidate such as `llamaindex_pilot` and returns overlap diagnostics, per-engine method breakdowns, and top-result agreement.
+
+The health API also reports runtime readiness for `llamaindex_pilot` and `langgraph_pilot`, together with the effective chat-model binding resolved from governed runtime configuration.
+
+The authentication-mode API exposes a final-boundary contract for local versus provider-managed sign-in, including invitation-activation availability, initial-bootstrap eligibility, provider protocol, and optional provider post-sign-out routing.
+
+Model-endpoint governance APIs persist:
 
 - provider type
 - provider base URL
@@ -129,7 +138,7 @@ Model-endpoint governance APIs currently persist:
 - chat and embedding capability flags
 - default-route designation
 
-Tool-registration governance APIs currently persist:
+Tool-registration governance APIs persist:
 
 - transport type
 - surface ownership
@@ -138,7 +147,7 @@ Tool-registration governance APIs currently persist:
 - admin-approval requirement
 - enabled posture
 
-Agent-definition APIs now also persist:
+Agent-definition APIs persist:
 
 - execution mode and activation state
 - scoped knowledge-base boundary
@@ -174,14 +183,12 @@ The API uses English-first, domain-oriented naming:
 - application services: `*_service.py`
 - shared runtime configuration: `shared/settings.py`
 
-## Not Yet Complete
+## Service Boundary
 
-The API is not yet complete in:
+The API owns:
 
-- authentication
-- RBAC
-- user administration
-- audit and usage APIs
-- production secret management for governed model endpoints
-- advanced model routing and evaluation
-- mature MCP and agent management APIs
+- local directory and password-local sign-in
+- provider-managed authentication contracts for `OIDC` and `SAML`
+- tenant, workspace, knowledge-base, document, chat, workflow, and agent resource contracts
+- runtime governance for model endpoints, retrieval profiles, tool registrations, and MCP-compatible connectors
+- audit-ready session, access, and runtime review surfaces

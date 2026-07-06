@@ -4,7 +4,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import SettingsConsolePage from "@/components/settings/SettingsConsolePage";
 
 export const metadata: Metadata = {
-  title: "Settings"
+  title: "System Settings"
 };
 
 export default function Page() {

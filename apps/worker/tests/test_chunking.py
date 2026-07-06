@@ -65,7 +65,7 @@ def test_normalize_text_supports_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, stream: io.BytesIO) -> None:
             assert stream.read(5) == b"%PDF-"
             self.pages = [
-                FakePdfPage("RagPilot PDF handbook"),
+                FakePdfPage("RAGPilot PDF handbook"),
                 FakePdfPage("Durable ingestion workflow"),
             ]
 
@@ -78,12 +78,12 @@ def test_normalize_text_supports_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert parsed_document.parser_name == "pdf_parser"
-    assert parsed_document.text == "Page 1\nRagPilot PDF handbook\n\nPage 2\nDurable ingestion workflow"
+    assert parsed_document.text == "Page 1\nRAGPilot PDF handbook\n\nPage 2\nDurable ingestion workflow"
 
 
 def test_normalize_text_supports_docx() -> None:
     document = DocxDocument()
-    document.add_heading("RagPilot Handbook", level=1)
+    document.add_heading("RAGPilot Handbook", level=1)
     document.add_paragraph("Durable ingestion stays observable.")
     table = document.add_table(rows=2, cols=2)
     table.rows[0].cells[0].text = "Owner"
@@ -101,7 +101,7 @@ def test_normalize_text_supports_docx() -> None:
     )
 
     assert parsed_document.parser_name == "docx_parser"
-    assert "RagPilot Handbook" in parsed_document.text
+    assert "RAGPilot Handbook" in parsed_document.text
     assert "Durable ingestion stays observable." in parsed_document.text
     assert "Table 1" in parsed_document.text
     assert "Platform | Operations" in parsed_document.text

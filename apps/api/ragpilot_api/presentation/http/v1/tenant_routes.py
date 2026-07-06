@@ -12,8 +12,9 @@ from ragpilot_api.infrastructure.database.session import get_database_session
 from ragpilot_api.presentation.http.request_actor import (
     RequestActor,
     get_request_actor,
-    require_actor_capability,
     require_actor_capability_from_policy,
+    require_authenticated_actor,
+    require_actor_tenant_access,
 )
 
 
@@ -30,6 +31,7 @@ async def create_tenant(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> TenantResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
     try:
         return await build_tenant_service(session).create_tenant(request)
@@ -38,8 +40,16 @@ async def create_tenant(
 
 
 @router.get("", response_model=list[TenantResponse])
-async def list_tenants(session: AsyncSession = Depends(get_database_session)) -> list[TenantResponse]:
-    return await build_tenant_service(session).list_tenants()
+async def list_tenants(
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> list[TenantResponse]:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "access_home", RolePermissionRepository(session))
+    tenants = await build_tenant_service(session).list_tenants()
+    if actor.role in {"super_admin", "reviewer"} or actor.active_tenant_ids is None:
+        return tenants
+    return [tenant for tenant in tenants if tenant.id in actor.active_tenant_ids]
 
 
 @router.patch("/{tenant_id}", response_model=TenantResponse)
@@ -49,7 +59,9 @@ async def update_tenant(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> TenantResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
     try:
         tenant = await build_tenant_service(session).update_tenant(tenant_id=tenant_id, request=request)
     except ResourceConflictError as error:

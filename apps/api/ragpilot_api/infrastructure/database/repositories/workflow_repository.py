@@ -103,6 +103,9 @@ class WorkflowRepository:
             )
         )
 
+    async def get_workflow_run_by_id(self, *, workflow_run_id: UUID) -> WorkflowRun | None:
+        return await self.session.scalar(select(WorkflowRun).where(WorkflowRun.id == workflow_run_id))
+
     async def get_workflow_metrics(self, *, tenant_id: UUID) -> dict[str, int]:
         row = (
             await self.session.execute(
@@ -169,6 +172,15 @@ class WorkflowRepository:
                         ),
                         0,
                     ).label("failed_runs"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (WorkflowRun.workflow_status == "cancelled", 1),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("cancelled_runs"),
                 ).where(WorkflowRun.tenant_id == tenant_id)
             )
         ).one()
@@ -181,15 +193,135 @@ class WorkflowRepository:
             "retry_runs": int(row.retry_runs or 0),
             "completed_runs": int(row.completed_runs or 0),
             "failed_runs": int(row.failed_runs or 0),
+            "cancelled_runs": int(row.cancelled_runs or 0),
         }
 
-    async def list_workflow_steps(self, *, workflow_run_id: UUID) -> list[WorkflowStep]:
-        result = await self.session.scalars(
-            select(WorkflowStep)
-            .where(WorkflowStep.workflow_run_id == workflow_run_id)
-            .order_by(WorkflowStep.created_at.asc(), WorkflowStep.step_name.asc())
-        )
+    async def list_workflow_steps(
+        self,
+        *,
+        workflow_run_id: UUID,
+        status_filter: str | None = None,
+        min_attempt_count: int | None = None,
+        limit: int | None = None,
+    ) -> list[WorkflowStep]:
+        statement = select(WorkflowStep).where(WorkflowStep.workflow_run_id == workflow_run_id)
+        normalized_status_filter = status_filter.strip().lower() if status_filter else None
+        if normalized_status_filter and normalized_status_filter != "all":
+            statement = statement.where(WorkflowStep.step_status == normalized_status_filter)
+        if min_attempt_count is not None:
+            statement = statement.where(WorkflowStep.attempt_count >= min_attempt_count)
+        statement = statement.order_by(WorkflowStep.updated_at.desc(), WorkflowStep.created_at.desc(), WorkflowStep.step_name.asc())
+        if limit is not None:
+            statement = statement.limit(limit)
+
+        result = await self.session.scalars(statement)
         return list(result)
+
+    async def get_workflow_step_summary(self, *, workflow_run_id: UUID) -> dict[str, object]:
+        row = (
+            await self.session.execute(
+                select(
+                    func.count(WorkflowStep.id).label("total_step_count"),
+                    func.coalesce(func.sum(case((WorkflowStep.step_status == "completed", 1), else_=0)), 0).label(
+                        "completed_step_count"
+                    ),
+                    func.coalesce(func.sum(case((WorkflowStep.step_status == "failed", 1), else_=0)), 0).label(
+                        "failed_step_count"
+                    ),
+                    func.coalesce(
+                        func.sum(case((WorkflowStep.step_status.in_(("running", "queued")), 1), else_=0)),
+                        0,
+                    ).label("active_step_count"),
+                    func.coalesce(func.sum(case((WorkflowStep.step_status == "pending", 1), else_=0)), 0).label(
+                        "pending_step_count"
+                    ),
+                ).where(WorkflowStep.workflow_run_id == workflow_run_id)
+            )
+        ).one()
+
+        latest_failed_step = (
+            await self.session.execute(
+                select(WorkflowStep.step_name, WorkflowStep.error_message)
+                .where(
+                    WorkflowStep.workflow_run_id == workflow_run_id,
+                    WorkflowStep.step_status == "failed",
+                )
+                .order_by(WorkflowStep.updated_at.desc(), WorkflowStep.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+
+        latest_active_step = (
+            await self.session.execute(
+                select(WorkflowStep.step_name, WorkflowStep.started_at)
+                .where(
+                    WorkflowStep.workflow_run_id == workflow_run_id,
+                    WorkflowStep.step_status.in_(("running", "queued")),
+                )
+                .order_by(WorkflowStep.updated_at.desc(), WorkflowStep.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+
+        latest_completed_step = (
+            await self.session.execute(
+                select(WorkflowStep.step_name, WorkflowStep.completed_at)
+                .where(
+                    WorkflowStep.workflow_run_id == workflow_run_id,
+                    WorkflowStep.step_status == "completed",
+                )
+                .order_by(WorkflowStep.completed_at.desc(), WorkflowStep.updated_at.desc(), WorkflowStep.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+
+        highest_attempt_step = (
+            await self.session.execute(
+                select(WorkflowStep.step_name, WorkflowStep.attempt_count)
+                .where(WorkflowStep.workflow_run_id == workflow_run_id)
+                .order_by(WorkflowStep.attempt_count.desc(), WorkflowStep.updated_at.desc(), WorkflowStep.created_at.desc())
+                .limit(1)
+            )
+        ).first()
+
+        return {
+            "total_step_count": int(row.total_step_count or 0),
+            "completed_step_count": int(row.completed_step_count or 0),
+            "failed_step_count": int(row.failed_step_count or 0),
+            "active_step_count": int(row.active_step_count or 0),
+            "pending_step_count": int(row.pending_step_count or 0),
+            "latest_active_step_name": latest_active_step[0] if latest_active_step is not None else None,
+            "latest_active_step_started_at": latest_active_step[1] if latest_active_step is not None else None,
+            "latest_completed_step_name": latest_completed_step[0] if latest_completed_step is not None else None,
+            "latest_completed_step_completed_at": latest_completed_step[1] if latest_completed_step is not None else None,
+            "highest_attempt_step_name": highest_attempt_step[0] if highest_attempt_step is not None else None,
+            "highest_attempt_count": int(highest_attempt_step[1] or 0) if highest_attempt_step is not None else 0,
+            "latest_failed_step_name": latest_failed_step[0] if latest_failed_step is not None else None,
+            "latest_failed_step_error_message": latest_failed_step[1] if latest_failed_step is not None else None,
+        }
+
+    async def get_child_retry_summary(self, *, workflow_run_id: UUID) -> dict[str, object]:
+        retry_parent_id = str(workflow_run_id)
+        child_retry_runs = list(
+            await self.session.scalars(
+                select(WorkflowRun)
+                .where(cast(WorkflowRun.input_json["retry_of_workflow_run_id"].as_string(), String) == retry_parent_id)
+                .order_by(WorkflowRun.created_at.desc(), WorkflowRun.updated_at.desc())
+            )
+        )
+        return {
+            "child_retry_run_count": len(child_retry_runs),
+            "latest_child_retry_run_id": child_retry_runs[0].id if child_retry_runs else None,
+            "latest_child_retry_status": child_retry_runs[0].workflow_status if child_retry_runs else None,
+            "active_child_retry_run_id": next(
+                (
+                    retry_run.id
+                    for retry_run in child_retry_runs
+                    if retry_run.workflow_status in {"pending", "queued", "running"}
+                ),
+                None,
+            ),
+        }
 
     async def create_retry_workflow_run(
         self,
@@ -231,6 +363,31 @@ class WorkflowRepository:
         workflow_run.workflow_status = "failed"
         workflow_run.error_message = error_message
         workflow_run.completed_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(workflow_run)
+        return workflow_run
+
+    async def mark_workflow_run_cancelled(
+        self,
+        *,
+        workflow_run: WorkflowRun,
+        reason: str,
+    ) -> WorkflowRun:
+        workflow_run.workflow_status = "cancelled"
+        workflow_run.error_message = reason
+        workflow_run.completed_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(workflow_run)
+        return workflow_run
+
+    async def update_workflow_run_operator_notes(
+        self,
+        *,
+        workflow_run: WorkflowRun,
+        operator_notes: str | None,
+    ) -> WorkflowRun:
+        workflow_run.operator_notes = operator_notes
+        workflow_run.updated_at = datetime.now(timezone.utc)
         await self.session.commit()
         await self.session.refresh(workflow_run)
         return workflow_run

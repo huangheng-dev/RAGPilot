@@ -14,7 +14,7 @@ def test_grounded_prompt_builder_includes_context() -> None:
             {
                 "document_title": "Smoke Document",
                 "chunk_index": 0,
-                "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                "content": "RAGPilot uses Temporal for durable ingestion workflows.",
             }
         ],
     )
@@ -35,7 +35,7 @@ def test_deterministic_model_gateway_returns_grounded_answer() -> None:
             retrieval_results=[
                 {
                     "document_title": "Smoke Document",
-                    "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                    "content": "RAGPilot uses Temporal for durable ingestion workflows.",
                     "chunk_index": 0,
                 }
             ],
@@ -59,7 +59,7 @@ def test_model_gateway_allows_runtime_binding_override() -> None:
             retrieval_results=[
                 {
                     "document_title": "Smoke Document",
-                    "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                    "content": "RAGPilot uses Temporal for durable ingestion workflows.",
                     "chunk_index": 0,
                 }
             ],
@@ -106,7 +106,7 @@ def test_model_gateway_routes_ollama_bindings_to_native_ollama_provider() -> Non
                 retrieval_results=[
                     {
                         "document_title": "Smoke Document",
-                        "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                        "content": "RAGPilot uses Temporal for durable ingestion workflows.",
                         "chunk_index": 0,
                     }
                 ],
@@ -158,7 +158,7 @@ def test_model_gateway_routes_vllm_bindings_through_openai_compatible_provider()
                 retrieval_results=[
                     {
                         "document_title": "Smoke Document",
-                        "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                        "content": "RAGPilot uses Temporal for durable ingestion workflows.",
                         "chunk_index": 0,
                     }
                 ],

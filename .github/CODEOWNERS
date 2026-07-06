@@ -1,9 +1,0 @@
-* @repository-owner
-
-/apps/api/ @repository-owner
-/apps/web/ @repository-owner
-/apps/worker/ @repository-owner
-/apps/mcp-server/ @repository-owner
-/docs/ @repository-owner
-/infra/ @repository-owner
-/packages/ @repository-owner

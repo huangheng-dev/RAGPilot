@@ -1,33 +1,40 @@
 # Security Policy
 
-## Supported State
+## Supported Baseline
 
-RagPilot is currently in active development.
-
-Security fixes may land quickly, but the project does not yet guarantee long-term support windows for older snapshots.
-
-For now, treat the latest mainline state as the supported baseline.
+Please treat the latest mainline repository state as the supported baseline for security reporting.
 
 ## Reporting a Vulnerability
 
-Do not open a public issue for suspected secrets exposure, authentication bypass, privilege escalation, or infrastructure-sensitive vulnerabilities.
+Do not open a public issue for suspected:
 
-Instead:
+- secrets exposure
+- authentication or authorization bypass
+- privilege escalation
+- tenant isolation failure
+- workflow runtime abuse
+- model or tool runtime credential leakage
 
-1. prepare a private report with reproduction steps
-2. include the affected area such as `auth`, `rbac`, `document ingestion`, `tool runtime`, or `model runtime`
-3. include impact and any temporary mitigation
+Instead, prepare a private report that includes:
 
-Until a dedicated private security contact is published, repository owners should handle reports through a private channel outside the public issue tracker.
+1. the affected area
+2. reproduction steps
+3. impact
+4. suggested mitigation, if available
 
-## Scope Notes
+If GitHub private vulnerability reporting is enabled for the repository, use that channel first. Otherwise, contact the repository owners through a private channel instead of the public issue tracker.
 
-Current higher-sensitivity areas include:
+## Sensitive Areas
+
+Higher-sensitivity areas include:
 
 - authentication and session handling
 - tenant and membership authorization
-- model-endpoint credentials
-- tool runtime and future MCP boundaries
 - document ingestion and stored asset access
+- model endpoint configuration
+- tool runtime execution
+- MCP-facing integration boundaries
 
-As RagPilot matures, this file should be updated with the final disclosure contact and support policy.
+## Disclosure Guidance
+
+Please avoid publishing exploit details, proof-of-concept secrets, or live credentials in issues, discussions, pull requests, screenshots, or logs.

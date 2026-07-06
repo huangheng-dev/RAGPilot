@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { apiBaseUrl } from "@/lib/authenticated-api";
 
 export type RuntimeHealthSnapshot = {
   service: string;
@@ -17,15 +18,6 @@ export type RuntimeHealthSnapshot = {
   effective_chat_model_endpoint_name: string | null;
   effective_chat_model_api_base_url: string | null;
 };
-
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
-
-const apiBaseUrl = buildApiBaseUrl();
 
 export async function fetchRuntimeHealth(): Promise<RuntimeHealthSnapshot> {
   const response = await fetch(`${apiBaseUrl}/health`, {

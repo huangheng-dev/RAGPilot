@@ -14,6 +14,8 @@ def test_core_resource_routes_are_registered() -> None:
     assert "/knowledge-bases/{knowledge_base_id}/publication" in route_paths
     assert "/retrieval-profiles" in route_paths
     assert "/retrieval-profiles/{retrieval_profile_id}" in route_paths
+    assert "/runtime-governance/events" in route_paths
+    assert "/runtime-governance/worklist" in route_paths
     assert "/model-endpoints" in route_paths
     assert "/model-endpoints/{model_endpoint_id}" in route_paths
     assert "/tool-registrations" in route_paths
@@ -28,4 +30,7 @@ def test_core_resource_routes_are_registered() -> None:
     assert "/chat/messages" in route_paths
     assert "/workflow-runs" in route_paths
     assert "/workflow-runs/{workflow_run_id}" in route_paths
+    assert "/workflow-runs/{workflow_run_id}/steps" in route_paths
+    assert "/workflow-runs/{workflow_run_id}/events" in route_paths
     assert "/workflow-runs/{workflow_run_id}/retry" in route_paths
+    assert "/workflow-runs/{workflow_run_id}/cancel" in route_paths

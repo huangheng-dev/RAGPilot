@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragpilot-web
+  namespace: ragpilot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ragpilot-web
+  template:
+    metadata:
+      labels:
+        app: ragpilot-web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/your-org/ragpilot-web:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: ragpilot-config
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi

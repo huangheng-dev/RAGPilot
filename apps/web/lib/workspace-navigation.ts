@@ -2,8 +2,9 @@ import type { WorkspaceView } from "@/components/workspace/workspace-types";
 import type { UrlObject } from "url";
 
 const DOCUMENT_STATUS_FILTER_VALUES = ["all", "completed", "running", "queued", "failed", "pending"] as const;
+const DOCUMENT_SOURCE_FILTER_VALUES = ["all", "file", "web", "other"] as const;
 const DOCUMENT_LIFECYCLE_FILTER_VALUES = ["active", "deleted", "all"] as const;
-const WORKFLOW_STATUS_FILTER_VALUES = ["all", "completed", "failed", "running", "queued", "pending"] as const;
+const WORKFLOW_STATUS_FILTER_VALUES = ["all", "completed", "failed", "cancelled", "running", "queued", "pending"] as const;
 const WORKFLOW_TYPE_FILTER_VALUES = ["all", "document_ingestion"] as const;
 const WORKFLOW_RETRY_MODE_VALUES = ["all", "retries", "originals"] as const;
 const DOCUMENT_SORT_VALUES = [
@@ -21,7 +22,7 @@ const WORKFLOW_SORT_VALUES = [
   "status-priority",
   "type-asc"
 ] as const;
-const WORKSPACE_SOURCE_SURFACE_VALUES = ["home", "admin", "operations", "agents"] as const;
+const WORKSPACE_SOURCE_SURFACE_VALUES = ["home", "admin", "operations", "agents", "workspace"] as const;
 const WORKSPACE_SOURCE_ADMIN_SECTION_VALUES = ["overview", "directory", "access", "security"] as const;
 const WORKSPACE_SOURCE_OPERATIONS_LANE_VALUES = ["overview", "failed", "retries", "pressure"] as const;
 const WORKSPACE_HANDOFF_INTENT_VALUES = [
@@ -52,6 +53,7 @@ export type WorkspaceNavigationTarget = {
   documentId?: string | null;
   workflowRunId?: string | null;
   documentQuery?: string | null;
+  documentSource?: string | null;
   documentLifecycle?: string | null;
   documentStatus?: string | null;
   documentSort?: string | null;
@@ -80,6 +82,7 @@ export type WorkspaceLocationState = {
   documentId: string | null;
   workflowRunId: string | null;
   documentQuery: string;
+  documentSource: string;
   documentLifecycle: string;
   documentStatus: string;
   documentSort: string;
@@ -185,6 +188,7 @@ export function applyWorkspaceSearchParams(searchParams: URLSearchParams, target
   setSearchParam(searchParams, "document_id", target.documentId ?? null);
   setSearchParam(searchParams, "workflow_run_id", target.workflowRunId ?? null);
   setSearchParam(searchParams, "document_query", target.documentQuery ?? null);
+  setSearchParam(searchParams, "document_source", target.documentSource ?? null);
   setSearchParam(searchParams, "document_lifecycle", target.documentLifecycle ?? null);
   setSearchParam(searchParams, "document_status", target.documentStatus ?? null);
   setSearchParam(searchParams, "document_sort", target.documentSort ?? null);
@@ -245,6 +249,7 @@ export function readWorkspaceLocationState(search: string): WorkspaceLocationSta
     documentId: searchParams.get("document_id"),
     workflowRunId: searchParams.get("workflow_run_id"),
     documentQuery: searchParams.get("document_query") ?? "",
+    documentSource: readSelectFilterValue(searchParams.get("document_source"), DOCUMENT_SOURCE_FILTER_VALUES),
     documentLifecycle: readSelectFilterValue(
       searchParams.get("document_lifecycle"),
       DOCUMENT_LIFECYCLE_FILTER_VALUES,

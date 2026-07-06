@@ -17,8 +17,10 @@ from ragpilot_api.infrastructure.database.session import get_database_session
 from ragpilot_api.presentation.http.request_actor import (
     RequestActor,
     get_request_actor,
-    require_actor_capability,
     require_actor_capability_from_policy,
+    require_authenticated_actor,
+    require_actor_tenant_access,
+    require_actor_workspace_access,
 )
 
 
@@ -35,7 +37,9 @@ async def create_workspace(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> WorkspaceResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, request.tenant_id)
     try:
         return await build_workspace_service(session).create_workspace(request)
     except ResourceConflictError as error:
@@ -46,8 +50,12 @@ async def create_workspace(
 async def list_workspaces(
     tenant_id: UUID = Query(...),
     is_archived: bool | None = Query(default=None),
+    actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[WorkspaceResponse]:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "access_home", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
     return await build_workspace_service(session).list_workspaces(
         tenant_id=tenant_id,
         is_archived=is_archived,
@@ -62,7 +70,15 @@ async def update_workspace(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> WorkspaceResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    resolved_tenant_id = await require_actor_workspace_access(actor, workspace_id, WorkspaceRepository(session))
+    if resolved_tenant_id is not None and resolved_tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant and workspace scope do not match.",
+        )
     try:
         workspace = await build_workspace_service(session).update_workspace(
             workspace_id=workspace_id,
@@ -86,7 +102,15 @@ async def set_workspace_lifecycle(
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> WorkspaceResponse:
+    require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_admin_resources", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    resolved_tenant_id = await require_actor_workspace_access(actor, workspace_id, WorkspaceRepository(session))
+    if resolved_tenant_id is not None and resolved_tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant and workspace scope do not match.",
+        )
     workspace = await build_workspace_service(session).set_workspace_archive_state(
         workspace_id=workspace_id,
         tenant_id=tenant_id,

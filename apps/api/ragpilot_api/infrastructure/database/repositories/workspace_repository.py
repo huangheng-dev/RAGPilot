@@ -69,6 +69,14 @@ class WorkspaceRepository:
             )
         )
 
+    async def get_workspace_by_id(self, *, workspace_id: UUID) -> Workspace | None:
+        return await self.session.scalar(
+            select(Workspace).where(
+                Workspace.id == workspace_id,
+                Workspace.deleted_at.is_(None),
+            )
+        )
+
     async def get_workspace_by_slug(self, *, tenant_id: UUID, slug: str) -> Workspace | None:
         return await self.session.scalar(
             select(Workspace).where(

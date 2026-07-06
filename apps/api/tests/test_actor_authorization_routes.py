@@ -34,7 +34,7 @@ def test_agent_create_route_rejects_reviewer_role(monkeypatch) -> None:
             "knowledge_base_scope": None,
             "tools": ["chat"],
         },
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -73,7 +73,7 @@ def test_agent_create_route_uses_database_policy_when_seeded(monkeypatch) -> Non
             "knowledge_base_scope": None,
             "tools": ["chat"],
         },
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -93,7 +93,7 @@ def test_agent_definition_list_route_rejects_missing_actor_identity(monkeypatch)
     response = client.get(
         "/api/v1/agents",
         params={"tenant_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator"},
     )
 
     app.dependency_overrides.clear()
@@ -113,7 +113,7 @@ def test_agent_definition_metrics_route_rejects_missing_actor_identity(monkeypat
     response = client.get(
         "/api/v1/agents/metrics",
         params={"tenant_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator"},
     )
 
     app.dependency_overrides.clear()
@@ -123,7 +123,7 @@ def test_agent_definition_metrics_route_rejects_missing_actor_identity(monkeypat
 
 def test_workflow_retry_route_rejects_reviewer_role(monkeypatch) -> None:
     class FakeWorkflowService:
-        async def retry_workflow_run(self, *, workflow_run_id, tenant_id):
+        async def retry_workflow_run(self, *, workflow_run_id, tenant_id, actor_user_id, actor_role):
             raise AssertionError("retry_workflow_run should not be called for reviewer role.")
 
     monkeypatch.setattr(workflow_routes, "build_workflow_service", lambda session: FakeWorkflowService())
@@ -133,7 +133,7 @@ def test_workflow_retry_route_rejects_reviewer_role(monkeypatch) -> None:
     response = client.post(
         f"/api/v1/workflow-runs/{uuid4()}/retry",
         params={"tenant_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -150,7 +150,7 @@ def test_workflow_retry_route_uses_database_policy_when_seeded(monkeypatch) -> N
             return {"operator": {"manage_documents"}}
 
     class FakeWorkflowService:
-        async def retry_workflow_run(self, *, workflow_run_id, tenant_id):
+        async def retry_workflow_run(self, *, workflow_run_id, tenant_id, actor_user_id, actor_role):
             raise AssertionError("retry_workflow_run should not run when database policy denies workflow retries.")
 
     monkeypatch.setattr(workflow_routes, "RolePermissionRepository", FakeRolePermissionRepository)
@@ -161,12 +161,130 @@ def test_workflow_retry_route_uses_database_policy_when_seeded(monkeypatch) -> N
     response = client.post(
         f"/api/v1/workflow-runs/{uuid4()}/retry",
         params={"tenant_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
 
     assert response.status_code == 403
+
+
+def test_workflow_cancel_route_rejects_reviewer_role(monkeypatch) -> None:
+    class FakeWorkflowService:
+        async def cancel_workflow_run(self, *, workflow_run_id, tenant_id, actor_user_id, actor_role):
+            raise AssertionError("cancel_workflow_run should not be called for reviewer role.")
+
+    monkeypatch.setattr(workflow_routes, "build_workflow_service", lambda session: FakeWorkflowService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/workflow-runs/{uuid4()}/cancel",
+        params={"tenant_id": str(uuid4())},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_workflow_cancel_route_uses_database_policy_when_seeded(monkeypatch) -> None:
+    class FakeRolePermissionRepository:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def list_role_permission_slugs(self):
+            return {"operator": {"manage_documents"}}
+
+    class FakeWorkflowService:
+        async def cancel_workflow_run(self, *, workflow_run_id, tenant_id, actor_user_id, actor_role):
+            raise AssertionError("cancel_workflow_run should not run when database policy denies workflow retries.")
+
+    monkeypatch.setattr(workflow_routes, "RolePermissionRepository", FakeRolePermissionRepository)
+    monkeypatch.setattr(workflow_routes, "build_workflow_service", lambda session: FakeWorkflowService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/workflow-runs/{uuid4()}/cancel",
+        params={"tenant_id": str(uuid4())},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_workflow_notes_route_rejects_reviewer_role(monkeypatch) -> None:
+    class FakeWorkflowService:
+        async def update_workflow_run_operator_notes(self, *, workflow_run_id, tenant_id, operator_notes, actor_user_id, actor_role):
+            raise AssertionError("update_workflow_run_operator_notes should not be called for reviewer role.")
+
+    monkeypatch.setattr(workflow_routes, "build_workflow_service", lambda session: FakeWorkflowService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/workflow-runs/{uuid4()}/notes",
+        params={"tenant_id": str(uuid4())},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
+        json={"operator_notes": "Need review."},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_workflow_notes_route_uses_database_policy_when_seeded(monkeypatch) -> None:
+    class FakeRolePermissionRepository:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def list_role_permission_slugs(self):
+            return {"operator": {"access_operations"}}
+
+    class FakeWorkflowService:
+        async def update_workflow_run_operator_notes(self, *, workflow_run_id, tenant_id, operator_notes, actor_user_id, actor_role):
+            raise AssertionError("update_workflow_run_operator_notes should not run when policy denies workflow write access.")
+
+    monkeypatch.setattr(workflow_routes, "RolePermissionRepository", FakeRolePermissionRepository)
+    monkeypatch.setattr(workflow_routes, "build_workflow_service", lambda session: FakeWorkflowService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/workflow-runs/{uuid4()}/notes",
+        params={"tenant_id": str(uuid4())},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
+        json={"operator_notes": "Need review."},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_workflow_retry_route_rejects_missing_actor_identity(monkeypatch) -> None:
+    class FakeWorkflowService:
+        async def retry_workflow_run(self, *, workflow_run_id, tenant_id, actor_user_id, actor_role):
+            raise AssertionError("retry_workflow_run should not be called without actor identity.")
+
+    monkeypatch.setattr(workflow_routes, "build_workflow_service", lambda session: FakeWorkflowService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/workflow-runs/{uuid4()}/retry",
+        params={"tenant_id": str(uuid4())},
+        headers={"X-RAGPilot-Role": "operator"},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 401
 
 
 def test_document_reindex_route_rejects_reviewer_role(monkeypatch) -> None:
@@ -181,7 +299,7 @@ def test_document_reindex_route_rejects_reviewer_role(monkeypatch) -> None:
     response = client.post(
         f"/api/v1/documents/{uuid4()}/reindex",
         params={"knowledge_base_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -209,7 +327,7 @@ def test_document_reindex_route_uses_database_policy_when_seeded(monkeypatch) ->
     response = client.post(
         f"/api/v1/documents/{uuid4()}/reindex",
         params={"knowledge_base_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -229,7 +347,7 @@ def test_document_delete_route_rejects_reviewer_role(monkeypatch) -> None:
     response = client.delete(
         f"/api/v1/documents/{uuid4()}",
         params={"knowledge_base_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -249,7 +367,7 @@ def test_document_restore_route_rejects_reviewer_role(monkeypatch) -> None:
     response = client.post(
         f"/api/v1/documents/{uuid4()}/restore",
         params={"knowledge_base_id": str(uuid4())},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
@@ -274,9 +392,58 @@ def test_document_upload_route_rejects_reviewer_role(monkeypatch) -> None:
             "title": "Policy Handbook",
         },
         files={"file": ("policy.md", b"# Policy", "text/markdown")},
-        headers={"X-RagPilot-Role": "reviewer"},
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
     )
 
     app.dependency_overrides.clear()
 
     assert response.status_code == 403
+
+
+def test_import_webpage_route_rejects_reviewer_role(monkeypatch) -> None:
+    class FakeDocumentService:
+        async def import_web_page(self, request):
+            raise AssertionError("import_web_page should not be called for reviewer role.")
+
+    monkeypatch.setattr(document_routes, "build_document_service", lambda session: FakeDocumentService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/documents/import-webpage",
+        headers={"X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
+        json={
+            "tenant_id": str(uuid4()),
+            "knowledge_base_id": str(uuid4()),
+            "source_url": "https://docs.example.com/ops",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_document_upload_route_rejects_missing_actor_identity(monkeypatch) -> None:
+    class FakeDocumentService:
+        async def upload_document(self, *, tenant_id, knowledge_base_id, title, file_name, content_type, content):
+            raise AssertionError("upload_document should not be called without actor identity.")
+
+    monkeypatch.setattr(document_routes, "build_document_service", lambda session: FakeDocumentService())
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/documents/upload",
+        data={
+            "tenant_id": str(uuid4()),
+            "knowledge_base_id": str(uuid4()),
+            "title": "Policy Handbook",
+        },
+        files={"file": ("policy.md", b"# Policy", "text/markdown")},
+        headers={"X-RAGPilot-Role": "operator"},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 401

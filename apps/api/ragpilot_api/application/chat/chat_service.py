@@ -18,6 +18,7 @@ from ragpilot_api.contracts.http.chat_contracts import (
     ConversationResponse,
     ConversationUpdateRequest,
     MessageFeedbackCreateRequest,
+    MessageFeedbackFollowUpActionResponse,
     MessageFeedbackResponse,
     MessageFeedbackSummaryItemResponse,
     MessageFeedbackSummaryResponse,
@@ -37,6 +38,7 @@ from ragpilot_api.infrastructure.database.repositories.message_repository import
     MessageRepository,
 )
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
+from ragpilot_api.infrastructure.database.repositories.retrieval_evaluation_repository import RetrievalEvaluationRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_repository import RetrievalRepository
 from ragpilot_api.shared.settings import Settings
 
@@ -66,6 +68,7 @@ class ChatService:
         model_endpoint_repository: ModelEndpointRepository | None = None,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
+        retrieval_evaluation_repository: RetrievalEvaluationRepository | None = None,
         runtime_binding_resolver: RuntimeBindingResolver | None = None,
     ) -> None:
         self.agent_repository = agent_repository
@@ -76,6 +79,7 @@ class ChatService:
         self.model_gateway = model_gateway or ModelGateway(settings)
         self.knowledge_base_repository = knowledge_base_repository
         self.retrieval_profile_repository = retrieval_profile_repository
+        self.retrieval_evaluation_repository = retrieval_evaluation_repository
         self.runtime_binding_resolver = runtime_binding_resolver or (
             RuntimeBindingResolver(model_endpoint_repository, settings)
             if model_endpoint_repository is not None
@@ -222,6 +226,12 @@ class ChatService:
             workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
         )
+        follow_up_status_by_query = await self._load_feedback_follow_up_status_by_query(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
+            recent_feedback=recent_feedback,
+        )
         return MessageFeedbackSummaryResponse(
             total_feedback=counts["total_feedback"],
             helpful_feedback=counts["helpful_feedback"],
@@ -230,8 +240,41 @@ class ChatService:
             citation_issue_feedback=counts["citation_issue_feedback"],
             retrieval_tuning_candidates=counts["retrieval_tuning_candidates"],
             recent_feedback=[
-                build_message_feedback_summary_item_response(item) for item in recent_feedback
+                build_message_feedback_summary_item_response(
+                    item,
+                    knowledge_base_id=knowledge_base_id,
+                    follow_up_status=follow_up_status_by_query.get(item.latest_user_question.strip(), "pending")
+                    if item.latest_user_question and item.latest_user_question.strip()
+                    else "pending",
+                )
+                for item in recent_feedback
             ],
+        )
+
+    async def _load_feedback_follow_up_status_by_query(
+        self,
+        *,
+        tenant_id: UUID,
+        workspace_id: UUID,
+        knowledge_base_id: UUID | None,
+        recent_feedback: list[MessageFeedbackSummaryRecord],
+    ) -> dict[str, str]:
+        if self.retrieval_evaluation_repository is None:
+            return {}
+
+        query_texts = [
+            item.latest_user_question.strip()
+            for item in recent_feedback
+            if item.latest_user_question and item.latest_user_question.strip()
+        ]
+        if not query_texts:
+            return {}
+
+        return await self.retrieval_evaluation_repository.get_latest_follow_up_status_by_queries(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            knowledge_base_id=knowledge_base_id,
+            query_texts=query_texts,
         )
 
     async def ask_question(self, request: ChatAskRequest) -> ChatAskResponse:
@@ -580,12 +623,16 @@ def build_message_feedback_response(feedback_entry: MessageFeedbackRecord) -> Me
 
 def build_message_feedback_summary_item_response(
     feedback_entry: MessageFeedbackSummaryRecord,
+    *,
+    knowledge_base_id: UUID | None,
+    follow_up_status: str = "pending",
 ) -> MessageFeedbackSummaryItemResponse:
     return MessageFeedbackSummaryItemResponse(
         id=feedback_entry.id,
         message_id=feedback_entry.message_id,
         conversation_id=feedback_entry.conversation_id,
         conversation_title=feedback_entry.conversation_title,
+        knowledge_base_id=feedback_entry.knowledge_base_id,
         submitted_by_user_id=feedback_entry.submitted_by_user_id,
         answer_quality=feedback_entry.answer_quality,
         citation_quality=feedback_entry.citation_quality,
@@ -595,4 +642,71 @@ def build_message_feedback_summary_item_response(
         updated_at=feedback_entry.updated_at,
         assistant_excerpt=feedback_entry.assistant_excerpt,
         latest_user_question=feedback_entry.latest_user_question,
+        retrieval_profile_id=feedback_entry.retrieval_profile_id,
+        retrieval_profile_name=feedback_entry.retrieval_profile_name,
+        follow_up_status=follow_up_status,
+        recommended_actions=build_message_feedback_follow_up_actions(
+            feedback_entry,
+            knowledge_base_id=knowledge_base_id,
+        ),
     )
+
+
+def build_message_feedback_follow_up_actions(
+    feedback_entry: MessageFeedbackSummaryRecord,
+    *,
+    knowledge_base_id: UUID | None,
+) -> list[MessageFeedbackFollowUpActionResponse]:
+    actions: list[MessageFeedbackFollowUpActionResponse] = []
+    requires_governance_review = (
+        feedback_entry.answer_quality == "not_helpful"
+        or feedback_entry.citation_quality != "grounded"
+    )
+
+    if knowledge_base_id is not None and feedback_entry.citation_quality != "grounded":
+        actions.append(
+            MessageFeedbackFollowUpActionResponse(
+                action_key="review_knowledge_base_governance",
+                action_category="governance",
+                action_label="Review knowledge base scope",
+                action_reason=(
+                    "Recent answer feedback reported citation grounding issues, so the current knowledge-base source scope should be reviewed."
+                ),
+            )
+        )
+
+    if requires_governance_review:
+        actions.append(
+            MessageFeedbackFollowUpActionResponse(
+                action_key="review_retrieval_profile_governance",
+                action_category="governance",
+                action_label="Review retrieval profile",
+                action_reason=(
+                    "Recent answer feedback suggests the governed retrieval posture may need tuning before broader operator reuse."
+                ),
+            )
+        )
+
+    if feedback_entry.latest_user_question:
+        actions.append(
+            MessageFeedbackFollowUpActionResponse(
+                action_key="rerun_retrieval_comparison",
+                action_category="analysis",
+                action_label="Run compare check",
+                action_reason=(
+                    "Re-run retrieval comparison on the same source question to confirm whether the current retrieval path is still drifting."
+                ),
+            )
+        )
+        actions.append(
+            MessageFeedbackFollowUpActionResponse(
+                action_key="validate_in_chat",
+                action_category="validation",
+                action_label="Validate in chat",
+                action_reason=(
+                    "Return to grounded validation with the same question after governance or retrieval adjustments are ready."
+                ),
+            )
+        )
+
+    return actions

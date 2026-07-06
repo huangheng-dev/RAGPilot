@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 AgentRunTargetSurface = Literal["chat", "documents", "operations", "admin"]
@@ -11,6 +11,8 @@ AgentRunTriggerSource = Literal["agents_console", "workspace", "home", "admin", 
 
 
 class AgentRunCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     agent_definition_id: UUID
     workspace_id: UUID | None = None

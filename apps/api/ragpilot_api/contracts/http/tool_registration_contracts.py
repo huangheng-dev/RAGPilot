@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 ToolTransportType = Literal["native", "http", "mcp_reserved"]
@@ -20,6 +20,8 @@ ToolGovernanceActionType = Literal[
 
 
 class ToolRegistrationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     transport_type: ToolTransportType
@@ -33,6 +35,8 @@ class ToolRegistrationCreateRequest(BaseModel):
 
 
 class ToolRegistrationUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     transport_type: ToolTransportType
@@ -58,11 +62,18 @@ class ToolRegistrationResponse(BaseModel):
     requires_admin_approval: bool
     is_enabled: bool
     bound_agent_count: int = 0
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: str | None = None
+    last_preview_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
 
 class ToolGovernanceActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     action_type: ToolGovernanceActionType
 
 
@@ -104,6 +115,12 @@ class ToolGovernanceSummaryResponse(BaseModel):
     mcp_reserved_bound_tools: int = 0
     mcp_integration_pending_tools: int = 0
     mcp_connector_configured_tools: int = 0
+    mcp_connector_unhealthy_tools: int = 0
     runtime_ready_tools: int = 0
+    recent_preview_completed_events: int = 0
+    recent_preview_blocked_events: int = 0
+    recent_preview_failed_events: int = 0
+    last_preview_status: str | None = None
+    last_preview_at: datetime | None = None
     transport_breakdown: list[ToolTransportGovernanceBreakdownResponse] = Field(default_factory=list)
     surface_breakdown: list[ToolSurfaceGovernanceBreakdownResponse] = Field(default_factory=list)

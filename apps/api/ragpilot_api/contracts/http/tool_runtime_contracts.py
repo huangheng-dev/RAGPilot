@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 ToolInvocationStatus = Literal["completed", "blocked", "reserved", "unavailable", "failed", "skipped"]
@@ -17,6 +17,8 @@ ToolRuntimeGovernanceIssue = Literal[
 
 
 class ToolInvocationPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     workspace_id: UUID | None = None
     knowledge_base_id: UUID | None = None

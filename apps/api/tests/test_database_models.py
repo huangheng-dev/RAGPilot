@@ -7,6 +7,7 @@ def test_initial_platform_tables_are_registered() -> None:
         "tenants",
         "users",
         "user_sessions",
+        "runtime_governance_events",
         "tenant_memberships",
         "roles",
         "permissions",
@@ -30,6 +31,7 @@ def test_initial_platform_tables_are_registered() -> None:
         "message_citations",
         "message_feedback_entries",
         "workflow_runs",
+        "workflow_run_events",
         "workflow_steps",
         "user_access_events",
     }

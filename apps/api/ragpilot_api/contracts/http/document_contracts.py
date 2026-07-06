@@ -1,14 +1,25 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: UUID
     knowledge_base_id: UUID
     title: str = Field(min_length=1, max_length=240)
     source_uri: str | None = Field(default=None, max_length=2000)
+
+
+class WebPageImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: UUID
+    knowledge_base_id: UUID
+    source_url: str = Field(min_length=1, max_length=2000)
+    title: str | None = Field(default=None, min_length=1, max_length=240)
 
 
 class DocumentResponse(BaseModel):
@@ -17,6 +28,7 @@ class DocumentResponse(BaseModel):
     knowledge_base_id: UUID
     title: str
     source_uri: str | None
+    source_kind: str
     ingestion_status: str
     indexing_status: str
     latest_version_number: int | None = None

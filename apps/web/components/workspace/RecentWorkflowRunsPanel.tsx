@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 type WorkflowRun = {
   error_message?: string | null;
   id: string;
+  operator_notes?: string | null;
   workflow_status: string;
   workflow_type: string;
   subject_label?: string | null;
@@ -81,6 +82,19 @@ export function RecentWorkflowRunsPanel({
                 {formatOperatorErrorMessage(workflow.error_message)}
               </div>
             )}
+            {workflow.operator_notes ? (
+              <div
+                className={cn(
+                  "mt-2 rounded-md border px-2 py-2 text-xs leading-5",
+                  workflow.id === selectedWorkflowRunId
+                    ? "border-slate-700 bg-slate-900/70 text-slate-200"
+                    : "border-slate-200 bg-white text-slate-600"
+                )}
+              >
+                <div className="font-medium">{t("workspace.recentWorkflowRuns.operatorNotes")}</div>
+                <div className="mt-1 line-clamp-3">{workflow.operator_notes}</div>
+              </div>
+            ) : null}
           </button>
         ))}
         {emptyState && workflowRuns.length === 0 && (

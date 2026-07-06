@@ -37,6 +37,7 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     role: Mapped[str] = mapped_column(String(40), server_default=text("'operator'"))
     last_signed_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    password_hash: Mapped[str | None] = mapped_column(String(512))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -47,6 +48,9 @@ class UserSession(Base, TimestampMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     session_token_hash: Mapped[str] = mapped_column(String(128), unique=True)
     authentication_mode: Mapped[str] = mapped_column(String(40), server_default=text("'directory_login'"))
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    ip_address: Mapped[str | None] = mapped_column(String(128))
+    device_label: Mapped[str | None] = mapped_column(String(160))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -247,6 +251,9 @@ class RetrievalEvaluation(Base, TimestampMixin):
     top_result_matches: Mapped[bool | None] = mapped_column(Boolean)
     recommendation_reason: Mapped[str | None] = mapped_column(Text)
     evaluation_payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    follow_up_status: Mapped[str] = mapped_column(String(40), server_default=text("'pending'"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 
 
@@ -282,6 +289,21 @@ class McpConnector(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text)
     is_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RuntimeGovernanceEvent(Base):
+    __tablename__ = "runtime_governance_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    actor_role: Mapped[str | None] = mapped_column(String(40))
+    resource_type: Mapped[str] = mapped_column(String(80))
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    resource_name: Mapped[str | None] = mapped_column(String(160))
+    resource_slug: Mapped[str | None] = mapped_column(String(120))
+    action_type: Mapped[str] = mapped_column(String(80))
+    detail_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 
 class Document(Base, TimestampMixin):
@@ -416,8 +438,22 @@ class WorkflowRun(Base, TimestampMixin):
     subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     input_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     error_message: Mapped[str | None] = mapped_column(Text)
+    operator_notes: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowRunEvent(Base):
+    __tablename__ = "workflow_run_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflow_runs.id"))
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    actor_role: Mapped[str | None] = mapped_column(String(40))
+    action_type: Mapped[str] = mapped_column(String(80))
+    detail_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 
 class WorkflowStep(Base, TimestampMixin):

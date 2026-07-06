@@ -101,7 +101,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
         await revokeCurrentDirectorySession();
       }
     } catch {
-      // Local session cleanup should still complete even when the backend session is already unavailable.
+      // Let local sign-out finish even if the backend session is already gone.
     } finally {
       signOut();
       setIsUserMenuOpen(false);
@@ -116,7 +116,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-400 text-white shadow-sm">
               <Sparkles className="h-5 w-5" />
             </div>
-            <span className="text-[30px] font-semibold tracking-tight text-slate-950 dark:text-slate-50">RagPilot</span>
+            <span className="text-[30px] font-semibold tracking-tight text-slate-950 dark:text-slate-50">RAGPilot</span>
           </Link>
 
           <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex">

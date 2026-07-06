@@ -1,14 +1,26 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
 
+from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import (
+    build_recent_preview_activity_by_resource_id,
+)
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
+from ragpilot_api.application.model_registry.runtime_configuration import (
+    is_model_runtime_configured,
+    model_provider_requires_base_url,
+    normalize_model_endpoint_provider_name,
+    read_model_runtime_configuration_issue,
+)
 from ragpilot_api.contracts.http.model_endpoint_contracts import (
     ModelCredentialGovernanceBreakdownResponse,
+    ModelEndpointGovernanceActionResponse,
     ModelEndpointPreviewResponse,
     ModelGovernanceSummaryResponse,
+    ModelProviderCompatibilityResponse,
+    ModelProviderRuntimePostureResponse,
 )
 from ragpilot_api.contracts.http.model_endpoint_contracts import (
     ModelEndpointCreateRequest,
@@ -21,14 +33,8 @@ from ragpilot_api.infrastructure.model_gateway.openai_compatible_provider import
 from ragpilot_api.infrastructure.database.models import ModelEndpoint
 from ragpilot_api.infrastructure.database.repositories.agent_repository import AgentRepository
 from ragpilot_api.infrastructure.database.repositories.model_endpoint_repository import ModelEndpointRepository
+from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_repository import RuntimeGovernanceEventRepository
 from ragpilot_api.shared.settings import Settings
-
-
-def normalize_model_endpoint_provider_name(provider_name: str) -> str:
-    normalized = provider_name.strip().lower()
-    if normalized == "vllm_reserved":
-        return "vllm"
-    return normalized
 
 
 class ModelRegistryService:
@@ -37,10 +43,12 @@ class ModelRegistryService:
         model_endpoint_repository: ModelEndpointRepository,
         agent_repository: AgentRepository,
         settings: Settings,
+        runtime_governance_event_repository: RuntimeGovernanceEventRepository | None = None,
     ) -> None:
         self.model_endpoint_repository = model_endpoint_repository
         self.agent_repository = agent_repository
         self.settings = settings
+        self.runtime_governance_event_repository = runtime_governance_event_repository
 
     async def create_model_endpoint(self, request: ModelEndpointCreateRequest) -> ModelEndpointResponse:
         model_endpoint = await self.model_endpoint_repository.create_model_endpoint(
@@ -72,10 +80,12 @@ class ModelRegistryService:
             query=query,
         )
         binding_counts = await self.agent_repository.list_model_endpoint_binding_counts()
+        preview_activity_by_model_endpoint_id = await self._build_recent_preview_activity_by_model_endpoint_id()
         responses = [
             build_model_endpoint_response(
                 model_endpoint,
                 bound_agent_count=binding_counts.get(str(model_endpoint.id), 0),
+                preview_activity=preview_activity_by_model_endpoint_id.get(str(model_endpoint.id)),
             )
             for model_endpoint in model_endpoints
         ]
@@ -108,7 +118,12 @@ class ModelRegistryService:
         bound_agent_count = await self.agent_repository.count_agents_using_model_endpoint(
             model_endpoint_id=model_endpoint.id
         )
-        return build_model_endpoint_response(model_endpoint, bound_agent_count=bound_agent_count)
+        preview_activity_by_model_endpoint_id = await self._build_recent_preview_activity_by_model_endpoint_id()
+        return build_model_endpoint_response(
+            model_endpoint,
+            bound_agent_count=bound_agent_count,
+            preview_activity=preview_activity_by_model_endpoint_id.get(str(model_endpoint.id)),
+        )
 
     async def delete_model_endpoint(self, *, model_endpoint_id: UUID) -> bool:
         bound_agent_count = await self.agent_repository.count_agents_using_model_endpoint(
@@ -121,9 +136,81 @@ class ModelRegistryService:
             )
         return await self.model_endpoint_repository.delete_model_endpoint(model_endpoint_id=model_endpoint_id)
 
+    async def apply_model_endpoint_governance_action(
+        self,
+        *,
+        model_endpoint_id: UUID,
+        action_type: str,
+    ) -> ModelEndpointGovernanceActionResponse | None:
+        model_endpoint = await self.model_endpoint_repository.get_model_endpoint(model_endpoint_id=model_endpoint_id)
+        if model_endpoint is None:
+            return None
+
+        if action_type == "enable_endpoint":
+            next_is_enabled = True
+            next_is_default = model_endpoint.is_default
+            summary = (
+                "Model endpoint enabled for governed runtime routing."
+                if not model_endpoint.is_enabled
+                else "Model endpoint is already enabled."
+            )
+        elif action_type == "disable_endpoint":
+            next_is_enabled = False
+            next_is_default = model_endpoint.is_default
+            summary = (
+                "Model endpoint disabled until runtime governance follow-up is complete."
+                if model_endpoint.is_enabled
+                else "Model endpoint is already disabled."
+            )
+        elif action_type == "promote_default":
+            if not model_endpoint.is_enabled:
+                raise ResourceConflictError("Enable the model endpoint before promoting it as the governed default.")
+            next_is_enabled = model_endpoint.is_enabled
+            next_is_default = True
+            summary = (
+                "Model endpoint promoted as the governed default runtime."
+                if not model_endpoint.is_default
+                else "Model endpoint is already the governed default."
+            )
+        else:
+            raise ResourceConflictError("Unsupported model endpoint governance action.")
+
+        updated_model_endpoint = await self.model_endpoint_repository.update_model_endpoint(
+            model_endpoint_id=model_endpoint_id,
+            name=model_endpoint.name,
+            slug=model_endpoint.slug,
+            provider_type=model_endpoint.provider_type,
+            model_name=model_endpoint.model_name,
+            base_url=model_endpoint.base_url,
+            credential_mode=model_endpoint.credential_mode,
+            credential_key_hint=model_endpoint.credential_key_hint,
+            capabilities=normalize_capabilities(list(model_endpoint.capabilities_json or [])),
+            is_enabled=next_is_enabled,
+            is_default=next_is_default,
+            notes=model_endpoint.notes,
+        )
+        if updated_model_endpoint is None:
+            return None
+
+        bound_agent_count = await self.agent_repository.count_agents_using_model_endpoint(
+            model_endpoint_id=updated_model_endpoint.id
+        )
+        return ModelEndpointGovernanceActionResponse(
+            action_type=action_type,
+            summary=summary,
+            model_endpoint=build_model_endpoint_response(
+                updated_model_endpoint,
+                bound_agent_count=bound_agent_count,
+                preview_activity=(await self._build_recent_preview_activity_by_model_endpoint_id()).get(
+                    str(updated_model_endpoint.id)
+                ),
+            ),
+        )
+
     async def get_model_governance_summary(self) -> ModelGovernanceSummaryResponse:
         model_endpoints = await self.model_endpoint_repository.list_model_endpoints()
         binding_counts = await self.agent_repository.list_model_endpoint_binding_counts()
+        active_agent_definitions = await self.agent_repository.list_agent_definitions_for_governance(status="active")
 
         provider_breakdown: dict[str, ModelProviderGovernanceBreakdownResponse] = {
             "deterministic": ModelProviderGovernanceBreakdownResponse(provider_type="deterministic"),
@@ -139,15 +226,16 @@ class ModelRegistryService:
             "managed_reserved": ModelCredentialGovernanceBreakdownResponse(credential_mode="managed_reserved"),
         }
         summary = ModelGovernanceSummaryResponse()
+        default_model_endpoint = self._resolve_default_model_endpoint(model_endpoints)
 
         for model_endpoint in model_endpoints:
             bound_agent_count = binding_counts.get(str(model_endpoint.id), 0)
             is_bound = bound_agent_count > 0
-            requires_base_url = normalize_model_endpoint_provider_name(model_endpoint.provider_type) != "deterministic"
+            requires_base_url = model_provider_requires_base_url(model_endpoint.provider_type)
             has_base_url = bool((model_endpoint.base_url or "").strip())
             has_credential_hint = bool((model_endpoint.credential_key_hint or "").strip())
             credential_mode = model_endpoint.credential_mode
-            is_runtime_ready = model_endpoint.is_enabled and self._is_model_runtime_configured(
+            is_runtime_ready = model_endpoint.is_enabled and is_model_runtime_configured(
                 provider_type=model_endpoint.provider_type,
                 base_url=model_endpoint.base_url,
                 credential_mode=credential_mode,
@@ -165,6 +253,8 @@ class ModelRegistryService:
                 summary.default_endpoints += 1
                 if model_endpoint.is_enabled:
                     summary.enabled_default_endpoints += 1
+                if is_runtime_ready:
+                    summary.runtime_ready_default_endpoints += 1
             if is_bound and not model_endpoint.is_enabled:
                 summary.disabled_bound_endpoints += 1
             if is_runtime_ready:
@@ -206,7 +296,7 @@ class ModelRegistryService:
             credential_entry.total_endpoints += 1
             if model_endpoint.is_enabled:
                 credential_entry.enabled_endpoints += 1
-            if self._is_model_runtime_configured(
+            if is_model_runtime_configured(
                 provider_type=model_endpoint.provider_type,
                 base_url=model_endpoint.base_url,
                 credential_mode=credential_mode,
@@ -216,6 +306,14 @@ class ModelRegistryService:
 
         summary.provider_breakdown = list(provider_breakdown.values())
         summary.credential_breakdown = list(credential_breakdown.values())
+        summary.provider_compatibility = self._build_provider_compatibility_summary()
+        summary.provider_runtime_posture = await self._build_provider_runtime_posture_summary(
+            model_endpoints=model_endpoints,
+            binding_counts=binding_counts,
+            active_agent_definitions=active_agent_definitions,
+            default_model_endpoint=default_model_endpoint,
+        )
+        summary.settings_fallback_exposed = summary.runtime_ready_default_endpoints == 0
         return summary
 
     async def preview_model_endpoint(self, *, model_endpoint_id: UUID) -> ModelEndpointPreviewResponse:
@@ -384,39 +482,12 @@ class ModelRegistryService:
             return None
         return None
 
-    def _is_model_runtime_configured(
-        self,
-        *,
-        provider_type: str,
-        base_url: str | None,
-        credential_mode: str,
-        credential_key_hint: str | None,
-    ) -> bool:
-        normalized_provider = normalize_model_endpoint_provider_name(provider_type)
-        normalized_credential_mode = credential_mode.strip().lower()
-        has_base_url = bool((base_url or "").strip())
-        has_credential_hint = bool((credential_key_hint or "").strip())
-
-        if normalized_provider == "deterministic":
-            return True
-        if not has_base_url:
-            return False
-        if normalized_credential_mode == "managed_reserved":
-            return False
-        if normalized_credential_mode == "environment" and not has_credential_hint:
-            return False
-        return True
-
     def _matches_model_runtime_state(
         self,
         model_endpoint: ModelEndpointResponse,
         runtime_state: str,
     ) -> bool:
-        normalized_provider = normalize_model_endpoint_provider_name(model_endpoint.provider_type)
-        requires_base_url = normalized_provider != "deterministic"
-        has_base_url = bool((model_endpoint.base_url or "").strip())
-        has_credential_hint = bool((model_endpoint.credential_key_hint or "").strip())
-        is_runtime_ready = model_endpoint.is_enabled and self._is_model_runtime_configured(
+        is_runtime_ready = model_endpoint.is_enabled and is_model_runtime_configured(
             provider_type=model_endpoint.provider_type,
             base_url=model_endpoint.base_url,
             credential_mode=model_endpoint.credential_mode,
@@ -428,12 +499,206 @@ class ModelRegistryService:
         if runtime_state == "managed_reserved":
             return model_endpoint.credential_mode == "managed_reserved"
         if runtime_state == "missing_base_url":
-            return requires_base_url and not has_base_url
+            return read_model_runtime_configuration_issue(
+                provider_type=model_endpoint.provider_type,
+                base_url=model_endpoint.base_url,
+                credential_mode=model_endpoint.credential_mode,
+                credential_key_hint=model_endpoint.credential_key_hint,
+            ) == "missing_base_url"
         if runtime_state == "missing_credential_hint":
-            return model_endpoint.credential_mode == "environment" and not has_credential_hint
+            return read_model_runtime_configuration_issue(
+                provider_type=model_endpoint.provider_type,
+                base_url=model_endpoint.base_url,
+                credential_mode=model_endpoint.credential_mode,
+                credential_key_hint=model_endpoint.credential_key_hint,
+            ) == "missing_credential_hint"
         if runtime_state == "runtime_ready":
             return is_runtime_ready
         return False
+
+    def _resolve_default_model_endpoint(self, model_endpoints: list[ModelEndpoint]) -> ModelEndpoint | None:
+        return next(
+            (item for item in model_endpoints if item.is_enabled and item.is_default),
+            next((item for item in model_endpoints if item.is_enabled), None),
+        )
+
+    async def _build_provider_runtime_posture_summary(
+        self,
+        *,
+        model_endpoints: list[ModelEndpoint],
+        binding_counts: dict[str, int],
+        active_agent_definitions: list[object],
+        default_model_endpoint: ModelEndpoint | None,
+    ) -> list[ModelProviderRuntimePostureResponse]:
+        posture_by_provider: dict[str, ModelProviderRuntimePostureResponse] = {
+            "deterministic": ModelProviderRuntimePostureResponse(
+                provider_type="deterministic",
+                posture_status="setup_required",
+            ),
+            "openai_compatible": ModelProviderRuntimePostureResponse(
+                provider_type="openai_compatible",
+                posture_status="setup_required",
+            ),
+            "ollama": ModelProviderRuntimePostureResponse(
+                provider_type="ollama",
+                posture_status="setup_required",
+            ),
+            "vllm": ModelProviderRuntimePostureResponse(
+                provider_type="vllm",
+                posture_status="setup_required",
+            ),
+        }
+        model_endpoint_by_id = {str(item.id): item for item in model_endpoints}
+        if self.runtime_governance_event_repository is not None:
+            recent_preview_events = await self.runtime_governance_event_repository.list_runtime_governance_events(
+                resource_type="model_endpoint",
+                created_after=datetime.now(timezone.utc).replace(microsecond=0)
+                - timedelta(hours=max(self.settings.model_preview_review_window_hours, 1)),
+                limit=200,
+            )
+            for event in recent_preview_events:
+                if event.action_type not in {"preview_completed", "preview_blocked", "preview_failed"}:
+                    continue
+                provider_name = str(event.detail_json.get("provider_type") or "").strip().lower()
+                if provider_name not in posture_by_provider:
+                    continue
+                posture = posture_by_provider[provider_name]
+                if event.action_type == "preview_completed":
+                    posture.recent_preview_completed_events += 1
+                elif event.action_type == "preview_blocked":
+                    posture.recent_preview_blocked_events += 1
+                else:
+                    posture.recent_preview_failed_events += 1
+                if posture.last_preview_at is None or event.created_at >= posture.last_preview_at:
+                    preview_status = str(event.detail_json.get("preview_status") or "").strip().lower()
+                    if preview_status in {"completed", "blocked", "failed"}:
+                        posture.last_preview_status = preview_status
+                    posture.last_preview_at = event.created_at
+
+        for model_endpoint in model_endpoints:
+            normalized_provider = normalize_model_endpoint_provider_name(model_endpoint.provider_type)
+            posture = posture_by_provider[normalized_provider]
+            posture.total_endpoints += 1
+            posture.bound_agent_count += binding_counts.get(str(model_endpoint.id), 0)
+            if model_endpoint.is_enabled:
+                posture.enabled_endpoints += 1
+            if model_endpoint.is_default:
+                posture.default_endpoints += 1
+
+            runtime_issue = read_model_runtime_configuration_issue(
+                provider_type=model_endpoint.provider_type,
+                base_url=model_endpoint.base_url,
+                credential_mode=model_endpoint.credential_mode,
+                credential_key_hint=model_endpoint.credential_key_hint,
+            )
+            if runtime_issue == "missing_base_url":
+                posture.missing_base_url_endpoints += 1
+            elif runtime_issue == "missing_credential_hint":
+                posture.missing_credential_hint_endpoints += 1
+
+            is_runtime_ready = model_endpoint.is_enabled and runtime_issue is None
+            if is_runtime_ready:
+                posture.runtime_ready_endpoints += 1
+                if model_endpoint.is_default:
+                    posture.runtime_ready_default_endpoints += 1
+
+        for agent_definition in active_agent_definitions:
+            configured_model_endpoint = (
+                model_endpoint_by_id.get(str(agent_definition.model_endpoint_id))
+                if getattr(agent_definition, "model_endpoint_id", None) is not None
+                else None
+            )
+            resolved_model_endpoint = configured_model_endpoint or default_model_endpoint
+            if resolved_model_endpoint is None:
+                continue
+
+            normalized_provider = normalize_model_endpoint_provider_name(resolved_model_endpoint.provider_type)
+            posture = posture_by_provider[normalized_provider]
+            posture.active_agent_count += 1
+
+            if (not resolved_model_endpoint.is_enabled) or not is_model_runtime_configured(
+                provider_type=resolved_model_endpoint.provider_type,
+                base_url=resolved_model_endpoint.base_url,
+                credential_mode=resolved_model_endpoint.credential_mode,
+                credential_key_hint=resolved_model_endpoint.credential_key_hint,
+            ):
+                posture.attention_active_agent_count += 1
+
+        for posture in posture_by_provider.values():
+            if posture.total_endpoints == 0:
+                posture.posture_status = "setup_required"
+            elif (
+                posture.runtime_ready_endpoints == 0
+                or posture.attention_active_agent_count > 0
+                or posture.missing_base_url_endpoints > 0
+                or posture.missing_credential_hint_endpoints > 0
+                or posture.recent_preview_failed_events > 0
+            ):
+                posture.posture_status = "attention"
+            else:
+                posture.posture_status = "ready"
+
+        return list(posture_by_provider.values())
+
+    async def _build_recent_preview_activity_by_model_endpoint_id(self) -> dict[str, dict[str, object]]:
+        if self.runtime_governance_event_repository is None:
+            return {}
+
+        recent_preview_events = await self.runtime_governance_event_repository.list_runtime_governance_events(
+            resource_type="model_endpoint",
+            action_types=["preview_completed", "preview_blocked", "preview_failed"],
+            created_after=datetime.now(timezone.utc).replace(microsecond=0)
+            - timedelta(hours=max(self.settings.model_preview_review_window_hours, 1)),
+            limit=500,
+        )
+        return build_recent_preview_activity_by_resource_id(
+            recent_preview_events,
+            status_field_name="preview_status",
+        )
+
+    def _build_provider_compatibility_summary(self) -> list[ModelProviderCompatibilityResponse]:
+        return [
+            ModelProviderCompatibilityResponse(
+                provider_type="deterministic",
+                routing_style="builtin",
+                requires_base_url=False,
+                supports_no_credential=True,
+                supports_environment_credential=False,
+                supports_managed_reserved=False,
+                preview_available=True,
+                default_base_url_hint=None,
+            ),
+            ModelProviderCompatibilityResponse(
+                provider_type="openai_compatible",
+                routing_style="openai_compatible",
+                requires_base_url=True,
+                supports_no_credential=True,
+                supports_environment_credential=True,
+                supports_managed_reserved=True,
+                preview_available=True,
+                default_base_url_hint="https://api.openai.com/v1",
+            ),
+            ModelProviderCompatibilityResponse(
+                provider_type="ollama",
+                routing_style="native_http",
+                requires_base_url=True,
+                supports_no_credential=True,
+                supports_environment_credential=False,
+                supports_managed_reserved=False,
+                preview_available=True,
+                default_base_url_hint="http://127.0.0.1:11434",
+            ),
+            ModelProviderCompatibilityResponse(
+                provider_type="vllm",
+                routing_style="openai_compatible",
+                requires_base_url=True,
+                supports_no_credential=True,
+                supports_environment_credential=True,
+                supports_managed_reserved=True,
+                preview_available=True,
+                default_base_url_hint="http://127.0.0.1:8001/v1",
+            ),
+        ]
 
 
 def normalize_capabilities(capabilities: list[str]) -> list[str]:
@@ -445,7 +710,13 @@ def normalize_capabilities(capabilities: list[str]) -> list[str]:
     return normalized_capabilities
 
 
-def build_model_endpoint_response(model_endpoint: ModelEndpoint, *, bound_agent_count: int = 0) -> ModelEndpointResponse:
+def build_model_endpoint_response(
+    model_endpoint: ModelEndpoint,
+    *,
+    bound_agent_count: int = 0,
+    preview_activity: dict[str, object] | None = None,
+) -> ModelEndpointResponse:
+    preview_activity = preview_activity or {}
     return ModelEndpointResponse(
         id=model_endpoint.id,
         name=model_endpoint.name,
@@ -460,6 +731,11 @@ def build_model_endpoint_response(model_endpoint: ModelEndpoint, *, bound_agent_
         is_default=model_endpoint.is_default,
         notes=model_endpoint.notes,
         bound_agent_count=bound_agent_count,
+        recent_preview_completed_events=int(preview_activity.get("completed", 0)),
+        recent_preview_blocked_events=int(preview_activity.get("blocked", 0)),
+        recent_preview_failed_events=int(preview_activity.get("failed", 0)),
+        last_preview_status=preview_activity.get("last_status"),
+        last_preview_at=preview_activity.get("last_at"),
         created_at=model_endpoint.created_at,
         updated_at=model_endpoint.updated_at,
     )

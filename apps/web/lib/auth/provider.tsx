@@ -10,8 +10,13 @@ import {
 } from "@/lib/auth-directory";
 import {
   AUTH_STORAGE_KEY,
+  AUTH_EXIT_REASON_KEY,
+  clearStoredAuthSession,
   clearAuthExitReason,
-  setAuthExitReason,
+  clearStoredAuthSessionWithReason,
+  isStoredAuthSessionExpired,
+  resolveAuthExitReasonFromErrorMessage,
+  writeStoredAuthSession,
   type AuthExitReason
 } from "@/lib/local-session";
 
@@ -54,27 +59,52 @@ export function AuthProvider({
 
     try {
       const parsedSession = JSON.parse(storedSession) as AuthSession;
+      if (isStoredAuthSessionExpired(parsedSession)) {
+        clearStoredAuthSessionWithReason("session_revoked");
+        setSession(null);
+        return null;
+      }
+
+      if (!parsedSession.sessionToken || !parsedSession.sessionExpiresAt) {
+        clearStoredAuthSessionWithReason("session_revoked");
+        setSession(null);
+        return null;
+      }
+
       if (!parsedSession.userId) {
-        setSession(parsedSession);
-        return parsedSession;
+        clearAuthExitReason();
+        clearStoredAuthSession();
+        setSession(null);
+        return null;
       }
 
       try {
         const directoryUser = await getCurrentDirectoryUser();
         if (!directoryUser || !directoryUser.is_active || !canUseDirectorySession(directoryUser.role, directoryUser.memberships)) {
-          window.localStorage.removeItem(AUTH_STORAGE_KEY);
           if (!directoryUser) {
-            setAuthExitReason("missing_directory_user");
+            clearStoredAuthSessionWithReason("missing_directory_user");
           } else if (!directoryUser.is_active) {
-            setAuthExitReason("inactive_account");
+            clearStoredAuthSessionWithReason("inactive_account");
           } else {
-            setAuthExitReason("inactive_membership");
+            clearStoredAuthSessionWithReason("inactive_membership");
           }
           setSession(null);
           return null;
         }
 
-        const permissions = await getCurrentUserPermissions();
+        let permissions = parsedSession.permissions ?? null;
+        try {
+          permissions = await getCurrentUserPermissions();
+        } catch (error) {
+          const permissionsMessage = error instanceof Error ? error.message : "";
+          const permissionsExitReason = resolveAuthExitReasonFromErrorMessage(permissionsMessage);
+          if (permissionsExitReason) {
+            clearStoredAuthSessionWithReason(permissionsExitReason);
+            setSession(null);
+            return null;
+          }
+        }
+
         const nextSession = {
           ...parsedSession,
           userId: directoryUser.id,
@@ -88,41 +118,23 @@ export function AuthProvider({
           permissions,
         } satisfies AuthSession;
         setSession(nextSession);
-        window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
+        writeStoredAuthSession(nextSession);
         return nextSession;
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
-        const normalizedMessage = message.toLowerCase();
-        if (
-          normalizedMessage.includes("user not found") ||
-          normalizedMessage.includes("missing actor") ||
-          normalizedMessage.includes("not allowed") ||
-          normalizedMessage.includes("session is invalid or expired") ||
-          normalizedMessage.includes("unsupported authorization scheme") ||
-          normalizedMessage.includes("missing bearer session token") ||
-          normalizedMessage.includes("session account is inactive") ||
-          normalizedMessage.includes("session membership access is inactive")
-        ) {
-          window.localStorage.removeItem(AUTH_STORAGE_KEY);
-          setAuthExitReason(
-            normalizedMessage.includes("session account is inactive")
-              ? "inactive_account"
-              : normalizedMessage.includes("session membership access is inactive") ||
-                  normalizedMessage.includes("not allowed")
-                ? "inactive_membership"
-                : normalizedMessage.includes("session")
-                  ? "session_revoked"
-                  : "missing_directory_user"
-          );
+        const exitReason = resolveAuthExitReasonFromErrorMessage(message);
+        if (exitReason) {
+          clearStoredAuthSessionWithReason(exitReason);
           setSession(null);
           return null;
         }
 
-        setSession(parsedSession);
-        return parsedSession;
+        clearStoredAuthSessionWithReason("session_revoked");
+        setSession(null);
+        return null;
       }
     } catch {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      clearStoredAuthSession();
       setSession(null);
       return null;
     }
@@ -165,6 +177,25 @@ export function AuthProvider({
     };
   }, [isReady, refreshSession]);
 
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
+    function handleStorageSync(event: StorageEvent) {
+      if (event.key && event.key !== AUTH_STORAGE_KEY && event.key !== AUTH_EXIT_REASON_KEY) {
+        return;
+      }
+
+      void refreshSession();
+    }
+
+    window.addEventListener("storage", handleStorageSync);
+    return () => {
+      window.removeEventListener("storage", handleStorageSync);
+    };
+  }, [isReady, refreshSession]);
+
   const signIn = useCallback((nextSession: AuthSession) => {
     const mergedSession = {
       ...session,
@@ -174,17 +205,17 @@ export function AuthProvider({
     } satisfies AuthSession;
     setSession(mergedSession);
     clearAuthExitReason();
-    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mergedSession));
+    writeStoredAuthSession(mergedSession);
   }, [session]);
 
   const signOut = useCallback((reason?: AuthExitReason) => {
     setSession(null);
     if (reason) {
-      setAuthExitReason(reason);
+      clearStoredAuthSessionWithReason(reason);
     } else {
       clearAuthExitReason();
+      clearStoredAuthSession();
     }
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
   }, []);
 
   const value = useMemo(

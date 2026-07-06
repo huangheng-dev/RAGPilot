@@ -1,5 +1,5 @@
 param(
-  [string]$Message = "Initial RagPilot open-source baseline",
+  [string]$Message = "Initial RAGPilot open-source baseline",
   [switch]$SkipLicenseCheck
 )
 
@@ -23,7 +23,7 @@ if ($statusLines.Count -eq 0) {
   exit 0
 }
 
-Write-Host "Creating RagPilot baseline commit..." -ForegroundColor Cyan
+Write-Host "Creating RAGPilot baseline commit..." -ForegroundColor Cyan
 & git add .
 if ($LASTEXITCODE -ne 0) {
   throw "git add failed."

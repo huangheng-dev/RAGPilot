@@ -2,6 +2,7 @@
 
 import { AgentRunButtonLink } from "@/components/agents/AgentRunButtonLink";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { AgentRunNavigationHref, AgentRunRecordInput } from "@/lib/agent-runs";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,12 @@ type ConsoleActionPacketCardProps = {
     label: string;
     href: AppHref;
     runRecord?: AgentRunRecordInput | null;
+  }>;
+  directActions?: Array<{
+    key: string;
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
   }>;
   primaryActionRunRecord?: AgentRunRecordInput | null;
   status: PacketStatus;
@@ -46,6 +53,7 @@ export function ConsoleActionPacketCard({
   primaryActionLabel,
   primaryActionRunRecord,
   secondaryActions,
+  directActions = [],
   status,
   statusLabel,
   title
@@ -81,6 +89,19 @@ export function ConsoleActionPacketCard({
           >
             {action.label}
           </AgentRunButtonLink>
+        ))}
+        {directActions.map((action) => (
+          <Button
+            className="bg-white"
+            disabled={action.disabled}
+            key={action.key}
+            onClick={action.onClick}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {action.label}
+          </Button>
         ))}
       </div>
     </div>

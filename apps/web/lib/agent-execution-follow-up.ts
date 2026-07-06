@@ -2,16 +2,26 @@ import type {
   AgentExecutionRecommendedActionSpec,
   AgentExecutionResponse
 } from "@/lib/agent-executions";
-import { buildAgentsHref, buildOperationsHref, buildSettingsHref } from "@/lib/console-route-builders";
+import {
+  buildAgentsHref,
+  buildOperationsHref,
+  buildSettingsHref,
+  buildToolTraceSettingsHref
+} from "@/lib/console-route-builders";
+import { normalizeRuntimeProviderType } from "@/lib/runtime-fallback";
 import {
   buildAdminWorkspaceHref,
   buildAgentsWorkspaceHref,
+  buildHomeWorkspaceHref,
   buildOperationsWorkspaceHref
 } from "@/lib/workspace-handoffs";
+import { buildWorkspaceHref } from "@/lib/workspace-navigation";
 import type { UrlObject } from "url";
 
 type WorkspaceSourceContext =
+  | { surface: "home" }
   | { surface: "agents" }
+  | { surface: "workspace" }
   | { surface: "operations"; lane: "overview" | "failed" | "retries" | "pressure" }
   | { surface: "admin"; section: "overview" | "directory" | "access" | "security" };
 
@@ -57,6 +67,25 @@ function buildScopedWorkspaceHref(
 
   if (sourceContext.surface === "operations") {
     return buildOperationsWorkspaceHref(sourceContext.lane, sharedTarget);
+  }
+
+  if (sourceContext.surface === "home") {
+    return buildHomeWorkspaceHref(sharedTarget);
+  }
+
+  if (sourceContext.surface === "workspace") {
+    return buildWorkspaceHref({
+      view: sharedTarget.view,
+      tenantId: sharedTarget.tenantId,
+      workspaceId: sharedTarget.workspaceId,
+      knowledgeBaseId: sharedTarget.knowledgeBaseId,
+      agentId: sharedTarget.agentId,
+      draftQuestion: sharedTarget.draftQuestion,
+      handoffIntent: sharedTarget.handoffIntent,
+      documentStatus: sharedTarget.documentStatus,
+      workflowStatus: sharedTarget.workflowStatus,
+      sourceSurface: "workspace"
+    });
   }
 
   return buildAdminWorkspaceHref(sourceContext.section, sharedTarget);
@@ -188,6 +217,43 @@ function resolveStructuredActionLabelKey(actionKey: string, targetView: AgentExe
   }
 }
 
+function resolveStructuredToolGovernanceIssue(actionKey: string) {
+  switch (actionKey) {
+    case "review_tool_approval":
+      return "approval_required";
+    case "review_disabled_tool":
+      return "tool_disabled";
+    case "review_reserved_mcp_tool":
+      return "mcp_reserved";
+    case "review_mcp_connector_integration":
+      return "mcp_integration_pending";
+    default:
+      return null;
+  }
+}
+
+function readExecutionRuntimeProviderType(execution: AgentExecutionResponse) {
+  const payload =
+    execution.result_payload_json && typeof execution.result_payload_json === "object"
+      ? execution.result_payload_json
+      : null;
+  if (!payload) {
+    return null;
+  }
+
+  const runtimeBinding =
+    payload.runtime_binding && typeof payload.runtime_binding === "object" && !Array.isArray(payload.runtime_binding)
+      ? (payload.runtime_binding as Record<string, unknown>)
+      : null;
+
+  const providerType =
+    runtimeBinding && typeof runtimeBinding.provider_type === "string"
+      ? runtimeBinding.provider_type
+      : null;
+
+  return normalizeRuntimeProviderType(providerType);
+}
+
 function buildStructuredFollowUpActions(options: {
   sourceContext: WorkspaceSourceContext;
   execution: AgentExecutionResponse;
@@ -197,28 +263,37 @@ function buildStructuredFollowUpActions(options: {
   const { sourceContext, execution, recommendedActions } = options;
   const executionInput = options.executionInput?.trim() || execution.execution_input?.trim() || null;
   const scopedContextReady = hasScopedKnowledgeContext(execution);
+  const runtimeProviderType = readExecutionRuntimeProviderType(execution);
 
   return recommendedActions
     .map((action): AgentExecutionFollowUpAction | null => {
       let href: UrlObject | null = null;
 
       if (action.targetSurface === "settings") {
-        href = buildSettingsHref({
-          runtimeResource: action.modelEndpointId
-            ? "model_endpoint"
-            : action.mcpConnectorId || action.mcpConnectorSlug
-              ? "mcp_connector"
-              : action.toolRegistrationId
-                ? "tool_registration"
+        if (action.toolRegistrationId) {
+          href = buildToolTraceSettingsHref({
+            toolRegistrationId: action.toolRegistrationId,
+            governanceIssue: resolveStructuredToolGovernanceIssue(action.actionKey),
+            connectorReference: action.mcpConnectorSlug ?? null,
+            mcpConnectorId: action.mcpConnectorId ?? null
+          });
+        } else {
+          href = buildSettingsHref({
+            runtimeResource: action.modelEndpointId
+              ? "model_endpoint"
+              : action.mcpConnectorId || action.mcpConnectorSlug
+                ? "mcp_connector"
                 : action.retrievalProfileId
                   ? "retrieval_profile"
-                : null,
-          modelEndpointId: action.modelEndpointId,
-          toolRegistrationId: action.toolRegistrationId,
-          retrievalProfileId: action.retrievalProfileId,
-          mcpConnectorId: action.mcpConnectorId ?? null,
-          mcpConnectorSlug: action.mcpConnectorSlug ?? null,
-        });
+                  : null,
+            modelEndpointId: action.modelEndpointId,
+            modelProviderType:
+              action.actionKey === "review_model_runtime" ? runtimeProviderType : null,
+            retrievalProfileId: action.retrievalProfileId,
+            mcpConnectorId: action.mcpConnectorId ?? null,
+            mcpConnectorSlug: action.mcpConnectorSlug ?? null,
+          });
+        }
       } else if (action.targetSurface === "agents") {
         href = buildAgentsHref({
           tenantId: execution.tenant_id,

@@ -24,6 +24,7 @@ def test_agent_runtime_governance_route_forwards_filters(monkeypatch) -> None:
             readiness=None,
             issue=None,
             model_endpoint_id=None,
+            model_provider_type=None,
             tool_registration_id=None,
             retrieval_profile_id=None,
             query=None,
@@ -34,6 +35,7 @@ def test_agent_runtime_governance_route_forwards_filters(monkeypatch) -> None:
             captured["readiness"] = readiness
             captured["issue"] = issue
             captured["model_endpoint_id"] = model_endpoint_id
+            captured["model_provider_type"] = model_provider_type
             captured["tool_registration_id"] = tool_registration_id
             captured["retrieval_profile_id"] = retrieval_profile_id
             captured["query"] = query
@@ -48,6 +50,7 @@ def test_agent_runtime_governance_route_forwards_filters(monkeypatch) -> None:
                     "active_agents_without_scope": 0,
                     "agents_missing_model": 0,
                     "agents_using_disabled_model": 0,
+                    "agents_using_unconfigured_model": 0,
                     "agents_missing_retrieval_profile": 0,
                     "agents_using_disabled_retrieval_profile": 0,
                     "agents_missing_tool_registration": 0,
@@ -64,6 +67,7 @@ def test_agent_runtime_governance_route_forwards_filters(monkeypatch) -> None:
                     "issue_counts": {
                         "model_missing": 0,
                         "model_disabled": 0,
+                        "model_runtime_unconfigured": 0,
                         "retrieval_profile_missing": 0,
                         "retrieval_profile_disabled": 0,
                         "scope_missing": 0,
@@ -97,13 +101,14 @@ def test_agent_runtime_governance_route_forwards_filters(monkeypatch) -> None:
             "status": "active",
             "mode": "grounded_chat",
             "readiness": "attention",
-            "issue": "tool_mcp_integration_pending",
+            "issue": "model_runtime_unconfigured",
             "model_endpoint_id": str(model_endpoint_id),
+            "model_provider_type": "ollama",
             "tool_registration_id": str(tool_registration_id),
             "retrieval_profile_id": str(retrieval_profile_id),
             "query": "support",
         },
-        headers={"X-RagPilot-Actor-Id": str(uuid4()), "X-RagPilot-Role": "operator"},
+        headers={"X-RAGPilot-Actor-Id": str(uuid4()), "X-RAGPilot-Role": "operator"},
     )
 
     app.dependency_overrides.clear()
@@ -114,9 +119,42 @@ def test_agent_runtime_governance_route_forwards_filters(monkeypatch) -> None:
         "status": "active",
         "mode": "grounded_chat",
         "readiness": "attention",
-        "issue": "tool_mcp_integration_pending",
+        "issue": "model_runtime_unconfigured",
         "model_endpoint_id": model_endpoint_id,
+        "model_provider_type": "ollama",
         "tool_registration_id": tool_registration_id,
         "retrieval_profile_id": retrieval_profile_id,
         "query": "support",
     }
+
+
+def test_agent_runtime_governance_route_uses_database_policy_when_seeded(monkeypatch) -> None:
+    class FakeRolePermissionRepository:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def list_role_permission_slugs(self):
+            return {"operator": {"review_runtime_governance"}}
+
+    class FakeAgentRuntimeGovernanceService:
+        async def get_runtime_governance_posture(self, **kwargs):
+            raise AssertionError("get_runtime_governance_posture should not run when database policy denies agent access.")
+
+    monkeypatch.setattr(agent_routes, "RolePermissionRepository", FakeRolePermissionRepository)
+    monkeypatch.setattr(
+        agent_routes,
+        "build_agent_runtime_governance_service",
+        lambda session: FakeAgentRuntimeGovernanceService(),
+    )
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/agents/runtime-governance",
+        params={"tenant_id": str(uuid4())},
+        headers={"X-RAGPilot-Actor-Id": str(uuid4()), "X-RAGPilot-Role": "operator"},
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403

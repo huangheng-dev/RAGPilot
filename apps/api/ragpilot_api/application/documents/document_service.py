@@ -1,7 +1,11 @@
 import hashlib
 import re
 import uuid
+from html import unescape
+from urllib.parse import urlparse
 from uuid import UUID
+
+import httpx
 
 from ragpilot_api.contracts.http.document_contracts import (
     DocumentActivityEventResponse,
@@ -17,6 +21,7 @@ from ragpilot_api.contracts.http.document_contracts import (
     DocumentUploadResponse,
     DocumentVersionSummaryResponse,
     DocumentWorkflowActionResponse,
+    WebPageImportRequest,
 )
 from ragpilot_api.application.errors import ResourceNotFoundError
 from ragpilot_api.infrastructure.database.models import Document, DocumentChunk
@@ -52,6 +57,12 @@ SUPPORTED_DOCUMENT_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 SUPPORTED_DOCUMENT_TYPES_LABEL = "TXT, Markdown, HTML, CSV, JSON, PDF, DOCX, and XLSX"
+SUPPORTED_WEB_IMPORT_CONTENT_TYPES = {
+    "text/html",
+    "application/xhtml+xml",
+    "text/plain",
+}
+WEB_IMPORT_MAX_BYTES = 5 * 1024 * 1024
 
 
 class DocumentService:
@@ -76,12 +87,33 @@ class DocumentService:
         )
         return build_document_response(document)
 
+    async def import_web_page(self, request: WebPageImportRequest) -> DocumentUploadResponse:
+        normalized_url = validate_web_import_url(request.source_url)
+        fetched_page = await fetch_web_page(normalized_url)
+        derived_title = request.title.strip() if request.title else extract_web_page_title(fetched_page.text)
+        document_title = derived_title or build_web_import_title_from_url(fetched_page.source_url)
+        file_name = build_web_import_file_name(
+            source_url=fetched_page.source_url,
+            title=document_title,
+            content_type=fetched_page.content_type,
+        )
+        return await self._store_document_ingestion_asset(
+            tenant_id=request.tenant_id,
+            knowledge_base_id=request.knowledge_base_id,
+            title=document_title,
+            file_name=file_name,
+            content_type=fetched_page.content_type,
+            content=fetched_page.content,
+            source_uri=fetched_page.source_url,
+        )
+
     async def list_documents(
         self,
         *,
         knowledge_base_id: UUID,
         query: str | None = None,
         status_filter: str | None = None,
+        source_kind_filter: str | None = None,
         lifecycle_filter: str = "active",
         sort_order: str = "created-desc",
         limit: int = 100,
@@ -91,6 +123,7 @@ class DocumentService:
             knowledge_base_id=knowledge_base_id,
             query=query,
             status_filter=status_filter,
+            source_kind_filter=source_kind_filter,
             lifecycle_filter=lifecycle_filter,
             sort_order=sort_order,
             limit=limit,
@@ -190,6 +223,27 @@ class DocumentService:
         content: bytes,
     ) -> DocumentUploadResponse:
         validate_supported_document_type(file_name=file_name, content_type=content_type)
+        return await self._store_document_ingestion_asset(
+            tenant_id=tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            title=title,
+            file_name=file_name,
+            content_type=content_type,
+            content=content,
+            source_uri=None,
+        )
+
+    async def _store_document_ingestion_asset(
+        self,
+        *,
+        tenant_id: UUID,
+        knowledge_base_id: UUID,
+        title: str,
+        file_name: str,
+        content_type: str | None,
+        content: bytes,
+        source_uri: str | None,
+    ) -> DocumentUploadResponse:
         storage = self.document_storage or DocumentStorage()
         content_hash = hashlib.sha256(content).hexdigest()
         safe_file_name = build_safe_file_name(file_name)
@@ -208,7 +262,7 @@ class DocumentService:
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
-            source_uri=f"s3://{stored_object.storage_bucket}/{stored_object.storage_key}",
+            source_uri=source_uri or f"s3://{stored_object.storage_bucket}/{stored_object.storage_key}",
             content_hash=content_hash,
             storage_bucket=stored_object.storage_bucket,
             storage_key=stored_object.storage_key,
@@ -378,6 +432,7 @@ def build_document_response(
         knowledge_base_id=document.knowledge_base_id,
         title=document.title,
         source_uri=document.source_uri,
+        source_kind=detect_document_source_kind(document.source_uri),
         ingestion_status=document.ingestion_status,
         indexing_status=document.indexing_status,
         latest_version_number=latest_version_summary.get("latest_version_number"),
@@ -426,7 +481,7 @@ def validate_supported_document_type(*, file_name: str, content_type: str | None
         return
 
     raise ValueError(
-        f"Unsupported document type. RagPilot currently accepts {SUPPORTED_DOCUMENT_TYPES_LABEL} files."
+        f"Unsupported document type. RAGPilot currently accepts {SUPPORTED_DOCUMENT_TYPES_LABEL} files."
     )
 
 
@@ -434,3 +489,84 @@ def normalize_content_type(content_type: str | None) -> str | None:
     if not content_type:
         return None
     return content_type.split(";", 1)[0].strip().lower() or None
+
+
+def detect_document_source_kind(source_uri: str | None) -> str:
+    normalized_source_uri = (source_uri or "").strip().lower()
+    if normalized_source_uri.startswith("http://") or normalized_source_uri.startswith("https://"):
+        return "web"
+    if normalized_source_uri:
+        return "file"
+    return "other"
+
+
+class FetchedWebPage:
+    def __init__(self, *, source_url: str, content_type: str | None, content: bytes, text: str) -> None:
+        self.source_url = source_url
+        self.content_type = content_type
+        self.content = content
+        self.text = text
+
+
+def validate_web_import_url(source_url: str) -> str:
+    normalized_url = source_url.strip()
+    parsed_url = urlparse(normalized_url)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        raise ValueError("Web import only accepts absolute http or https URLs.")
+    return normalized_url
+
+
+async def fetch_web_page(source_url: str) -> FetchedWebPage:
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            response = await client.get(
+                source_url,
+                headers={"Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1"},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise ValueError(f"Unable to fetch web page content from {source_url}.") from error
+
+    normalized_content_type = normalize_content_type(response.headers.get("content-type"))
+    if normalized_content_type not in SUPPORTED_WEB_IMPORT_CONTENT_TYPES:
+        raise ValueError("Web import currently accepts only single-page HTML or plain-text content.")
+    if not response.content:
+        raise ValueError("The requested web page returned empty content.")
+    if len(response.content) > WEB_IMPORT_MAX_BYTES:
+        raise ValueError("The requested web page is too large to import into RAGPilot.")
+
+    return FetchedWebPage(
+        source_url=str(response.url),
+        content_type=normalized_content_type,
+        content=response.content,
+        text=response.text,
+    )
+
+
+def extract_web_page_title(content: str) -> str | None:
+    match = re.search(r"<title[^>]*>(.*?)</title>", content, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    normalized_title = re.sub(r"\s+", " ", unescape(match.group(1))).strip()
+    return normalized_title or None
+
+
+def build_web_import_title_from_url(source_url: str) -> str:
+    parsed_url = urlparse(source_url)
+    path_tail = parsed_url.path.rstrip("/").split("/")[-1].strip()
+    if path_tail:
+        return path_tail
+    return parsed_url.netloc
+
+
+def build_web_import_file_name(*, source_url: str, title: str, content_type: str | None) -> str:
+    parsed_url = urlparse(source_url)
+    raw_name = title.strip() or parsed_url.netloc or "web-page"
+    safe_name = (build_safe_file_name(raw_name).rstrip(".") or "web-page").lower()
+    if content_type == "text/plain":
+        if safe_name.lower().endswith(".txt"):
+            return safe_name
+        return f"{safe_name}.txt"
+    if safe_name.lower().endswith(".html") or safe_name.lower().endswith(".htm"):
+        return safe_name
+    return f"{safe_name}.html"

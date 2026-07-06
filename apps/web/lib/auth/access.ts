@@ -57,43 +57,6 @@ type CapabilitySession = {
   permissions?: DirectoryPermissions | null;
 };
 
-function resolveLocalCapabilityFallback(session: CapabilitySession, capability: DirectoryCapabilityKey) {
-  if (!canUseDirectorySession(session.role, session.memberships)) {
-    return false;
-  }
-
-  if (capability === "access_admin_console") {
-    return canAccessAdminConsole(session.role);
-  }
-
-  if (
-    capability === "manage_admin_resources" ||
-    capability === "manage_members" ||
-    capability === "manage_runtime_governance" ||
-    capability === "view_audit_events" ||
-    capability === "manage_local_session_role"
-  ) {
-    return canManageAdminResources(session.role);
-  }
-
-  if (
-    capability === "manage_agent_definitions" ||
-    capability === "execute_agents"
-  ) {
-    return canManageAgentStudio(session.role);
-  }
-
-  if (
-    capability === "manage_documents" ||
-    capability === "send_chat_messages" ||
-    capability === "retry_workflow_runs"
-  ) {
-    return canRetryWorkflowRuns(session.role);
-  }
-
-  return true;
-}
-
 export function hasDirectoryCapability(
   session: CapabilitySession | null | undefined,
   capability: DirectoryCapabilityKey
@@ -106,5 +69,5 @@ export function hasDirectoryCapability(
     return session.permissions.capabilities[capability] === true;
   }
 
-  return resolveLocalCapabilityFallback(session, capability);
+  return false;
 }

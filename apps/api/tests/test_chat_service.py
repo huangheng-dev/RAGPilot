@@ -261,7 +261,7 @@ async def test_list_messages_includes_citation_source_metadata() -> None:
                     message_id=message.id,
                     document_chunk_id=document_chunk_id,
                     document_id=document_id,
-                    document_title="RagPilot Handbook",
+                    document_title="RAGPilot Handbook",
                     document_version_id=document_version_id,
                     knowledge_base_id=knowledge_base_id,
                     chunk_index=4,
@@ -297,7 +297,7 @@ async def test_list_messages_includes_citation_source_metadata() -> None:
     citation = response[0].citations[0]
     assert citation.document_chunk_id == document_chunk_id
     assert citation.document_id == document_id
-    assert citation.document_title == "RagPilot Handbook"
+    assert citation.document_title == "RAGPilot Handbook"
     assert citation.document_version_id == document_version_id
     assert citation.knowledge_base_id == knowledge_base_id
     assert citation.chunk_index == 4
@@ -531,6 +531,7 @@ async def test_get_message_feedback_summary_returns_repository_counts() -> None:
                         message_id=uuid4(),
                         conversation_id=uuid4(),
                         conversation_title="Grounded review thread",
+                        knowledge_base_id=knowledge_base_id,
                         submitted_by_user_id=uuid4(),
                         answer_quality="not_helpful",
                         citation_quality="broken",
@@ -540,9 +541,16 @@ async def test_get_message_feedback_summary_returns_repository_counts() -> None:
                         updated_at=now,
                         assistant_excerpt="Temporal was not mentioned in this answer.",
                         latest_user_question="Which system runs durable ingestion workflows?",
+                        retrieval_profile_id=uuid4(),
+                        retrieval_profile_name="RAGPilot-default",
                     )
                 ],
             )
+        )
+    )
+    retrieval_evaluation_repository = SimpleNamespace(
+        get_latest_follow_up_status_by_queries=AsyncMock(
+            return_value={"Which system runs durable ingestion workflows?": "resolved"}
         )
     )
     service = ChatService(
@@ -552,6 +560,7 @@ async def test_get_message_feedback_summary_returns_repository_counts() -> None:
         retrieval_repository=SimpleNamespace(),
         settings=SimpleNamespace(),
         model_gateway=SimpleNamespace(),
+        retrieval_evaluation_repository=retrieval_evaluation_repository,
     )
 
     response = await service.get_message_feedback_summary(
@@ -564,11 +573,24 @@ async def test_get_message_feedback_summary_returns_repository_counts() -> None:
     assert response.retrieval_tuning_candidates == 3
     assert response.recent_feedback[0].citation_quality == "broken"
     assert response.recent_feedback[0].conversation_title == "Grounded review thread"
+    assert response.recent_feedback[0].knowledge_base_id == knowledge_base_id
     assert response.recent_feedback[0].latest_user_question == "Which system runs durable ingestion workflows?"
+    assert response.recent_feedback[0].retrieval_profile_name == "RAGPilot-default"
+    assert response.recent_feedback[0].follow_up_status == "resolved"
+    assert response.recent_feedback[0].recommended_actions[0].action_key == "review_knowledge_base_governance"
+    assert response.recent_feedback[0].recommended_actions[1].action_key == "review_retrieval_profile_governance"
+    assert response.recent_feedback[0].recommended_actions[2].action_key == "rerun_retrieval_comparison"
+    assert response.recent_feedback[0].recommended_actions[3].action_key == "validate_in_chat"
     message_repository.summarize_message_feedback.assert_awaited_once_with(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
+    )
+    retrieval_evaluation_repository.get_latest_follow_up_status_by_queries.assert_awaited_once_with(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        knowledge_base_id=knowledge_base_id,
+        query_texts=["Which system runs durable ingestion workflows?"],
     )
 
 
@@ -618,7 +640,7 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
                     document_chunk_id=document_chunk_id,
                     rank=1,
                     score=0.991231,
-                    quote="RagPilot uses Temporal for durable ingestion workflows.",
+                    quote="RAGPilot uses Temporal for durable ingestion workflows.",
                 )
             ]
         ),
@@ -631,9 +653,9 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
                     "document_id": document_id,
                     "document_version_id": document_version_id,
                     "knowledge_base_id": knowledge_base_id,
-                    "document_title": "RagPilot Web Demo",
+                    "document_title": "RAGPilot Web Demo",
                     "chunk_index": 2,
-                    "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                    "content": "RAGPilot uses Temporal for durable ingestion workflows.",
                     "score": 0.991231,
                     "embedding_model": "text-embedding-test",
                     "metadata_json": {},
@@ -648,9 +670,9 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
                     "document_id": document_id,
                     "document_version_id": document_version_id,
                     "knowledge_base_id": knowledge_base_id,
-                    "document_title": "RagPilot Web Demo",
+                    "document_title": "RAGPilot Web Demo",
                     "chunk_index": 2,
-                    "content": "RagPilot uses Temporal for durable ingestion workflows.",
+                    "content": "RAGPilot uses Temporal for durable ingestion workflows.",
                     "token_count": 8,
                     "lexical_score": 3.0,
                     "embedding_model": None,
@@ -729,7 +751,7 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
     citation = response.assistant_message.citations[0]
     assert citation.id == citation_id
     assert citation.document_id == document_id
-    assert citation.document_title == "RagPilot Web Demo"
+    assert citation.document_title == "RAGPilot Web Demo"
     assert citation.document_version_id == document_version_id
     assert citation.knowledge_base_id == knowledge_base_id
     assert citation.chunk_index == 2

@@ -1,7 +1,6 @@
 "use client";
 
-import { readApiErrorMessage } from "@/lib/api-errors";
-import { buildSessionActorHeaders } from "@/lib/local-session";
+import { authenticatedApiRequest } from "@/lib/authenticated-api";
 
 export type ModelProviderType =
   | "deterministic"
@@ -28,11 +27,17 @@ export type PlatformModelEndpoint = {
   is_default: boolean;
   notes: string | null;
   bound_agent_count: number;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: ModelEndpointPreviewStatus | null;
+  last_preview_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type ModelEndpointPreviewStatus = "completed" | "blocked" | "failed";
+export type ModelEndpointGovernanceActionType = "enable_endpoint" | "disable_endpoint" | "promote_default";
 
 export type ModelEndpointPreviewResponse = {
   model_endpoint_id: string;
@@ -49,6 +54,12 @@ export type ModelEndpointPreviewResponse = {
   executed_at: string;
 };
 
+export type ModelEndpointGovernanceActionResponse = {
+  action_type: ModelEndpointGovernanceActionType;
+  summary: string;
+  model_endpoint: PlatformModelEndpoint;
+};
+
 export type ModelProviderGovernanceBreakdown = {
   provider_type: ModelProviderType;
   total_endpoints: number;
@@ -56,6 +67,37 @@ export type ModelProviderGovernanceBreakdown = {
   bound_endpoints: number;
   default_endpoints: number;
   runtime_ready_endpoints: number;
+};
+
+export type ModelProviderCompatibility = {
+  provider_type: "deterministic" | "openai_compatible" | "ollama" | "vllm";
+  routing_style: "builtin" | "native_http" | "openai_compatible";
+  requires_base_url: boolean;
+  supports_no_credential: boolean;
+  supports_environment_credential: boolean;
+  supports_managed_reserved: boolean;
+  preview_available: boolean;
+  default_base_url_hint: string | null;
+};
+
+export type ModelProviderRuntimePosture = {
+  provider_type: "deterministic" | "openai_compatible" | "ollama" | "vllm";
+  posture_status: "ready" | "attention" | "setup_required";
+  total_endpoints: number;
+  enabled_endpoints: number;
+  runtime_ready_endpoints: number;
+  default_endpoints: number;
+  runtime_ready_default_endpoints: number;
+  bound_agent_count: number;
+  active_agent_count: number;
+  attention_active_agent_count: number;
+  missing_base_url_endpoints: number;
+  missing_credential_hint_endpoints: number;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: ModelEndpointPreviewStatus | null;
+  last_preview_at: string | null;
 };
 
 export type ModelCredentialGovernanceBreakdown = {
@@ -72,6 +114,8 @@ export type ModelGovernanceSummary = {
   bound_endpoints: number;
   default_endpoints: number;
   enabled_default_endpoints: number;
+  runtime_ready_default_endpoints: number;
+  settings_fallback_exposed: boolean;
   disabled_bound_endpoints: number;
   runtime_ready_endpoints: number;
   missing_base_url_endpoints: number;
@@ -85,6 +129,8 @@ export type ModelGovernanceSummary = {
   vllm_endpoints: number;
   provider_breakdown: ModelProviderGovernanceBreakdown[];
   credential_breakdown: ModelCredentialGovernanceBreakdown[];
+  provider_compatibility: ModelProviderCompatibility[];
+  provider_runtime_posture: ModelProviderRuntimePosture[];
 };
 
 export type ToolTransportType = "native" | "http" | "mcp_reserved";
@@ -105,6 +151,11 @@ export type PlatformToolRegistration = {
   requires_admin_approval: boolean;
   is_enabled: boolean;
   bound_agent_count: number;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: string | null;
+  last_preview_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -141,7 +192,13 @@ export type ToolGovernanceSummary = {
   mcp_reserved_bound_tools: number;
   mcp_integration_pending_tools: number;
   mcp_connector_configured_tools: number;
+  mcp_connector_unhealthy_tools: number;
   runtime_ready_tools: number;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: string | null;
+  last_preview_at: string | null;
   transport_breakdown: ToolTransportGovernanceBreakdown[];
   surface_breakdown: ToolSurfaceGovernanceBreakdown[];
 };
@@ -280,6 +337,11 @@ export type PlatformMcpConnector = {
   is_enabled: boolean;
   referenced_tool_count: number;
   integration_ready_tool_count: number;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: McpConnectorPreviewStatus | null;
+  last_preview_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -305,16 +367,29 @@ export type McpConnectorGovernanceSummary = {
   disabled_connectors: number;
   referenced_connectors: number;
   integration_ready_connectors: number;
+  blocked_integration_connectors: number;
   runtime_ready_connectors: number;
   missing_base_url_connectors: number;
   environment_auth_connectors: number;
   missing_credential_hint_connectors: number;
   managed_reserved_connectors: number;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: McpConnectorPreviewStatus | null;
+  last_preview_at: string | null;
   type_breakdown: McpConnectorTypeGovernanceBreakdown[];
   auth_breakdown: McpConnectorAuthGovernanceBreakdown[];
 };
 
 export type McpConnectorPreviewStatus = "completed" | "blocked" | "failed";
+export type McpConnectorGovernanceActionType = "enable_connector" | "disable_connector";
+
+export type McpConnectorGovernanceActionResponse = {
+  action_type: McpConnectorGovernanceActionType;
+  summary: string;
+  mcp_connector: PlatformMcpConnector;
+};
 
 export type McpConnectorPreviewResponse = {
   mcp_connector_id: string;
@@ -344,6 +419,14 @@ export type PlatformRetrievalProfile = {
   bound_knowledge_base_count: number;
   created_at: string;
   updated_at: string;
+};
+
+export type RetrievalProfileGovernanceActionType = "enable_profile" | "disable_profile" | "promote_default";
+
+export type RetrievalProfileGovernanceActionResponse = {
+  action_type: RetrievalProfileGovernanceActionType;
+  summary: string;
+  retrieval_profile: PlatformRetrievalProfile;
 };
 
 export type ModelEndpointPayload = Omit<
@@ -383,34 +466,123 @@ export type PlatformGovernanceSnapshot = {
   issues: PlatformGovernanceLoadIssue[];
 };
 
-function buildApiBaseUrl() {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
-  const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : fallbackBaseUrl;
-  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
-}
+export type RuntimeGovernanceResourceType =
+  | "model_endpoint"
+  | "tool_registration"
+  | "mcp_connector"
+  | "retrieval_profile";
 
-const apiBaseUrl = buildApiBaseUrl();
+export type RuntimeGovernanceToolListFilter =
+  | "approval_required"
+  | "disabled"
+  | "mcp_reserved_bound"
+  | "mcp_integration_pending";
+
+export type RuntimeGovernanceAgentIssue =
+  | "model_disabled"
+  | "model_runtime_unconfigured"
+  | "retrieval_profile_disabled"
+  | "tool_registration_disabled"
+  | "tool_approval_required"
+  | "tool_mcp_reserved"
+  | "tool_mcp_integration_pending";
+
+export type RuntimeGovernanceSettingsTarget = {
+  runtime_resource: RuntimeGovernanceResourceType;
+  model_endpoint_id: string | null;
+  model_provider_type: "deterministic" | "openai_compatible" | "ollama" | "vllm" | null;
+  tool_registration_id: string | null;
+  tool_list_filter: RuntimeGovernanceToolListFilter | null;
+  retrieval_profile_id: string | null;
+  mcp_connector_id: string | null;
+  mcp_connector_slug: string | null;
+};
+
+export type RuntimeGovernanceAgentsTarget = {
+  issue: RuntimeGovernanceAgentIssue;
+  model_endpoint_id: string | null;
+  model_provider_type: "deterministic" | "openai_compatible" | "ollama" | "vllm" | null;
+  tool_registration_id: string | null;
+  retrieval_profile_id: string | null;
+};
+
+export type RuntimeGovernanceFollowUp = {
+  settings_target: RuntimeGovernanceSettingsTarget | null;
+  agents_target: RuntimeGovernanceAgentsTarget | null;
+};
+
+export type RuntimeGovernanceEvent = {
+  id: string;
+  actor_user_id: string | null;
+  actor_role: string | null;
+  resource_type: RuntimeGovernanceResourceType;
+  resource_id: string | null;
+  resource_name: string | null;
+  resource_slug: string | null;
+  action_type: string;
+  detail: Record<string, unknown>;
+  follow_up: RuntimeGovernanceFollowUp | null;
+  created_at: string;
+};
+
+export type RuntimeGovernanceWorklistCategory =
+  | "approval_required_tool"
+  | "mcp_integration_pending_tool"
+  | "integration_blocked_connector"
+  | "unconfigured_model_endpoint"
+  | "disabled_bound_model_endpoint";
+
+export type RuntimeGovernanceWorklistItem = {
+  category: RuntimeGovernanceWorklistCategory;
+  severity: "review" | "attention";
+  resource_type: "model_endpoint" | "tool_registration" | "mcp_connector";
+  resource_id: string;
+  resource_name: string;
+  resource_slug: string;
+  action_hint: string;
+  recent_preview_completed_events: number;
+  recent_preview_blocked_events: number;
+  recent_preview_failed_events: number;
+  last_preview_status: string | null;
+  last_preview_at: string | null;
+  detail: Record<string, unknown>;
+  follow_up: RuntimeGovernanceFollowUp | null;
+};
+
+export type RuntimeGovernanceWorklist = {
+  total_items: number;
+  unconfigured_model_endpoints: number;
+  disabled_bound_model_endpoints: number;
+  approval_required_tools: number;
+  mcp_integration_pending_tools: number;
+  integration_blocked_connectors: number;
+  items: RuntimeGovernanceWorklistItem[];
+};
+
+export type RuntimeGovernanceOverviewStatus = "stable" | "review" | "attention";
+export type RuntimeGovernanceOverviewReasonCode =
+  | "stable"
+  | "unconfigured_model_endpoint"
+  | "disabled_bound_model_endpoint"
+  | "approval_required_tool"
+  | "mcp_integration_pending_tool"
+  | "integration_blocked_connector";
+
+export type RuntimeGovernanceOverview = {
+  status: RuntimeGovernanceOverviewStatus;
+  reason_code: RuntimeGovernanceOverviewReasonCode;
+  attention_items: number;
+  review_items: number;
+  primary_item: RuntimeGovernanceWorklistItem | null;
+  model_summary: ModelGovernanceSummary;
+  tool_summary: ToolGovernanceSummary;
+  mcp_connector_summary: McpConnectorGovernanceSummary;
+  worklist: RuntimeGovernanceWorklist;
+  recent_events: RuntimeGovernanceEvent[];
+};
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...buildSessionActorHeaders(init?.headers)
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
+  return await authenticatedApiRequest<T>(path, init);
 }
 
 export async function listModelEndpoints(filters?: {
@@ -471,6 +643,16 @@ export async function previewModelEndpoint(modelEndpointId: string) {
   });
 }
 
+export async function applyModelEndpointGovernanceAction(
+  modelEndpointId: string,
+  actionType: ModelEndpointGovernanceActionType
+) {
+  return await apiRequest<ModelEndpointGovernanceActionResponse>(`/model-endpoints/${modelEndpointId}/governance-action`, {
+    method: "POST",
+    body: JSON.stringify({ action_type: actionType })
+  });
+}
+
 export async function loadModelGovernanceSummary() {
   return await apiRequest<ModelGovernanceSummary>("/model-endpoints/governance-summary");
 }
@@ -488,6 +670,7 @@ export async function listToolRegistrations(filters?: {
     | "mcp_reserved_bound"
     | "mcp_integration_pending"
     | "mcp_connector_configured"
+    | "mcp_connector_unhealthy"
     | "runtime_ready";
   query?: string;
 }) {
@@ -655,6 +838,16 @@ export async function previewMcpConnector(mcpConnectorId: string) {
   });
 }
 
+export async function applyMcpConnectorGovernanceAction(
+  mcpConnectorId: string,
+  actionType: McpConnectorGovernanceActionType
+) {
+  return await apiRequest<McpConnectorGovernanceActionResponse>(`/mcp-connectors/${mcpConnectorId}/governance-action`, {
+    method: "POST",
+    body: JSON.stringify({ action_type: actionType })
+  });
+}
+
 export async function loadMcpConnectorGovernanceSummary() {
   return await apiRequest<McpConnectorGovernanceSummary>("/mcp-connectors/governance-summary");
 }
@@ -684,6 +877,88 @@ export async function deleteRetrievalProfile(retrievalProfileId: string) {
   await apiRequest<void>(`/retrieval-profiles/${retrievalProfileId}`, {
     method: "DELETE"
   });
+}
+
+export async function applyRetrievalProfileGovernanceAction(
+  retrievalProfileId: string,
+  actionType: RetrievalProfileGovernanceActionType
+) {
+  return await apiRequest<RetrievalProfileGovernanceActionResponse>(
+    `/retrieval-profiles/${retrievalProfileId}/governance-action`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action_type: actionType })
+    }
+  );
+}
+
+export async function listRuntimeGovernanceEvents(filters?: {
+  resource_type?: RuntimeGovernanceResourceType;
+  action_type?: string;
+  actor_role?: "super_admin" | "operator" | "reviewer";
+  query?: string;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (filters?.resource_type) {
+    params.set("resource_type", filters.resource_type);
+  }
+  if (filters?.action_type?.trim()) {
+    params.set("action_type", filters.action_type.trim());
+  }
+  if (filters?.actor_role) {
+    params.set("actor_role", filters.actor_role);
+  }
+  if (filters?.query?.trim()) {
+    params.set("query", filters.query.trim());
+  }
+  if (typeof filters?.limit === "number") {
+    params.set("limit", String(filters.limit));
+  }
+  const query = params.toString();
+  return await apiRequest<RuntimeGovernanceEvent[]>(`/runtime-governance/events${query ? `?${query}` : ""}`);
+}
+
+export async function loadRuntimeGovernanceWorklist(filters?: {
+  limit?: number;
+  category?: RuntimeGovernanceWorklistCategory;
+  severity?: "review" | "attention";
+  resource_type?: "model_endpoint" | "tool_registration" | "mcp_connector";
+  query?: string;
+}) {
+  const params = new URLSearchParams();
+  if (typeof filters?.limit === "number") {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters?.category) {
+    params.set("category", filters.category);
+  }
+  if (filters?.severity) {
+    params.set("severity", filters.severity);
+  }
+  if (filters?.resource_type) {
+    params.set("resource_type", filters.resource_type);
+  }
+  if (filters?.query?.trim()) {
+    params.set("query", filters.query.trim());
+  }
+  const query = params.toString();
+  return await apiRequest<RuntimeGovernanceWorklist>(`/runtime-governance/worklist${query ? `?${query}` : ""}`);
+}
+
+export async function loadRuntimeGovernanceOverview(filters?: {
+  worklist_limit?: number;
+  recent_event_limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (typeof filters?.worklist_limit === "number") {
+    params.set("worklist_limit", String(filters.worklist_limit));
+  }
+  if (typeof filters?.recent_event_limit === "number") {
+    params.set("recent_event_limit", String(filters.recent_event_limit));
+  }
+  const query = params.toString();
+  return await apiRequest<RuntimeGovernanceOverview>(`/runtime-governance/overview${query ? `?${query}` : ""}`);
 }
 
 function readIssueMessage(error: unknown) {

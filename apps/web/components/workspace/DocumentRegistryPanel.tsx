@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckSquare, RotateCcw, Square, Trash2, Undo2 } from "lucide-react";
+import { useState } from "react";
+import { CheckSquare, RotateCcw, Search, Square, Trash2, Undo2 } from "lucide-react";
 
 import { PaginationControls } from "./PaginationControls";
 import {
@@ -14,18 +15,20 @@ import {
 import { formatOperatorErrorMessage } from "../../lib/api-errors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
-import type { DocumentLifecycleFilter, WorkspaceAgentContext } from "@/components/workspace/workspace-types";
+import type { DocumentLifecycleFilter, DocumentSourceFilter, WorkspaceAgentContext } from "@/components/workspace/workspace-types";
 
 type DocumentRecord = {
   id: string;
   title: string;
   source_uri: string | null;
+  source_kind: "file" | "web" | "other";
   ingestion_status: string;
   indexing_status: string;
   latest_version_number: number | null;
@@ -58,6 +61,7 @@ type DocumentRegistryPanelProps = {
   documentPageCount: number;
   documentLifecycleFilter: DocumentLifecycleFilter;
   documentQuery: string;
+  documentSourceFilter: DocumentSourceFilter;
   documentStatusFilter: string;
   documentSortOrder: DocumentSortOrder;
   filteredDocumentCount: number;
@@ -74,6 +78,7 @@ type DocumentRegistryPanelProps = {
   onDocumentLifecycleFilterChange: (value: DocumentLifecycleFilter) => void;
   onDocumentPageChange: (nextPage: number) => void;
   onDocumentQueryChange: (value: string) => void;
+  onDocumentSourceFilterChange: (value: DocumentSourceFilter) => void;
   onDocumentSortOrderChange: (value: DocumentSortOrder) => void;
   onDocumentStatusFilterChange: (value: string) => void;
   onOpenWorkflowView: () => void;
@@ -90,6 +95,7 @@ export function DocumentRegistryPanel({
   documentPageCount,
   documentLifecycleFilter,
   documentQuery,
+  documentSourceFilter,
   documentStatusFilter,
   documentSortOrder,
   filteredDocumentCount,
@@ -106,6 +112,7 @@ export function DocumentRegistryPanel({
   onDocumentLifecycleFilterChange,
   onDocumentPageChange,
   onDocumentQueryChange,
+  onDocumentSourceFilterChange,
   onDocumentSortOrderChange,
   onDocumentStatusFilterChange,
   onOpenWorkflowView,
@@ -116,6 +123,7 @@ export function DocumentRegistryPanel({
   onToggleSelectAllDocumentsOnPage
 }: DocumentRegistryPanelProps) {
   const { t } = useI18n();
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const allDocumentsOnPageSelected =
     paginatedDocuments.length > 0 && paginatedDocuments.every((document) => selectedDocumentIds.includes(document.id));
   const activeAgentModeLabel = activeAgentContext ? t(`agents.modes.${activeAgentContext.mode}`) : null;
@@ -123,14 +131,11 @@ export function DocumentRegistryPanel({
   const isAllLifecycleView = documentLifecycleFilter === "all";
 
   return (
-    <Card className="border-slate-200 shadow-sm">
+    <Card className="overflow-hidden border-slate-200 shadow-sm">
       <CardHeader className="gap-4 border-b border-slate-200">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4">
           <div>
             <CardTitle>{t("workspace.registry.title")}</CardTitle>
-            <CardDescription className="mt-1">
-              {t("workspace.registry.description")}
-            </CardDescription>
             {activeAgentContext ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">
@@ -149,13 +154,16 @@ export function DocumentRegistryPanel({
               </div>
             ) : null}
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,180px))]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              className="min-w-64 bg-white"
+                className="min-w-64 bg-white pl-9"
               onChange={(event) => onDocumentQueryChange(event.target.value)}
               placeholder={t("workspace.registry.searchPlaceholder")}
               value={documentQuery}
             />
+            </div>
             <Select onValueChange={onDocumentStatusFilterChange} value={documentStatusFilter}>
               <SelectTrigger className="w-full min-w-[160px] bg-white">
                 <SelectValue placeholder={t("workspace.registry.status")} />
@@ -167,6 +175,20 @@ export function DocumentRegistryPanel({
                 <SelectItem value="queued">{t("workspace.registry.queued")}</SelectItem>
                 <SelectItem value="failed">{t("workspace.registry.failed")}</SelectItem>
                 <SelectItem value="pending">{t("workspace.registry.pending")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              onValueChange={(value) => onDocumentSourceFilterChange(value as DocumentSourceFilter)}
+              value={documentSourceFilter}
+            >
+              <SelectTrigger className="w-full min-w-[170px] bg-white">
+                <SelectValue placeholder={t("workspace.registry.sourceType")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("workspace.registry.allSources")}</SelectItem>
+                <SelectItem value="file">{t("workspace.registry.sourceFile")}</SelectItem>
+                <SelectItem value="web">{t("workspace.registry.sourceWeb")}</SelectItem>
+                <SelectItem value="other">{t("workspace.registry.sourceOther")}</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -195,24 +217,22 @@ export function DocumentRegistryPanel({
                 <SelectItem value="status-priority">{t("workspace.registry.statusPriority")}</SelectItem>
               </SelectContent>
             </Select>
-            {activeAgentContext ? (
-              <>
-                <Button className="bg-white" onClick={onShowFailedDocuments} size="sm" type="button" variant="outline">
-                  {t("workspace.registry.openFailedQueue")}
-                </Button>
-                <Button className="bg-white" onClick={onOpenWorkflowView} size="sm" type="button" variant="outline">
-                  {t("workspace.registry.openWorkflowSupervision")}
-                </Button>
-              </>
-            ) : null}
           </div>
+
+          {activeAgentContext ? (
+            <div className="flex flex-wrap gap-2">
+              <Button className="bg-white" onClick={onShowFailedDocuments} size="sm" type="button" variant="outline">
+                {t("workspace.registry.openFailedQueue")}
+              </Button>
+              <Button className="bg-white" onClick={onOpenWorkflowView} size="sm" type="button" variant="outline">
+                {t("workspace.registry.openWorkflowSupervision")}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
-              {t("workspace.registry.selectedCount", { count: String(selectedDocumentIds.length) })}
-            </Badge>
             <Button
               className="bg-white"
               disabled={paginatedDocuments.length === 0}
@@ -232,23 +252,23 @@ export function DocumentRegistryPanel({
               type="button"
               variant="outline"
             >
-              {t("workspace.registry.clearSelection")}
+              {`${t("workspace.registry.clearSelection")} (${selectedDocumentIds.length})`}
             </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {isDeletedView ? (
-              <Button
-                disabled={!canManageDocuments || selectedDocumentIds.length === 0 || isRunningDocumentAction}
-                onClick={() => void onBulkRestoreDocuments()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <Undo2 className="h-4 w-4" />
-                {t("workspace.registry.restoreSelected")}
-              </Button>
-            ) : !isAllLifecycleView ? (
+                <Button
+                  disabled={!canManageDocuments || selectedDocumentIds.length === 0 || isRunningDocumentAction}
+                  onClick={() => void onBulkRestoreDocuments()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Undo2 className="h-4 w-4" />
+                  {`${t("workspace.registry.restoreSelected")} (${selectedDocumentIds.length})`}
+                </Button>
+              ) : !isAllLifecycleView ? (
               <>
                 <Button
                   disabled={!canManageDocuments || selectedDocumentIds.length === 0 || isRunningDocumentAction}
@@ -258,18 +278,18 @@ export function DocumentRegistryPanel({
                   variant="outline"
                 >
                   <RotateCcw className="h-4 w-4" />
-                  {t("workspace.registry.reindexSelected")}
+                  {`${t("workspace.registry.reindexSelected")} (${selectedDocumentIds.length})`}
                 </Button>
                 <Button
                   className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700"
                   disabled={!canManageDocuments || selectedDocumentIds.length === 0 || isRunningDocumentAction}
-                  onClick={() => void onBulkDeleteDocuments()}
+                  onClick={() => setIsBulkDeleteConfirmOpen(true)}
                   size="sm"
                   type="button"
                   variant="outline"
                 >
                   <Trash2 className="h-4 w-4" />
-                  {t("workspace.registry.deleteSelected")}
+                  {`${t("workspace.registry.deleteSelected")} (${selectedDocumentIds.length})`}
                 </Button>
               </>
             ) : null}
@@ -277,8 +297,8 @@ export function DocumentRegistryPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="p-0">
-        <Table>
+      <CardContent className="overflow-hidden bg-white p-0">
+        <Table className="border-separate border-spacing-0">
           <TableHeader>
             <TableRow className="bg-slate-50">
               <TableHead className="w-14 px-5">
@@ -305,7 +325,7 @@ export function DocumentRegistryPanel({
                 key={document.id}
                 className={cn(
                   "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50",
-                  document.id === selectedDocumentId ? "bg-blue-50" : "bg-white"
+                  document.id === selectedDocumentId ? "bg-blue-50/70" : "bg-white"
                 )}
                 onClick={() => void onSelectDocument(document.id)}
               >
@@ -401,7 +421,16 @@ export function DocumentRegistryPanel({
                   )}
                 </TableCell>
                 <TableCell className="align-top text-xs text-muted-foreground">
-                  <div className="max-w-[260px] break-all">{document.source_uri ?? t("workspace.registry.sourceUnavailable")}</div>
+                  <div className="space-y-2">
+                    <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
+                      {document.source_kind === "web"
+                        ? t("workspace.registry.sourceWeb")
+                        : document.source_kind === "file"
+                          ? t("workspace.registry.sourceFile")
+                          : t("workspace.registry.sourceOther")}
+                    </Badge>
+                    <div className="max-w-[260px] break-all">{document.source_uri ?? t("workspace.registry.sourceUnavailable")}</div>
+                  </div>
                 </TableCell>
                 <TableCell className="align-top text-xs text-muted-foreground">{formatTimestamp(document.updated_at)}</TableCell>
               </TableRow>
@@ -422,6 +451,21 @@ export function DocumentRegistryPanel({
         pageCount={documentPageCount}
         pageSize={pageSize}
         totalItems={filteredDocumentCount}
+      />
+      <ConfirmDialog
+        cancelLabel={t("workspace.headerBar.cancel")}
+        confirmLabel={t("workspace.registry.deleteSelected")}
+        description={t("workspace.confirm.deleteSelectedDocuments", {
+          count: String(selectedDocumentIds.length)
+        })}
+        isLoading={isRunningDocumentAction}
+        onCancel={() => setIsBulkDeleteConfirmOpen(false)}
+        onConfirm={async () => {
+          await onBulkDeleteDocuments();
+          setIsBulkDeleteConfirmOpen(false);
+        }}
+        open={isBulkDeleteConfirmOpen && selectedDocumentIds.length > 0}
+        title={t("workspace.registry.deleteSelected")}
       />
     </Card>
   );

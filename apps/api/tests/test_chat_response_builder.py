@@ -9,7 +9,7 @@ def test_build_suggested_conversation_title_strips_common_prefix() -> None:
 
 def test_build_suggested_conversation_title_extracts_focus_from_long_question() -> None:
     title = build_suggested_conversation_title(
-        "Which system does RagPilot use for durable ingestion workflows?"
+        "Which system does RAGPilot use for durable ingestion workflows?"
     )
 
     assert title == "Durable ingestion workflows"

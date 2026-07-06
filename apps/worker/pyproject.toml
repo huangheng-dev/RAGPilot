@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ragpilot-worker"
+name = "RAGPilot-worker"
 version = "0.1.0"
-description = "Temporal worker for RagPilot"
+description = "Temporal worker for RAGPilot"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -45,6 +45,7 @@ class DocumentRepository:
         knowledge_base_id: UUID,
         query: str | None = None,
         status_filter: str | None = None,
+        source_kind_filter: str | None = None,
         lifecycle_filter: str = "active",
         sort_order: str = "created-desc",
         limit: int = 100,
@@ -75,6 +76,27 @@ class DocumentRepository:
                     Document.indexing_status == normalized_status_filter,
                 )
             )
+
+        normalized_source_kind_filter = source_kind_filter.strip().lower() if source_kind_filter else None
+        if normalized_source_kind_filter and normalized_source_kind_filter != "all":
+            normalized_source_uri = func.lower(func.coalesce(Document.source_uri, ""))
+            if normalized_source_kind_filter == "web":
+                filters.append(
+                    or_(
+                        normalized_source_uri.like("http://%"),
+                        normalized_source_uri.like("https://%"),
+                    )
+                )
+            elif normalized_source_kind_filter == "file":
+                filters.append(
+                    and_(
+                        normalized_source_uri != "",
+                        ~normalized_source_uri.like("http://%"),
+                        ~normalized_source_uri.like("https://%"),
+                    )
+                )
+            elif normalized_source_kind_filter == "other":
+                filters.append(normalized_source_uri == "")
 
         statement = select(Document).where(*filters)
         count_statement = select(func.count()).select_from(Document).where(*filters)
@@ -456,7 +478,12 @@ class DocumentRepository:
                 )
 
             if workflow_row.completed_at:
-                terminal_event_type = "workflow_failed" if workflow_row.workflow_status == "failed" else "workflow_completed"
+                if workflow_row.workflow_status == "failed":
+                    terminal_event_type = "workflow_failed"
+                elif workflow_row.workflow_status == "cancelled":
+                    terminal_event_type = "workflow_cancelled"
+                else:
+                    terminal_event_type = "workflow_completed"
                 events.append(
                     {
                         "id": f"workflow-terminal-{workflow_row.id}",
