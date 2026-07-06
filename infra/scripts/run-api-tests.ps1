@@ -5,11 +5,21 @@ Set-Location $repoRoot
 
 $apiRoot = Join-Path $repoRoot "apps\api"
 $venvRoot = Join-Path $apiRoot ".venv"
-$venvPython = Join-Path $venvRoot "Scripts\python.exe"
+$venvPython = if ($IsWindows -or $env:OS -eq "Windows_NT") {
+  Join-Path $venvRoot "Scripts\python.exe"
+} else {
+  Join-Path $venvRoot "bin/python"
+}
+
+$pythonLauncherCommand = Get-Command python3 -ErrorAction SilentlyContinue
+if (-not $pythonLauncherCommand) {
+  $pythonLauncherCommand = Get-Command python -ErrorAction Stop
+}
+$pythonLauncher = $pythonLauncherCommand.Source
 
 if (-not (Test-Path $venvPython)) {
   Write-Host "Creating API virtual environment..." -ForegroundColor Cyan
-  & python -m venv $venvRoot
+  & $pythonLauncher -m venv $venvRoot
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to create API virtual environment."
   }
