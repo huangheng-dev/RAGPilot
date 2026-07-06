@@ -87,12 +87,16 @@ $scanFiles = @(Get-ScanFiles -Paths $targetPaths)
 
 foreach ($file in $scanFiles) {
   $lineNumber = 0
-  foreach ($line in Get-Content -LiteralPath $file.FullName) {
-    $lineNumber += 1
-    if ($sensitivePattern.IsMatch($line)) {
-      $relativePath = Convert-ToUnixPath -Path (Resolve-Path -LiteralPath $file.FullName -Relative)
-      $matches += "${relativePath}:${lineNumber}:$line"
+  try {
+    foreach ($line in Get-Content -LiteralPath $file.FullName -ErrorAction Stop) {
+      $lineNumber += 1
+      if ($sensitivePattern.IsMatch($line)) {
+        $relativePath = Convert-ToUnixPath -Path (Resolve-Path -LiteralPath $file.FullName -Relative)
+        $matches += "${relativePath}:${lineNumber}:$line"
+      }
     }
+  } catch {
+    throw "Secret scan could not read '$($file.FullName)': $($_.Exception.Message)"
   }
 }
 
@@ -104,3 +108,4 @@ if ($matches.Count -gt 0) {
 }
 
 Write-Host "No sensitive key patterns found in tracked source and documentation scope." -ForegroundColor Green
+exit 0
