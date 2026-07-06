@@ -41,7 +41,7 @@ $excludedPathFragments = @(
   "/work/"
 )
 
-$sensitivePattern = [regex]'(OPENAI_API_KEY|ANTHROPIC_API_KEY|AZURE_OPENAI|SECRET_KEY|JWT_SECRET|PRIVATE KEY|BEGIN RSA|BEGIN OPENSSH|sk-[A-Za-z0-9_-]{10,})'
+$sensitivePattern = [regex]'(OPENAI_API_KEY|ANTHROPIC_API_KEY|AZURE_OPENAI|SECRET_KEY|JWT_SECRET|PRIVATE KEY|BEGIN RSA|BEGIN OPENSSH|sk-[A-Za-z0-9_-]{20,})'
 
 function Convert-ToUnixPath {
   param([string]$Path)
