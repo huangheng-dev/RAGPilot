@@ -5,6 +5,36 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      web-runtime-patches:
+        patterns:
+          - "@radix-ui/*"
+          - "next"
+          - "react"
+          - "react-dom"
+        update-types:
+          - "patch"
+          - "minor"
+      web-tooling-patches:
+        patterns:
+          - "eslint"
+          - "@eslint/js"
+          - "typescript"
+          - "typescript-eslint"
+          - "@types/*"
+        update-types:
+          - "patch"
+          - "minor"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@eslint/js"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "pip"
     directory: "/apps/api"
