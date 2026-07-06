@@ -77,7 +77,10 @@ if ($readmeContent -notmatch "Release Workflow") {
 }
 
 $ciWorkflowContent = Get-Content ".github/workflows/ci.yml" -Raw
-if ($ciWorkflowContent -notmatch "release:delivery-audit") {
+if (
+  $ciWorkflowContent -notmatch "release:delivery-audit" -and
+  $ciWorkflowContent -notmatch "production-delivery-audit\.ps1"
+) {
   throw "CI workflow is not running the production delivery audit."
 }
 

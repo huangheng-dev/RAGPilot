@@ -30,7 +30,7 @@ jobs:
 
       - name: Audit production delivery assets
         shell: pwsh
-        run: npm run release:delivery-audit
+        run: ./infra/scripts/production-delivery-audit.ps1
 
   api:
     name: API tests
