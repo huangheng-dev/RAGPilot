@@ -1,5 +1,7 @@
 # RAGPilot
 
+[简体中文](./README.zh-CN.md)
+
 RAGPilot is an open-source AI knowledge operations platform for teams that need governed knowledge ingestion, retrieval-grounded chat, agent execution, workflow supervision, and platform administration in one system.
 
 It is built for real production workflows rather than isolated chat demos. The product combines knowledge access, document processing, retrieval diagnostics, citation-backed answers, long-running workflow execution, model governance, and operator-facing control surfaces into a single platform.
