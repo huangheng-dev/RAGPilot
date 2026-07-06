@@ -1,7 +1,9 @@
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 Set-Location $repoRoot
+
+$powerShellHost = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" }
 
 function Assert-PathExists {
   param(
@@ -54,14 +56,14 @@ Write-Host "Git remotes: $([string]::Join(', ', $remoteNames))"
 
 Write-Host ""
 Write-Host "1/7 Auditing public documentation..." -ForegroundColor Cyan
-& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-docs-audit.ps1"
+& $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-docs-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Public documentation audit failed."
 }
 
 Write-Host ""
 Write-Host "2/7 Auditing public markdown links..." -ForegroundColor Cyan
-& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-links-audit.ps1"
+& $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-links-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Public markdown link audit failed."
 }
@@ -82,21 +84,21 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "5/7 Auditing public candidate files..." -ForegroundColor Cyan
-& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/release-candidate-audit.ps1"
+& $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/release-candidate-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Release candidate audit failed."
 }
 
 Write-Host ""
 Write-Host "6/7 Auditing production delivery assets..." -ForegroundColor Cyan
-& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/production-delivery-audit.ps1"
+& $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/production-delivery-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Production delivery audit failed."
 }
 
 Write-Host ""
 Write-Host "7/7 Running secret scan..." -ForegroundColor Cyan
-& powershell -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/secret-scan.ps1"
+& $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/secret-scan.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Secret scan failed."
 }

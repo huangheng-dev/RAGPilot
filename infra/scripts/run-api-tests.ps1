@@ -1,9 +1,9 @@
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 Set-Location $repoRoot
 
-$apiRoot = Join-Path $repoRoot "apps\api"
+$apiRoot = Join-Path (Join-Path $repoRoot "apps") "api"
 $venvRoot = Join-Path $apiRoot ".venv"
 $venvPython = if ($IsWindows -or $env:OS -eq "Windows_NT") {
   Join-Path $venvRoot "Scripts\python.exe"
