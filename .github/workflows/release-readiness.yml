@@ -17,7 +17,7 @@ concurrency:
 jobs:
   release-readiness:
     name: Release readiness checks
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -34,8 +34,24 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Install audit tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
       - name: Install web dependencies
         run: npm ci
+
+      - name: Audit public documentation
+        shell: pwsh
+        run: ./infra/scripts/public-docs-audit.ps1
+
+      - name: Audit public markdown links
+        shell: pwsh
+        run: ./infra/scripts/public-links-audit.ps1
+
+      - name: Build web
+        run: npm run web:build
 
       - name: Install API dependencies
         run: |
@@ -43,5 +59,17 @@ jobs:
           python -m pip install -e './apps/api[retrieval-llamaindex,agent-langgraph]'
           python -m pip install pytest
 
-      - name: Run unified release preflight
-        run: npm run release:preflight
+      - name: Run API tests
+        run: python -m pytest apps/api/tests
+
+      - name: Audit public release candidate files
+        shell: pwsh
+        run: ./infra/scripts/release-candidate-audit.ps1
+
+      - name: Audit production delivery assets
+        shell: pwsh
+        run: ./infra/scripts/production-delivery-audit.ps1
+
+      - name: Run secret scan
+        shell: pwsh
+        run: ./infra/scripts/secret-scan.ps1
