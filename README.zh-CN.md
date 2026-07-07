@@ -1,6 +1,6 @@
 # RAGPilot
 
-[English](./README.md)
+语言：[English](./README.md) | 简体中文
 
 RAGPilot 是一个面向生产场景的开源 AI 知识运营平台，用于把知识接入、检索增强问答、智能体执行、工作流监督和平台治理统一到一个系统中。
 
