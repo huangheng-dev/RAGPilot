@@ -67,6 +67,10 @@ export type AgentExecutionResponse = {
   launched_by_user_id: string | null;
   started_at: string | null;
   completed_at: string | null;
+  temporal_workflow_id: string | null;
+  retry_of_execution_id: string | null;
+  cancellation_requested_at: string | null;
+  cancelled_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -229,6 +233,20 @@ export async function createAgentExecution(request: CreateAgentExecutionRequest)
     method: "POST",
     body: JSON.stringify(request)
   });
+}
+
+export async function cancelAgentExecution(execution: AgentExecutionResponse) {
+  return await agentExecutionApiRequest<AgentExecutionResponse>(
+    `/agents/executions/actions/${execution.id}/cancel?tenant_id=${execution.tenant_id}`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function retryAgentExecution(execution: AgentExecutionResponse) {
+  return await agentExecutionApiRequest<AgentExecutionResponse>(
+    `/agents/executions/actions/${execution.id}/retry?tenant_id=${execution.tenant_id}`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
 }
 
 export function readAgentExecutionRetrievalSummary(

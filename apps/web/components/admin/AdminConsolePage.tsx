@@ -12,17 +12,16 @@ import {
 import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 
 import { AgentExecutionFollowUpActions } from "@/components/agents/AgentExecutionFollowUpActions";
+import { RuntimeResourcesPanel } from "@/components/admin/RuntimeResourcesPanel";
 import { AgentRunButtonLink } from "@/components/agents/AgentRunButtonLink";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { ConsoleActionPacketCard } from "@/components/console/ConsoleActionPacketCard";
 import { ConsoleRuntimeTaskPacket } from "@/components/console/ConsoleRuntimeTaskPacket";
 import {
   ConsolePage,
-  ConsoleSegmentedBar,
   ConsoleSurface,
   ConsoleSurfaceHeader,
   ConsoleToolbar,
-  ConsoleToolbarGroup,
 } from "@/components/console/ConsolePrimitives";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
 import { RuntimeBindingSummaryCard } from "@/components/runtime/RuntimeBindingSummaryCard";
@@ -34,7 +33,6 @@ import {
 import { ToolRuntimeTraceActions } from "@/components/runtime/ToolRuntimeTraceActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   DialogFormActions,
   DialogFormField,
@@ -367,7 +365,7 @@ type AdminManagementPanel =
   | "user-edit"
   | null;
 
-type AdminSection = "overview" | "directory" | "access" | "security";
+type AdminSection = "overview" | "directory" | "access" | "runtime" | "security";
 
 const WORKSPACE_LIFECYCLE_FILTER_VALUES = [
   "all",
@@ -590,7 +588,7 @@ function readAllowedFilterValue(
 }
 
 function readAllowedAdminSection(value: string | null): AdminSection {
-  if (value === "directory" || value === "access" || value === "security") {
+  if (value === "directory" || value === "access" || value === "runtime" || value === "security") {
     return value;
   }
 
@@ -1611,6 +1609,15 @@ export default function AdminConsolePage() {
       const requestedKnowledgeBaseId =
         searchParams.get("knowledge_base_id")?.trim() ?? "";
       const requestedUserId = searchParams.get("user_id")?.trim() ?? "";
+      const requestedRuntimeResource =
+        searchParams.get("runtime_resource")?.trim() ?? "";
+      const requestedRuntimeTarget =
+        searchParams.get("model_endpoint_id")?.trim() ||
+        searchParams.get("tool_registration_id")?.trim() ||
+        searchParams.get("retrieval_profile_id")?.trim() ||
+        searchParams.get("mcp_connector_id")?.trim() ||
+        searchParams.get("mcp_connector_slug")?.trim() ||
+        "";
       setAdminSection(
         requestedManagementPanel === "workspace-edit" && requestedWorkspaceId
           ? "directory"
@@ -1653,6 +1660,14 @@ export default function AdminConsolePage() {
           AUDIT_EVENT_FILTER_VALUES,
         ),
       );
+      setRuntimeGovernanceQueueResourceFilter(
+        ["model_endpoint", "tool_registration", "retrieval_profile", "mcp_connector"].includes(
+          requestedRuntimeResource,
+        )
+          ? requestedRuntimeResource
+          : "all",
+      );
+      setRuntimeGovernanceSearchQuery(requestedRuntimeTarget);
       setPendingWorkspaceFocusId(
         requestedManagementPanel === "workspace-edit" && requestedWorkspaceId
           ? requestedWorkspaceId
@@ -5027,6 +5042,11 @@ export default function AdminConsolePage() {
       description: t("admin.sections.accessDescription"),
     },
     {
+      key: "runtime" as const,
+      label: t("admin.sections.runtime"),
+      description: t("admin.sections.runtimeDescription"),
+    },
+    {
       key: "security" as const,
       label: t("admin.sections.security"),
       description: t("admin.sections.securityDescription"),
@@ -5038,6 +5058,7 @@ export default function AdminConsolePage() {
   const showOverviewSection = adminSection === "overview";
   const showDirectorySection = adminSection === "directory";
   const showAccessSection = adminSection === "access";
+  const showRuntimeSection = adminSection === "runtime";
   const showSecuritySection =
     showAdvancedAdminSections && adminSection === "security";
 
@@ -5856,29 +5877,27 @@ export default function AdminConsolePage() {
     <ConsoleShell activeHref="/admin">
       <PageTitleSync title={t("admin.title")} />
       <ConsolePage className="gap-6">
-        <ConsoleToolbar>
-          <ConsoleToolbarGroup>
-            <Select
-              disabled={isLoading || tenants.length === 0}
-              onValueChange={setSelectedTenantId}
-              value={selectedTenantId}
-            >
-              <SelectTrigger className="min-w-[240px] rounded-xl border-slate-200 bg-white">
-                <SelectValue placeholder={t("admin.filters.tenantScope")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  {t("admin.filters.allTenants")}
-                </SelectItem>
-                {tenants.map((tenant) => (
-                  <SelectItem key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+        <div className="grid h-[calc(100dvh-128px)] min-h-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] xl:grid-cols-[292px_minmax(0,1fr)]">
+          <aside className="min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/70 xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-950/70">
+            <div className="grid gap-3 p-4"><div className="mb-1 text-lg font-semibold text-slate-950 dark:text-slate-50">{t("admin.title")}</div>
+            <Select disabled={isLoading || tenants.length === 0} onValueChange={setSelectedTenantId} value={selectedTenantId}>
+              <SelectTrigger className="w-full bg-white"><SelectValue placeholder={t("admin.filters.tenantScope")} /></SelectTrigger>
+              <SelectContent><SelectItem value="all">{t("admin.filters.allTenants")}</SelectItem>{tenants.map((tenant) => <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>)}</SelectContent>
             </Select>
-
-            <div className="relative min-w-[280px] flex-1">
+            <Button className="w-full bg-white" disabled={isLoading} onClick={() => void refreshAdminDirectory(true)} type="button" variant="outline">
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />{isLoading ? t("admin.filters.refreshingDirectory") : t("admin.filters.refreshDirectory")}
+            </Button>
+            </div><div className="space-y-3 border-t border-slate-200 p-4"><div className="space-y-1">
+              {visibleAdminSections.map((section) => <button className={`w-full rounded-xl px-3 py-2.5 text-left text-sm ${adminSection === section.key ? "bg-blue-50 font-medium text-blue-700" : "text-slate-600 hover:bg-white"}`} key={section.key} onClick={() => setAdminSection(section.key)} type="button">{section.label}</button>)}
+            </div>
+            {resumeWorkspaceHref ? <Button asChild className="w-full bg-white" variant="outline"><a href={resumeWorkspaceHref}>{t("admin.filters.returnToValidation")}</a></Button> : null}</div>
+          </aside>
+          <main className="min-h-0 overflow-y-auto p-5">
+        {!showOverviewSection && !showRuntimeSection ? (
+        <ConsoleToolbar className="py-4 shadow-none">
+          <div className="grid w-full gap-3 lg:grid-cols-2 2xl:grid-cols-5">
+            {!showOverviewSection ? (
+            <div className="relative min-w-0 lg:col-span-2 2xl:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 className="rounded-xl border-slate-200 bg-white pl-9"
@@ -5887,13 +5906,15 @@ export default function AdminConsolePage() {
                 value={searchQuery}
               />
             </div>
+            ) : null}
 
+            {showDirectorySection ? (
             <Select
               disabled={isLoading}
               onValueChange={setWorkspaceLifecycleFilter}
               value={workspaceLifecycleFilter}
             >
-              <SelectTrigger className="min-w-[220px] rounded-xl border-slate-200 bg-white">
+              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
                 <SelectValue
                   placeholder={t("admin.filters.workspaceLifecycle")}
                 />
@@ -5910,13 +5931,15 @@ export default function AdminConsolePage() {
                 </SelectItem>
               </SelectContent>
             </Select>
+            ) : null}
 
+            {showDirectorySection ? (
             <Select
               disabled={isLoading}
               onValueChange={setKnowledgeBasePublicationStatusFilter}
               value={knowledgeBasePublicationStatusFilter}
             >
-              <SelectTrigger className="min-w-[220px] rounded-xl border-slate-200 bg-white">
+              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
                 <SelectValue
                   placeholder={t("admin.filters.knowledgePublication")}
                 />
@@ -5933,21 +5956,15 @@ export default function AdminConsolePage() {
                 </SelectItem>
               </SelectContent>
             </Select>
-
-            {resumeWorkspaceHref ? (
-              <Button asChild className="rounded-xl" variant="outline">
-                <a href={resumeWorkspaceHref}>
-                  {t("admin.filters.returnToValidation")}
-                </a>
-              </Button>
             ) : null}
 
+            {showDirectorySection ? (
             <Select
               disabled={isLoading || retrievalProfiles.length === 0}
               onValueChange={setRetrievalProfileFilter}
               value={retrievalProfileFilter}
             >
-              <SelectTrigger className="min-w-[220px] rounded-xl border-slate-200 bg-white">
+              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
                 <SelectValue
                   placeholder={t("admin.filters.retrievalProfile")}
                 />
@@ -5972,69 +5989,42 @@ export default function AdminConsolePage() {
                 ))}
               </SelectContent>
             </Select>
+            ) : null}
 
-            <Button
-              className="rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              disabled={isLoading}
-              onClick={() => void refreshAdminDirectory(true)}
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", isLoading && "animate-spin")}
-              />
-              {isLoading
-                ? t("admin.filters.refreshingDirectory")
-                : t("admin.filters.refreshDirectory")}
-            </Button>
-          </ConsoleToolbarGroup>
+          </div>
         </ConsoleToolbar>
+        ) : null}
+          {showRuntimeSection ? <RuntimeResourcesPanel tenantId={selectedTenantId === "all" ? null : selectedTenantId} /> : null}
 
-        <div className="space-y-6">
-          <ConsoleSegmentedBar>
-            {visibleAdminSections.map((section) => (
-              <Button
-                className={adminSection === section.key ? "" : "bg-white"}
-                key={section.key}
-                onClick={() => setAdminSection(section.key)}
-                type="button"
-                variant={adminSection === section.key ? "default" : "outline"}
-              >
-                {section.label}
-              </Button>
-            ))}
-          </ConsoleSegmentedBar>
-
+        <div className="grid gap-6">
           {showOverviewSection ? (
-            <ConsoleSurface className="p-3">
-              <div className="grid gap-3 xl:grid-cols-5">
+            <ConsoleSurface className="p-4">
+              <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-5">
                 {metrics.map((metric) => (
-                  <Card
-                    className="rounded-[20px] border-slate-100 shadow-none"
+                  <div
+                    className="rounded-xl border border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/60"
                     key={metric.label}
                   >
-                    <CardContent className="p-6">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {metric.label}
-                      </div>
-                      <div className="mt-4 text-[34px] font-semibold tracking-tight text-slate-950">
-                        {metric.value}
-                      </div>
-                      <div className="mt-4">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={metric.href}>
-                            {t("admin.metrics.openScope")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {metric.label}
+                    </div>
+                    <div className="mt-4 text-[34px] font-semibold tracking-tight text-slate-950">
+                      {metric.value}
+                    </div>
+                    <div className="mt-4">
+                      <Button
+                        asChild
+                        className="bg-white"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link href={metric.href}>
+                          {t("admin.metrics.openScope")}
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </ConsoleSurface>
@@ -6162,11 +6152,12 @@ export default function AdminConsolePage() {
                 }
                 title={t("admin.directory.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="px-6 pb-6 pt-2">
+                <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.directory.tenant")}
                       </TableHead>
                       <TableHead>{t("admin.directory.workspace")}</TableHead>
@@ -6178,8 +6169,8 @@ export default function AdminConsolePage() {
                         {t("admin.directory.actionsColumn")}
                       </TableHead>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    </TableHeader>
+                    <TableBody>
                     {searchedWorkspaces.map((workspace) => {
                       const tenant = tenants.find(
                         (tenantItem) => tenantItem.id === workspace.tenant_id,
@@ -6195,7 +6186,7 @@ export default function AdminConsolePage() {
                           className="border-slate-100"
                           key={workspace.id}
                         >
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {tenant?.name ??
                                 t("admin.directory.unknownTenant")}
@@ -6230,7 +6221,7 @@ export default function AdminConsolePage() {
                           </TableCell>
                           <TableCell>{workspaceKnowledgeBaseCount}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex min-w-[430px] flex-wrap justify-end gap-2.5">
                               <Button
                                 className="bg-white"
                                 disabled={
@@ -6327,15 +6318,16 @@ export default function AdminConsolePage() {
                     {searchedWorkspaces.length === 0 && (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={5}
                         >
                           {t("admin.directory.noWorkspaces")}
                         </TableCell>
                       </TableRow>
                     )}
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
@@ -6355,11 +6347,12 @@ export default function AdminConsolePage() {
                 }
                 title={t("admin.governance.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="px-6 pb-6 pt-2">
+                <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.governance.knowledgeBase")}
                       </TableHead>
                       <TableHead>{t("admin.governance.workspace")}</TableHead>
@@ -6372,8 +6365,8 @@ export default function AdminConsolePage() {
                         {t("admin.governance.actionsColumn")}
                       </TableHead>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    </TableHeader>
+                    <TableBody>
                     {searchedKnowledgeBases.map((knowledgeBase) => {
                       const workspace = workspaces.find(
                         (workspaceItem) =>
@@ -6409,7 +6402,7 @@ export default function AdminConsolePage() {
                           className="border-slate-100"
                           key={knowledgeBase.id}
                         >
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {knowledgeBase.name}
                             </div>
@@ -6478,7 +6471,7 @@ export default function AdminConsolePage() {
                               t("admin.governance.unknownTenant")}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex min-w-[430px] flex-wrap justify-end gap-2.5">
                               <Button
                                 className="bg-white"
                                 disabled={
@@ -6583,7 +6576,7 @@ export default function AdminConsolePage() {
                     {searchedKnowledgeBases.length === 0 && (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={6}
                         >
                           {t("admin.governance.noKnowledgeBases")}
@@ -6592,6 +6585,7 @@ export default function AdminConsolePage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
@@ -6611,11 +6605,12 @@ export default function AdminConsolePage() {
                 }
                 title={t("admin.agents.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="px-6 pb-6 pt-2">
+                <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.agents.agent")}
                       </TableHead>
                       <TableHead>{t("admin.agents.tenant")}</TableHead>
@@ -6636,7 +6631,7 @@ export default function AdminConsolePage() {
 
                       return (
                         <TableRow className="border-slate-100" key={agent.id}>
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {agent.name}
                             </div>
@@ -6671,7 +6666,7 @@ export default function AdminConsolePage() {
                           </TableCell>
                           <TableCell>{agent.tools.length}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex min-w-[430px] flex-wrap justify-end gap-2.5">
                               <Button
                                 asChild
                                 className="bg-white"
@@ -6715,7 +6710,7 @@ export default function AdminConsolePage() {
                     {searchedAgents.length === 0 && (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={7}
                         >
                           {t("admin.agents.noAgents")}
@@ -6724,6 +6719,7 @@ export default function AdminConsolePage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
@@ -6793,11 +6789,12 @@ export default function AdminConsolePage() {
                 }
                 title={t("admin.members.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="px-6 pb-6 pt-2">
+                <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.members.member")}
                       </TableHead>
                       <TableHead>{t("admin.members.memberships")}</TableHead>
@@ -6829,7 +6826,7 @@ export default function AdminConsolePage() {
 
                       return (
                         <TableRow className="border-slate-100" key={user.id}>
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {user.display_name}
                             </div>
@@ -6958,7 +6955,7 @@ export default function AdminConsolePage() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex min-w-[430px] flex-wrap justify-end gap-2.5">
                               <Button
                                 className="bg-white"
                                 disabled={!hasAdminWriteAccess || isLoading}
@@ -7148,37 +7145,33 @@ export default function AdminConsolePage() {
                     {searchedUsers.length === 0 ? (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={4}
                         >
                           {t("admin.members.noMembers")}
                         </TableCell>
                       </TableRow>
                     ) : null}
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
         </div>
 
-        <div className="space-y-6">
-          <ConsoleSurface>
-            <ConsoleSurfaceHeader
-              description={t("settings.governance.description")}
-              title={t("settings.governance.title")}
-            />
-            <div className="px-6 py-5">
+        <div className="grid gap-6">
+          <ConsoleSurface className="p-6">
               <RuntimePostureCard
                 actionHref={buildSettingsHref()}
                 actionLabel={t("shell.userMenu.settings")}
+                className="border-0 bg-transparent p-0"
                 description={t("settings.governance.description")}
                 errorMessage={runtimeHealthErrorMessage}
                 isLoading={isLoadingRuntimeHealth}
                 runtimeHealth={runtimeHealth}
                 title={t("settings.governance.title")}
               />
-            </div>
           </ConsoleSurface>
 
           {adminSection === "access" ||
@@ -7816,9 +7809,10 @@ export default function AdminConsolePage() {
           {adminSection === "overview" ? (
             <ConsoleSurface>
               <ConsoleSurfaceHeader
+                actionPlacement="below"
                 action={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative min-w-[240px] flex-1 max-w-[360px]">
+                  <div className="grid w-full gap-2 md:grid-cols-2 2xl:grid-cols-4">
+                    <div className="relative min-w-0 2xl:col-span-2">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <Input
                         className="bg-white pl-9"
@@ -7835,7 +7829,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceQueueCategoryFilter}
                       value={runtimeGovernanceQueueCategoryFilter}
                     >
-                      <SelectTrigger className="h-9 w-[220px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.category")}
                         />
@@ -7875,7 +7869,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceQueueSeverityFilter}
                       value={runtimeGovernanceQueueSeverityFilter}
                     >
-                      <SelectTrigger className="h-9 w-[150px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.severity")}
                         />
@@ -7896,7 +7890,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceQueueResourceFilter}
                       value={runtimeGovernanceQueueResourceFilter}
                     >
-                      <SelectTrigger className="h-9 w-[190px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.resource")}
                         />
@@ -7920,7 +7914,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceActionFilter}
                       value={runtimeGovernanceActionFilter}
                     >
-                      <SelectTrigger className="h-9 w-[180px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.action")}
                         />
@@ -7950,7 +7944,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceActorRoleFilter}
                       value={runtimeGovernanceActorRoleFilter}
                     >
-                      <SelectTrigger className="h-9 w-[160px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.actor")}
                         />
@@ -7971,13 +7965,12 @@ export default function AdminConsolePage() {
                       </SelectContent>
                     </Select>
                     <Button
-                      className="bg-white"
+                      className="h-10 bg-white"
                       onClick={() => void refreshRuntimeGovernanceQueue()}
-                      size="sm"
                       type="button"
                       variant="outline"
                     >
-                      <RefreshCw className="mr-2 h-4 w-4" />
+                      <RefreshCw className="h-4 w-4" />
                       {t("admin.runtimeQueue.refresh")}
                     </Button>
                   </div>
@@ -7986,7 +7979,7 @@ export default function AdminConsolePage() {
                 title={t("admin.runtimeQueue.title")}
               />
               <div className="space-y-4 p-6">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                   <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                       {t("admin.runtimeQueue.metrics.total")}
@@ -8041,7 +8034,7 @@ export default function AdminConsolePage() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div className="grid gap-4 2xl:grid-cols-2">
                   <div className="space-y-3">
                     <div className="text-sm font-semibold text-slate-950">
                       {t("admin.runtimeQueue.worklistTitle")}
@@ -12862,6 +12855,8 @@ export default function AdminConsolePage() {
             </DialogFormLayout>
           </AdminManagementDialog>
         ) : null}
+          </main>
+        </div>
       </ConsolePage>
     </ConsoleShell>
   );

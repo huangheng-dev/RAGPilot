@@ -69,6 +69,7 @@ def build_tool_runtime_service(session: AsyncSession) -> ToolRuntimeService:
         DocumentRepository(session),
         WorkflowRepository(session),
         get_settings(),
+        mcp_connector_repository=McpConnectorRepository(session),
     )
 
 

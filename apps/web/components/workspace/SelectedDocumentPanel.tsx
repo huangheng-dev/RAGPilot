@@ -16,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DialogFormActions, DialogFormField, FormDialog } from "@/components/ui/form-dialog";
+import { Input } from "@/components/ui/input";
 import { WorkspaceExecutionPacket } from "@/components/workspace/WorkspaceExecutionPacket";
 import { WorkspaceRecommendedAgentsPanel } from "@/components/workspace/WorkspaceRecommendedAgentsPanel";
 import { useI18n } from "@/lib/i18n/provider";
@@ -93,6 +95,7 @@ type SelectedDocumentPanelProps = {
   isActivatingRecommendation?: boolean;
   isRunningDocumentAction: boolean;
   onDeleteDocument: () => void | Promise<void>;
+  onPermanentlyDeleteDocument: (confirmationTitle: string) => void | Promise<void>;
   onOpenChatView?: () => void;
   onOpenFailedDocumentsQueue?: () => void;
   onOpenWorkflowView?: () => void;
@@ -104,6 +107,8 @@ type SelectedDocumentPanelProps = {
   recommendedAgents?: WorkspaceAgentRecommendation[];
   selectedDocumentVersionId?: string | null;
   showExtendedMetadata?: boolean;
+  embeddedInDialog?: boolean;
+  hideLifecycleActions?: boolean;
   onActivateRecommendedAgent?: (recommendation: WorkspaceAgentRecommendation) => void | Promise<void>;
   title?: string;
 };
@@ -125,6 +130,7 @@ export function SelectedDocumentPanel({
   isActivatingRecommendation = false,
   isRunningDocumentAction,
   onDeleteDocument,
+  onPermanentlyDeleteDocument,
   onOpenChatView,
   onOpenFailedDocumentsQueue,
   onOpenWorkflowView,
@@ -136,11 +142,16 @@ export function SelectedDocumentPanel({
   recommendedAgents = [],
   selectedDocumentVersionId = null,
   showExtendedMetadata = false,
+  embeddedInDialog = false,
+  hideLifecycleActions = false,
   onActivateRecommendedAgent,
   title,
 }: SelectedDocumentPanelProps) {
   const { t } = useI18n();
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isLifecycleConfirmOpen, setIsLifecycleConfirmOpen] = useState(false);
+  const [isPermanentDeleteOpen, setIsPermanentDeleteOpen] = useState(false);
+  const [permanentDeleteTitle, setPermanentDeleteTitle] = useState("");
   const latestWorkflowRun = relatedWorkflowRuns[0] ?? null;
   const topRecommendation = recommendedAgents[0] ?? null;
   const chunks = Array.isArray(detail?.chunks) ? detail.chunks : [];
@@ -519,22 +530,23 @@ export function SelectedDocumentPanel({
   }
 
   return (
-    <Card className="border-slate-200 shadow-sm">
-      <CardHeader className="pb-3">
+    <Card className={cn("border-slate-200 shadow-sm", embeddedInDialog && "rounded-none border-0 shadow-none")}>
+      {!embeddedInDialog ? <CardHeader className="pb-3">
         <CardTitle>{title ?? t("workspace.selectedDocument.selectedDocument")}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm text-slate-700">
+      </CardHeader> : null}
+      <CardContent className={cn("space-y-3 text-sm text-slate-700", embeddedInDialog && "p-0")}>
         {detail ? (
           <>
-            <div className="flex items-start justify-between gap-3">
+            <div className={cn("flex items-start justify-between gap-3", embeddedInDialog && "rounded-xl border border-slate-200 bg-slate-50/70 p-4")}>
               <div>
-                <div className="font-medium text-slate-900">{detail.document.title}</div>
+                {!embeddedInDialog ? <div className="font-medium text-slate-900">{detail.document.title}</div> : null}
                 <div className="mt-1 text-xs text-slate-500">{detail.asset_file_name ?? t("workspace.selectedDocument.noAssetMetadata")}</div>
               </div>
-              <div className="flex items-center gap-2">
+              {!hideLifecycleActions ? <div className="flex items-center gap-2">
                 <Button
+                  className="rounded-xl bg-white"
                   disabled={!canManageDocuments || isRunningDocumentAction}
-                  onClick={() => void (isDeletedDocument ? onRestoreDocument() : onReindexDocument())}
+                  onClick={() => setIsLifecycleConfirmOpen(true)}
                   size="sm"
                   type="button"
                   variant="outline"
@@ -543,7 +555,7 @@ export function SelectedDocumentPanel({
                 </Button>
                 {!isDeletedDocument ? (
                   <Button
-                    className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                    className="rounded-xl border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
                     disabled={!canManageDocuments || isRunningDocumentAction}
                     onClick={() => setIsDeleteConfirmOpen(true)}
                     size="sm"
@@ -552,8 +564,19 @@ export function SelectedDocumentPanel({
                   >
                     {t("workspace.selectedDocument.delete")}
                   </Button>
-                ) : null}
-              </div>
+                ) : (
+                  <Button
+                    className="rounded-xl border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                    disabled={!canManageDocuments || isRunningDocumentAction}
+                    onClick={() => { setPermanentDeleteTitle(""); setIsPermanentDeleteOpen(true); }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {t("workspace.selectedDocument.permanentDelete")}
+                  </Button>
+                )}
+              </div> : null}
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-md bg-white px-2 py-2">
@@ -796,7 +819,7 @@ export function SelectedDocumentPanel({
           confirmLabel={t("workspace.selectedDocument.delete")}
           description={
             detail
-              ? t("workspace.confirm.deleteConversation", { title: detail.document.title })
+              ? t("workspace.confirm.deleteDocument", { title: detail.document.title })
               : t("workspace.confirm.deleteSelectedDocument")
           }
           isLoading={isRunningDocumentAction}
@@ -808,6 +831,30 @@ export function SelectedDocumentPanel({
           open={isDeleteConfirmOpen && Boolean(detail) && !isDeletedDocument}
           title={t("workspace.selectedDocument.delete")}
         />
+        <ConfirmDialog
+          cancelLabel={t("workspace.headerBar.cancel")}
+          confirmLabel={isDeletedDocument ? t("workspace.selectedDocument.restore") : t("workspace.selectedDocument.reindex")}
+          description={detail ? t(isDeletedDocument ? "workspace.confirm.restoreDocument" : "workspace.confirm.reindexDocument", { title: detail.document.title }) : ""}
+          isLoading={isRunningDocumentAction}
+          onCancel={() => setIsLifecycleConfirmOpen(false)}
+          onConfirm={async () => {
+            await (isDeletedDocument ? onRestoreDocument() : onReindexDocument());
+            setIsLifecycleConfirmOpen(false);
+          }}
+          open={isLifecycleConfirmOpen && Boolean(detail)}
+          title={isDeletedDocument ? t("workspace.selectedDocument.restore") : t("workspace.selectedDocument.reindex")}
+        />
+        <FormDialog
+          description={t("workspace.confirm.permanentDeleteDocument", { title: detail?.document.title ?? "" })}
+          footer={<DialogFormActions><Button onClick={() => setIsPermanentDeleteOpen(false)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button><Button className="bg-rose-600 text-white hover:bg-rose-700" disabled={isRunningDocumentAction || permanentDeleteTitle !== detail?.document.title} onClick={async () => { await onPermanentlyDeleteDocument(permanentDeleteTitle); setIsPermanentDeleteOpen(false); }} type="button">{t("workspace.selectedDocument.permanentDelete")}</Button></DialogFormActions>}
+          onClose={() => setIsPermanentDeleteOpen(false)}
+          open={isPermanentDeleteOpen && Boolean(detail) && isDeletedDocument}
+          title={t("workspace.selectedDocument.permanentDelete")}
+        >
+          <DialogFormField hint={t("workspace.confirm.permanentDeleteHint")} label={t("workspace.confirm.permanentDeleteLabel")}>
+            <Input autoFocus onChange={(event) => setPermanentDeleteTitle(event.target.value)} value={permanentDeleteTitle} />
+          </DialogFormField>
+        </FormDialog>
       </CardContent>
     </Card>
   );

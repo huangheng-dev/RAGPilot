@@ -73,3 +73,39 @@ export async function authenticatedApiRequestWithHeaders<T>(
     headers: response.headers
   };
 }
+
+export function authenticatedUpload<T>(
+  path: string,
+  body: FormData,
+  onProgress: (percent: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${apiBaseUrl}${path}`);
+    Object.entries(buildSessionAuthHeaders()).forEach(([key, value]) => request.setRequestHeader(key, value));
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      }
+    });
+    request.addEventListener("load", () => {
+      if (request.status >= 200 && request.status < 300) {
+        try {
+          resolve(JSON.parse(request.responseText) as T);
+        } catch {
+          reject(new Error("Upload completed with an invalid response."));
+        }
+        return;
+      }
+      try {
+        const payload = JSON.parse(request.responseText) as { detail?: string; message?: string };
+        reject(new Error(payload.detail ?? payload.message ?? `Upload failed with status ${request.status}.`));
+      } catch {
+        reject(new Error(`Upload failed with status ${request.status}.`));
+      }
+    });
+    request.addEventListener("error", () => reject(new Error("Upload failed because the network connection was interrupted.")));
+    request.addEventListener("abort", () => reject(new Error("Upload was cancelled.")));
+    request.send(body);
+  });
+}

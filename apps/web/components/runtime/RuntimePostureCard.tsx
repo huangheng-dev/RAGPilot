@@ -23,7 +23,8 @@ export function RuntimePostureCard({
   isLoading,
   errorMessage,
   actionHref,
-  actionLabel
+  actionLabel,
+  className
 }: {
   title: string;
   description: string;
@@ -32,11 +33,12 @@ export function RuntimePostureCard({
   errorMessage: string | null;
   actionHref: ComponentProps<typeof Link>["href"];
   actionLabel: string;
+  className?: string;
 }) {
   const { t } = useI18n();
 
   return (
-    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5">
+    <div className={cn("rounded-xl border border-slate-100 bg-slate-50/70 p-5", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-950">{title}</div>

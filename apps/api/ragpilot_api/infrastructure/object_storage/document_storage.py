@@ -58,3 +58,6 @@ class DocumentStorage:
             content_type=content_type,
             file_size_bytes=len(content),
         )
+
+    def delete_document_object(self, *, storage_bucket: str, storage_key: str) -> None:
+        self.client.remove_object(bucket_name=storage_bucket, object_name=storage_key)

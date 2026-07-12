@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
+  CheckSquare,
   Bot,
   BrainCircuit,
   FileText,
@@ -13,21 +14,22 @@ import {
   Save,
   Search,
   ShieldCheck,
+  Square,
   Trash2,
   Waypoints,
 } from "lucide-react";
 
 import {
   ConsolePage,
+  ConsoleEmptyState,
   ConsoleOutlineBadge,
-  ConsoleSegmentedBar,
   ConsoleSurface,
   ConsoleSurfaceHeader,
-  ConsoleToolbar,
-  ConsoleToolbarGroup,
 } from "@/components/console/ConsolePrimitives";
 import { AgentExecutionFollowUpActions } from "@/components/agents/AgentExecutionFollowUpActions";
+import { McpToolMappingDialog } from "@/components/agents/McpToolMappingDialog";
 import { AgentRunButtonLink } from "@/components/agents/AgentRunButtonLink";
+import { PaginationControls } from "@/components/workspace/PaginationControls";
 import { ConsoleRuntimeTaskPacket } from "@/components/console/ConsoleRuntimeTaskPacket";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
@@ -56,8 +58,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   createAgentExecution,
+  cancelAgentExecution,
   EMPTY_AGENT_EXECUTION_METRICS,
   getAgentExecutionOutputKindLabelKey,
   getAgentExecutionStageLabelKey,
@@ -70,6 +74,7 @@ import {
   type AgentExecutionMetricsResponse,
   type AgentExecutionResponse,
   type AgentExecutionStatus,
+  retryAgentExecution,
 } from "@/lib/agent-executions";
 import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
 import { authenticatedApiRequest } from "@/lib/authenticated-api";
@@ -922,6 +927,7 @@ export default function AgentsConsolePage() {
   const [mcpConnectors, setMcpConnectors] = useState<PlatformMcpConnector[]>(
     [],
   );
+  const [isMcpMappingOpen, setIsMcpMappingOpen] = useState(false);
   const tenantWorkspacesCacheRef = useRef<Record<string, Workspace[]>>({});
   const workspaceKnowledgeBasesCacheRef = useRef<Record<string, KnowledgeBase[]>>(
     {},
@@ -938,6 +944,7 @@ export default function AgentsConsolePage() {
   const [issueFilter, setIssueFilter] =
     useState<AgentReadinessIssueFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [agentPage, setAgentPage] = useState(1);
   const [runTargetSurfaceFilter, setRunTargetSurfaceFilter] =
     useState<AgentRunSurfaceFilter>("all");
   const [runTriggerSourceFilter, setRunTriggerSourceFilter] =
@@ -969,9 +976,13 @@ export default function AgentsConsolePage() {
   const [isLoadingAgentExecutions, setIsLoadingAgentExecutions] =
     useState(false);
   const [isExecutingAgent, setIsExecutingAgent] = useState(false);
+  const [retryingExecutionId, setRetryingExecutionId] = useState<string | null>(null);
+  const [cancellingExecutionId, setCancellingExecutionId] = useState<string | null>(null);
   const [launchingSurface, setLaunchingSurface] =
     useState<AgentRunTargetSurface | null>(null);
   const [isDeleteAgentDialogOpen, setIsDeleteAgentDialogOpen] = useState(false);
+  const [isBulkDeleteAgentDialogOpen, setIsBulkDeleteAgentDialogOpen] = useState(false);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   useStatusNotifications(statusMessage, errorMessage, { statusTone: "info" });
 
   useEffect(() => {
@@ -1421,6 +1432,19 @@ export default function AgentsConsolePage() {
     retrievalProfileFilterId,
     toolRegistrationFilterId,
   ]);
+  const agentPageSize = 10;
+  const agentPageCount = Math.max(1, Math.ceil(scopedAgents.length / agentPageSize));
+  const paginatedAgents = useMemo(
+    () => scopedAgents.slice((agentPage - 1) * agentPageSize, agentPage * agentPageSize),
+    [agentPage, scopedAgents],
+  );
+  const allAgentsOnPageSelected = paginatedAgents.length > 0 && paginatedAgents.every((agent) => selectedAgentIds.includes(agent.id));
+  useEffect(() => {
+    setAgentPage((page) => Math.min(page, agentPageCount));
+  }, [agentPageCount]);
+  useEffect(() => {
+    setAgentPage(1);
+  }, [modeFilter, searchQuery, selectedTenantId, statusFilter]);
   const readinessIssueCounts = useMemo(() => {
     return agents.reduce<Record<AgentReadinessIssue, number>>(
       (accumulator, agent) => {
@@ -1452,9 +1476,10 @@ export default function AgentsConsolePage() {
     );
   }, [agents, readinessByAgentId]);
   useEffect(() => {
-    if (!scopedAgents.find((agent) => agent.id === selectedAgentId)) {
-      setSelectedAgentId(scopedAgents[0]?.id ?? "");
+    if (selectedAgentId && !scopedAgents.find((agent) => agent.id === selectedAgentId)) {
+      setSelectedAgentId("");
     }
+    setSelectedAgentIds((ids) => ids.filter((id) => scopedAgents.some((agent) => agent.id === id)));
   }, [scopedAgents, selectedAgentId]);
   const selectedAgent = useMemo(
     () => scopedAgents.find((agent) => agent.id === selectedAgentId) ?? null,
@@ -2065,6 +2090,20 @@ export default function AgentsConsolePage() {
     };
   }, [agentExecutionFilters, selectedAgentId, selectedTenantId, t]);
 
+  useEffect(() => {
+    const hasActiveExecution = agentExecutions.some(
+      (execution) => execution.execution_status === "queued" || execution.execution_status === "running",
+    );
+    if (!hasActiveExecution || !selectedTenantId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshAgentExecutionsForCurrentScope();
+    }, 4000);
+    return () => window.clearInterval(intervalId);
+  }, [agentExecutions, agentExecutionFilters, selectedAgentId, selectedTenantId]);
+
   async function handleCreateAgent() {
     if (!hasAgentWriteAccess) {
       return;
@@ -2184,6 +2223,31 @@ export default function AgentsConsolePage() {
           ? error.message
           : t("agents.status.deleteFailed"),
       );
+      setStatusMessage(t("agents.status.deleteFailed"));
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleBulkDeleteAgents() {
+    if (!hasAgentWriteAccess || selectedAgentIds.length === 0) {
+      return;
+    }
+
+    const agentsToDelete = scopedAgents.filter((agent) => selectedAgentIds.includes(agent.id));
+    setIsMutating(true);
+    setErrorMessage(null);
+    try {
+      await Promise.all(agentsToDelete.map((agent) => deleteAgentDefinition(agent.id, agent.tenantId)));
+      await refreshAgentDefinitionsForSelectedTenant();
+      setSelectedAgentIds([]);
+      if (selectedAgentId && selectedAgentIds.includes(selectedAgentId)) {
+        setSelectedAgentId("");
+        setAgentSection("directory");
+      }
+      setStatusMessage(t("agents.status.bulkDeleted", { count: String(agentsToDelete.length) }));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("agents.status.deleteFailed"));
       setStatusMessage(t("agents.status.deleteFailed"));
     } finally {
       setIsMutating(false);
@@ -2571,6 +2635,44 @@ export default function AgentsConsolePage() {
       setStatusMessage(t("agents.status.executionFailed"));
     } finally {
       setIsExecutingAgent(false);
+    }
+  }
+
+  async function handleRetryAgentExecution(execution: AgentExecutionResponse) {
+    if (!hasAgentExecutionAccess || execution.execution_status !== "failed") {
+      return;
+    }
+
+    setRetryingExecutionId(execution.id);
+    setErrorMessage(null);
+    try {
+      const retriedExecution = await retryAgentExecution(execution);
+      await refreshAgentExecutionsForCurrentScope();
+      setStatusMessage(
+        retriedExecution.execution_status === "completed"
+          ? t("agents.status.executionCompleted")
+          : retriedExecution.execution_status === "failed"
+            ? t("agents.status.executionFailed")
+            : t("agents.status.executionQueued"),
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("agents.status.executionFailed"));
+    } finally {
+      setRetryingExecutionId(null);
+    }
+  }
+
+  async function handleCancelAgentExecution(execution: AgentExecutionResponse) {
+    setCancellingExecutionId(execution.id);
+    setErrorMessage(null);
+    try {
+      await cancelAgentExecution(execution);
+      await refreshAgentExecutionsForCurrentScope();
+      setStatusMessage(t("agents.status.executionCancelled"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("agents.status.executionCancelFailed"));
+    } finally {
+      setCancellingExecutionId(null);
     }
   }
 
@@ -3272,363 +3374,130 @@ export default function AgentsConsolePage() {
   const [agentSection, setAgentSection] = useState<
     "directory" | "editor" | "delivery" | "executions" | "runs"
   >("directory");
-  const showAdvancedAgentSections = false;
   const canOperateSelectedAgentRuntime = Boolean(
     hasAgentExecutionAccess &&
     selectedAgent &&
     selectedAgent.status === "active" &&
     selectedAgentReadiness?.isReady,
   );
-  const agentSections = showAdvancedAgentSections
-    ? [
-        {
-          key: "directory" as const,
-          label: t("agents.directory.title"),
-        },
-        {
-          key: "editor" as const,
-          label: t("agents.editor.title"),
-        },
-        {
-          key: "delivery" as const,
-          label: t("agents.delivery.title"),
-        },
-        {
-          key: "executions" as const,
-          label: t("agents.executions.title"),
-        },
-        {
-          key: "runs" as const,
-          label: t("agents.runs.title"),
-        },
-      ]
-    : [
-        {
-          key: "directory" as const,
-          label: t("agents.directory.title"),
-        },
-        {
-          key: "editor" as const,
-          label: t("agents.editor.title"),
-        },
-      ];
-
   return (
     <ConsoleShell activeHref="/agents">
       <PageTitleSync title={t("agents.title")} />
       <ConsolePage className="gap-6">
-        <ConsoleToolbar>
-          <ConsoleToolbarGroup>
-            <Select
-              disabled={isLoading || tenants.length === 0 || isMutating}
-              onValueChange={setSelectedTenantId}
-              value={selectedTenantId}
-            >
-              <SelectTrigger className="min-w-[240px] rounded-xl border-slate-200 bg-white">
-                <SelectValue placeholder={t("agents.filters.tenantScope")} />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map((tenant) => (
-                  <SelectItem key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              className="rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              disabled={isLoading || !selectedTenantId || isMutating}
-              onClick={() => void refreshAgentDefinitionsForSelectedTenant()}
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", isLoading && "animate-spin")}
-              />
-              {isLoading
-                ? t("agents.actions.refreshing")
-                : t("agents.actions.refresh")}
-            </Button>
-            <Button
-              className="rounded-xl"
-              disabled={!hasAgentWriteAccess || !selectedTenantId || isMutating}
-              onClick={() => void handleCreateAgent()}
-              type="button"
-            >
-              <Plus className="h-4 w-4" />
-              {t("agents.actions.newDraft")}
-            </Button>
-            <Button
-              className="rounded-xl"
-              disabled={!hasAgentWriteAccess || !selectedAgent || isMutating}
-              onClick={() => void handleSaveAgent()}
-              type="button"
-              variant="outline"
-            >
-              <Save className="h-4 w-4" />
-              {t("agents.actions.saveDraft")}
-            </Button>
-            <Button
-              className="rounded-xl"
-              disabled={
-                !hasAgentWriteAccess ||
-                !selectedAgent ||
-                selectedAgent.status === "active" ||
-                isMutating
-              }
-              onClick={() => void handleTransitionAgentStatus("active")}
-              type="button"
-              variant="outline"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {t("agents.actions.activate")}
-            </Button>
-            <Button
-              className="rounded-xl"
-              disabled={
-                !hasAgentWriteAccess ||
-                !selectedAgent ||
-                selectedAgent.status !== "active" ||
-                isMutating
-              }
-              onClick={() => void handleTransitionAgentStatus("paused")}
-              type="button"
-              variant="outline"
-            >
-              <Waypoints className="h-4 w-4" />
-              {t("agents.actions.pause")}
-            </Button>
-            <Button
-              className="rounded-xl"
-              disabled={!canOperateSelectedAgentRuntime || isExecutingAgent}
-              onClick={() => void handleExecuteAgent()}
-              type="button"
-              variant="outline"
-            >
-              <BrainCircuit className="h-4 w-4" />
-              {isExecutingAgent
-                ? t("agents.actions.executing")
-                : t("agents.actions.execute")}
-            </Button>
-            <Badge
-              className={cn(
-                "border",
-                hasAgentWriteAccess
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700",
-              )}
-              variant="outline"
-            >
-              {hasAgentWriteAccess
-                ? t("agents.access.editable")
-                : t("agents.access.readOnly")}
-            </Badge>
-          </ConsoleToolbarGroup>
-        </ConsoleToolbar>
-
-        <div className="grid gap-6">
-          <ConsoleSegmentedBar>
-            {agentSections.map((section) => (
-              <Button
-                className={agentSection === section.key ? "" : "bg-white"}
-                key={section.key}
-                onClick={() => setAgentSection(section.key)}
-                type="button"
-                variant={agentSection === section.key ? "default" : "outline"}
-              >
-                {section.label}
-              </Button>
-            ))}
-          </ConsoleSegmentedBar>
-
-          {agentSection === "directory" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <ConsoleOutlineBadge>
-                    {t("agents.directory.count", {
-                      count: String(scopedAgents.length),
-                    })}
-                  </ConsoleOutlineBadge>
-                }
-                title={t("agents.directory.title")}
-              />
-              <div className="grid gap-3 border-b border-slate-100 px-4 py-4 lg:grid-cols-[minmax(0,1.8fr)_220px_220px]">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    className="pl-9"
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder={t("agents.filters.searchPlaceholder")}
-                    value={searchQuery}
-                  />
-                </div>
+        <div className="h-[calc(100dvh-128px)] min-h-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)]">
+            <ConsoleSurface className="grid h-full min-h-0 grid-cols-1 rounded-none border-0 shadow-none xl:grid-cols-[292px_minmax(0,1fr)]">
+              <div className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-950/70">
+              <div className="p-4">
+                <div className="mb-4 text-lg font-semibold text-slate-950 dark:text-slate-50">{t("shell.nav.agents")}</div>
+                <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("agents.filters.scopeTitle")}</div>
                 <Select
-                  onValueChange={(value) =>
-                    setStatusFilter(value as AgentStatusFilter)
-                  }
-                  value={statusFilter}
+                  disabled={isLoading || tenants.length === 0 || isMutating}
+                  onValueChange={setSelectedTenantId}
+                  value={selectedTenantId}
                 >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder={t("agents.filters.status")} />
+                  <SelectTrigger className="w-full bg-white dark:border-slate-800 dark:bg-slate-900">
+                    <SelectValue placeholder={t("agents.filters.tenantScope")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">
-                      {t("agents.filters.allStatuses")}
-                    </SelectItem>
-                    <SelectItem value="draft">
-                      {t("agents.statuses.draft")}
-                    </SelectItem>
-                    <SelectItem value="active">
-                      {t("agents.statuses.active")}
-                    </SelectItem>
-                    <SelectItem value="paused">
-                      {t("agents.statuses.paused")}
-                    </SelectItem>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                <Select
-                  onValueChange={(value) =>
-                    setModeFilter(value as AgentModeFilter)
-                  }
-                  value={modeFilter}
+                <Button
+                  className="mt-3 w-full justify-center"
+                  disabled={!hasAgentWriteAccess || !selectedTenantId || isMutating}
+                  onClick={() => void handleCreateAgent()}
+                  type="button"
                 >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder={t("agents.filters.mode")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      {t("agents.filters.allModes")}
-                    </SelectItem>
-                    <SelectItem value="grounded_chat">
-                      {t("agents.modes.grounded_chat")}
-                    </SelectItem>
-                    <SelectItem value="document_intake">
-                      {t("agents.modes.document_intake")}
-                    </SelectItem>
-                    <SelectItem value="workflow_recovery">
-                      {t("agents.modes.workflow_recovery")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                  <Plus className="h-4 w-4" />
+                  {t("agents.actions.newDraft")}
+                </Button>
               </div>
-              <div className="space-y-3 p-4">
-                {scopedAgents.length === 0 ? (
-                  <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                    {t("agents.directory.empty")}
+              <div className="min-h-0 flex-1 overflow-y-auto border-t border-slate-200 p-4">
+                <div className="mb-2 flex items-center justify-between gap-3 px-1"><div className="text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("agents.filters.filterTitle")}</div><span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] tabular-nums text-slate-600">{scopedAgents.length}</span></div>
+                <div className="grid gap-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input className="bg-white pl-9" onChange={(event) => setSearchQuery(event.target.value)} placeholder={t("agents.filters.searchPlaceholder")} value={searchQuery} />
                   </div>
+                  <Select onValueChange={(value) => setStatusFilter(value as AgentStatusFilter)} value={statusFilter}>
+                    <SelectTrigger className="bg-white"><SelectValue placeholder={t("agents.filters.status")} /></SelectTrigger>
+                    <SelectContent><SelectItem value="all">{t("agents.filters.allStatuses")}</SelectItem><SelectItem value="draft">{t("agents.statuses.draft")}</SelectItem><SelectItem value="active">{t("agents.statuses.active")}</SelectItem><SelectItem value="paused">{t("agents.statuses.paused")}</SelectItem></SelectContent>
+                  </Select>
+                  <Select onValueChange={(value) => setModeFilter(value as AgentModeFilter)} value={modeFilter}>
+                    <SelectTrigger className="bg-white"><SelectValue placeholder={t("agents.filters.mode")} /></SelectTrigger>
+                    <SelectContent><SelectItem value="all">{t("agents.filters.allModes")}</SelectItem><SelectItem value="grounded_chat">{t("agents.modes.grounded_chat")}</SelectItem><SelectItem value="document_intake">{t("agents.modes.document_intake")}</SelectItem><SelectItem value="workflow_recovery">{t("agents.modes.workflow_recovery")}</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto bg-white p-5 dark:bg-slate-950">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t("agents.directory.title")}</h2>
+                    <p className="mt-1 text-sm text-slate-500">{t("agents.directory.description")}</p>
+                  </div>
+                  {selectedAgentIds.length > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-blue-700">{t("agents.directory.selectedCount", { count: String(selectedAgentIds.length) })}</span>
+                      <Button onClick={() => setSelectedAgentIds([])} size="sm" type="button" variant="outline">{t("agents.directory.clearSelection")}</Button>
+                      <Button className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700" disabled={!hasAgentWriteAccess || isMutating} onClick={() => setIsBulkDeleteAgentDialogOpen(true)} size="sm" type="button" variant="outline"><Trash2 className="h-4 w-4" />{t("agents.directory.deleteSelected")}</Button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <Table className="border-separate border-spacing-0">
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="w-12 px-3"><button aria-label={t("agents.directory.selectPage")} className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition hover:bg-slate-100", allAgentsOnPageSelected ? "text-blue-600" : "text-slate-400 hover:text-slate-600")} onClick={() => setSelectedAgentIds((ids) => allAgentsOnPageSelected ? ids.filter((id) => !paginatedAgents.some((agent) => agent.id === id)) : Array.from(new Set([...ids, ...paginatedAgents.map((agent) => agent.id)])))} type="button">{allAgentsOnPageSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}</button></TableHead>
+                        <TableHead className="px-5">{t("agents.directory.agent")}</TableHead>
+                        <TableHead>{t("agents.directory.status")}</TableHead>
+                        <TableHead>{t("agents.directory.mode")}</TableHead>
+                        <TableHead>{t("agents.directory.scope")}</TableHead>
+                        <TableHead>{t("agents.directory.updated")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="bg-white text-sm text-slate-700">
+                {scopedAgents.length === 0 ? (
+                  <TableRow><TableCell className="px-5 py-10 text-center text-sm text-muted-foreground" colSpan={6}>{t("agents.directory.empty")}</TableCell></TableRow>
                 ) : (
-                  scopedAgents.map((agent) => {
+                  paginatedAgents.map((agent) => {
                     const readiness = readinessByAgentId.get(agent.id);
-                    const scopeSelection = resolveKnowledgeBaseScopeSelection(
-                      agent.knowledgeBaseScope,
-                      workspaces,
-                      knowledgeBases,
-                    );
-                    const scopedKnowledgeBase = scopeSelection.knowledgeBaseId
-                      ? (knowledgeBases.find(
-                          (knowledgeBase) =>
-                            knowledgeBase.id === scopeSelection.knowledgeBaseId,
-                        ) ?? null)
-                      : null;
-                    const scopedRetrievalProfile =
-                      scopedKnowledgeBase?.retrieval_profile_id
-                        ? (retrievalProfileById.get(
-                            scopedKnowledgeBase.retrieval_profile_id,
-                          ) ?? null)
-                        : defaultRetrievalProfile;
 
                     return (
-                      <button
+                      <TableRow
                         className={cn(
-                          "w-full rounded-[20px] border px-4 py-4 text-left transition",
+                          "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50",
                           selectedAgentId === agent.id
-                            ? "border-blue-200 bg-blue-50/70 shadow-sm"
-                            : "border-slate-100 bg-slate-50/70 hover:border-slate-200 hover:bg-white",
+                            ? "bg-blue-50/70"
+                            : "bg-white",
                         )}
                         key={agent.id}
-                        onClick={() => setSelectedAgentId(agent.id)}
-                        type="button"
+                        onClick={() => {
+                          setSelectedAgentId(agent.id);
+                          setAgentSection("editor");
+                        }}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-base font-semibold text-slate-950">
-                              {agent.name}
-                            </div>
-                            <div className="mt-1 truncate text-xs text-slate-400">
-                              {agent.slug}
-                            </div>
-                          </div>
-                          <Badge
-                            className={cn(
-                              "border",
-                              getAgentStatusClass(agent.status),
-                            )}
-                            variant="outline"
-                          >
-                            {t(`agents.statuses.${agent.status}`)}
-                          </Badge>
-                        </div>
-                        <div className="mt-3 text-sm leading-6 text-slate-500">
-                          {agent.objective || t("agents.directory.noObjective")}
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <ConsoleOutlineBadge>
-                            {t(`agents.modes.${agent.mode}`)}
-                          </ConsoleOutlineBadge>
-                          <ConsoleOutlineBadge>
-                            {t("agents.directory.toolCount", {
-                              count: String(countConnectedCapabilities(agent)),
-                            })}
-                          </ConsoleOutlineBadge>
-                          {agent.modelEndpointId ? (
-                            <ConsoleOutlineBadge>
-                              {t("agents.editor.runtimeModelBound")}
-                            </ConsoleOutlineBadge>
-                          ) : null}
-                          <ConsoleOutlineBadge>
-                            {agent.knowledgeBaseScope.trim().length > 0
-                              ? agent.knowledgeBaseScope
-                              : t("agents.metrics.noScope")}
-                          </ConsoleOutlineBadge>
-                          {scopedRetrievalProfile ? (
-                            <ConsoleOutlineBadge>
-                              {t("home.retrievalInspector.retrievalProfile", {
-                                value: scopedRetrievalProfile.name,
-                              })}
-                            </ConsoleOutlineBadge>
-                          ) : null}
-                          <Badge
-                            className={cn(
-                              "border",
-                              readiness?.isReady
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700",
-                            )}
-                            variant="outline"
-                          >
-                            {readiness?.isReady
-                              ? t("agents.readiness.ready")
-                              : t("agents.readiness.attention")}
-                          </Badge>
-                        </div>
-                        <div className="mt-4 text-xs text-slate-400">
-                          {t("agents.directory.lastUpdated", {
-                            value: formatUpdatedAt(agent.updatedAt, language),
-                          })}
-                        </div>
-                      </button>
+                        <TableCell className="px-3 align-middle"><button aria-label={t("agents.directory.selectAgent", { name: agent.name })} className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition hover:bg-slate-100", selectedAgentIds.includes(agent.id) ? "text-blue-600" : "text-slate-400 hover:text-slate-600")} onClick={(event) => { event.stopPropagation(); setSelectedAgentIds((ids) => ids.includes(agent.id) ? ids.filter((id) => id !== agent.id) : [...ids, agent.id]); }} type="button">{selectedAgentIds.includes(agent.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}</button></TableCell>
+                        <TableCell className="px-5 align-middle"><div className="font-medium text-slate-900">{agent.name}</div><div className="mt-1 truncate text-xs text-slate-400">{agent.slug}</div></TableCell>
+                        <TableCell className="align-middle"><div className="flex items-center gap-2"><Badge className={cn("border", getAgentStatusClass(agent.status))} variant="outline">{t(`agents.statuses.${agent.status}`)}</Badge>{!readiness?.isReady ? <Badge className="border-amber-200 bg-amber-50 text-amber-700" variant="outline">{t("agents.readiness.attention")}</Badge> : null}</div></TableCell>
+                        <TableCell className="align-middle text-sm text-slate-600">{t(`agents.modes.${agent.mode}`)}</TableCell>
+                        <TableCell className="max-w-64 align-middle"><div className="truncate text-sm text-slate-600">{agent.knowledgeBaseScope.trim() || t("agents.metrics.noScope")}</div></TableCell>
+                        <TableCell className="align-middle text-xs text-slate-500">{formatUpdatedAt(agent.updatedAt, language)}</TableCell>
+                      </TableRow>
                     );
                   })
                 )}
+                    </TableBody>
+                  </Table>
+                  <PaginationControls currentPage={agentPage} onPageChange={setAgentPage} pageCount={agentPageCount} pageSize={agentPageSize} totalItems={scopedAgents.length} />
+                </div>
               </div>
             </ConsoleSurface>
-          ) : null}
 
           <FormDialog
-            description={
-              selectedAgent ? selectedAgent.slug : t("agents.editor.empty")
-            }
+            eyebrow={t("agents.editor.detailTitle")}
             footer={
               <DialogFormActions className="items-center justify-between">
                 <Button
@@ -3644,6 +3513,48 @@ export default function AgentsConsolePage() {
                   {t("agents.actions.delete")}
                 </Button>
                 <div className="flex flex-wrap justify-end gap-3">
+                  <Button
+                    className="rounded-xl bg-white"
+                    disabled={
+                      !hasAgentWriteAccess ||
+                      !selectedAgent ||
+                      selectedAgent.status === "active" ||
+                      isMutating
+                    }
+                    onClick={() => void handleTransitionAgentStatus("active")}
+                    type="button"
+                    variant="outline"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {t("agents.actions.activate")}
+                  </Button>
+                  <Button
+                    className="rounded-xl bg-white"
+                    disabled={
+                      !hasAgentWriteAccess ||
+                      !selectedAgent ||
+                      selectedAgent.status !== "active" ||
+                      isMutating
+                    }
+                    onClick={() => void handleTransitionAgentStatus("paused")}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Waypoints className="h-4 w-4" />
+                    {t("agents.actions.pause")}
+                  </Button>
+                  <Button
+                    className="rounded-xl bg-white"
+                    disabled={!canOperateSelectedAgentRuntime || isExecutingAgent}
+                    onClick={() => void handleExecuteAgent()}
+                    type="button"
+                    variant="outline"
+                  >
+                    <BrainCircuit className="h-4 w-4" />
+                    {isExecutingAgent
+                      ? t("agents.actions.executing")
+                      : t("agents.actions.execute")}
+                  </Button>
                   <Button
                     className="rounded-xl bg-white"
                     disabled={isMutating}
@@ -3669,8 +3580,9 @@ export default function AgentsConsolePage() {
             }
             onClose={() => setAgentSection("directory")}
             open={agentSection === "editor"}
+            presentation="side"
             size="xl"
-            title={t("agents.editor.title")}
+            title={selectedAgent?.name ?? t("agents.editor.title")}
           >
             {selectedAgent ? (
               <DialogFormLayout>
@@ -4001,9 +3913,9 @@ export default function AgentsConsolePage() {
                     </div>
                   </div>
                   {availableToolRegistrations.length === 0 ? (
-                    <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-5 text-sm text-slate-500">
+                    <ConsoleEmptyState>
                       {t("agents.editor.noRegisteredTools")}
-                    </div>
+                    </ConsoleEmptyState>
                   ) : (
                     <div className="grid gap-3 md:grid-cols-2">
                       {availableToolRegistrations.map((toolRegistration) => {
@@ -4077,14 +3989,27 @@ export default function AgentsConsolePage() {
                       })}
                     </div>
                   )}
+                  {canManageRuntimeGovernance && availableToolRegistrations.some((tool) => tool.transport_type === "mcp_reserved") ? (
+                    <Button onClick={() => setIsMcpMappingOpen(true)} type="button" variant="outline">
+                      {t("agents.mcpMapping.open")}
+                    </Button>
+                  ) : null}
                 </div>
               </DialogFormLayout>
             ) : (
-              <div className="py-10 text-sm text-slate-500">
+              <ConsoleEmptyState>
                 {t("agents.editor.empty")}
-              </div>
+              </ConsoleEmptyState>
             )}
           </FormDialog>
+
+          <McpToolMappingDialog
+            connectors={mcpConnectors}
+            onClose={() => setIsMcpMappingOpen(false)}
+            onSaved={refreshRuntimeGovernanceCatalog}
+            open={isMcpMappingOpen}
+            tools={availableToolRegistrations}
+          />
 
           {agentSection === "delivery" ? (
             <ConsoleSurface>
@@ -4521,9 +4446,9 @@ export default function AgentsConsolePage() {
 
                   <div className="mt-5 space-y-3">
                     {agentExecutions.length === 0 ? (
-                      <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
+                      <ConsoleEmptyState>
                         {t("agents.executions.empty")}
-                      </div>
+                      </ConsoleEmptyState>
                     ) : (
                       agentExecutions.map((agentExecution) => {
                         const linkedAgent =
@@ -4600,6 +4525,25 @@ export default function AgentsConsolePage() {
                                   `agents.executions.statuses.${agentExecution.execution_status}`,
                                 )}
                               </Badge>
+                              {agentExecution.execution_status === "failed" && hasAgentExecutionAccess ? (
+                                <Button
+                                  disabled={retryingExecutionId !== null}
+                                  onClick={() => void handleRetryAgentExecution(agentExecution)}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <RefreshCw className={cn("h-4 w-4", retryingExecutionId === agentExecution.id && "animate-spin")} />
+                                  {retryingExecutionId === agentExecution.id
+                                    ? t("agents.executions.retrying")
+                                    : t("agents.executions.retry")}
+                                </Button>
+                              ) : null}
+                              {(agentExecution.execution_status === "queued" || agentExecution.execution_status === "running") && hasAgentExecutionAccess ? (
+                                <Button disabled={cancellingExecutionId !== null} onClick={() => void handleCancelAgentExecution(agentExecution)} size="sm" type="button" variant="outline">
+                                  {cancellingExecutionId === agentExecution.id ? t("agents.executions.cancelling") : t("agents.executions.cancel")}
+                                </Button>
+                              ) : null}
                             </div>
                             <div className="mt-4 flex flex-wrap gap-2">
                               <ConsoleOutlineBadge>
@@ -5198,9 +5142,9 @@ export default function AgentsConsolePage() {
 
                   <div className="mt-5 space-y-3">
                     {agentRuns.length === 0 ? (
-                      <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
+                      <ConsoleEmptyState>
                         {t("agents.runs.empty")}
-                      </div>
+                      </ConsoleEmptyState>
                     ) : (
                       agentRuns.map((agentRun) => {
                         const linkedAgent =
@@ -5309,6 +5253,19 @@ export default function AgentsConsolePage() {
         }}
         open={isDeleteAgentDialogOpen && Boolean(selectedAgent)}
         title={t("agents.actions.delete")}
+      />
+      <ConfirmDialog
+        cancelLabel={t("workspace.headerBar.cancel")}
+        confirmLabel={t("agents.directory.deleteSelected")}
+        description={t("agents.confirm.bulkDelete", { count: String(selectedAgentIds.length) })}
+        isLoading={isMutating}
+        onCancel={() => setIsBulkDeleteAgentDialogOpen(false)}
+        onConfirm={async () => {
+          await handleBulkDeleteAgents();
+          setIsBulkDeleteAgentDialogOpen(false);
+        }}
+        open={isBulkDeleteAgentDialogOpen && selectedAgentIds.length > 0}
+        title={t("agents.directory.deleteSelected")}
       />
     </ConsoleShell>
   );

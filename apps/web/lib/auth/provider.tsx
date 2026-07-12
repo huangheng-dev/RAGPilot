@@ -60,9 +60,8 @@ export function AuthProvider({
     try {
       const parsedSession = JSON.parse(storedSession) as AuthSession;
       if (isStoredAuthSessionExpired(parsedSession)) {
-        clearStoredAuthSessionWithReason("session_revoked");
-        setSession(null);
-        return null;
+        setSession(parsedSession);
+        return parsedSession;
       }
 
       if (!parsedSession.sessionToken || !parsedSession.sessionExpiresAt) {

@@ -59,6 +59,7 @@ from ragpilot_api.presentation.http.request_actor import (
     require_actor_workspace_access,
 )
 from ragpilot_api.shared.settings import get_settings
+from ragpilot_api.infrastructure.workflows.temporal_client import TemporalWorkflowClient
 
 
 router = APIRouter()
@@ -106,16 +107,15 @@ def build_agent_run_service(session: AsyncSession) -> AgentRunService:
 
 def build_agent_runtime_governance_service(session: AsyncSession) -> AgentRuntimeGovernanceService:
     return AgentRuntimeGovernanceService(
-        AgentRepository(session),
-        ModelEndpointRepository(session),
-        ToolRegistrationRepository(session),
-        McpConnectorRepository(session),
-        RetrievalProfileRepository(session),
-        WorkspaceRepository(session),
-        KnowledgeBaseRepository(session),
-        RuntimeGovernanceEventRepository(session),
-        get_settings(),
-        McpConnectorRepository(session),
+        agent_repository=AgentRepository(session),
+        model_endpoint_repository=ModelEndpointRepository(session),
+        tool_registration_repository=ToolRegistrationRepository(session),
+        retrieval_profile_repository=RetrievalProfileRepository(session),
+        workspace_repository=WorkspaceRepository(session),
+        knowledge_base_repository=KnowledgeBaseRepository(session),
+        runtime_governance_event_repository=RuntimeGovernanceEventRepository(session),
+        settings=get_settings(),
+        mcp_connector_repository=McpConnectorRepository(session),
     )
 
 
@@ -138,7 +138,9 @@ def build_agent_execution_service(session: AsyncSession) -> AgentExecutionServic
             DocumentRepository(session),
             WorkflowRepository(session),
             get_settings(),
+            mcp_connector_repository=McpConnectorRepository(session),
         ),
+        temporal_workflow_client=TemporalWorkflowClient(get_settings()),
     )
 
 
@@ -388,7 +390,7 @@ async def create_agent_execution(
     )
     require_actor_tenant_access(actor, request.tenant_id)
     try:
-        return await build_agent_execution_service(session).create_agent_execution(request, actor=actor)
+        return await build_agent_execution_service(session).queue_agent_execution(request, actor=actor)
     except ResourceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ResourceNotFoundError as error:
@@ -419,6 +421,35 @@ async def list_agent_executions(
         execution_status=execution_status,
         limit=limit,
     )
+
+
+@router.post("/executions/actions/{execution_id}/cancel", response_model=AgentExecutionResponse)
+async def cancel_agent_execution(
+    execution_id: UUID, tenant_id: UUID = Query(...), actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> AgentExecutionResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "execute_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    return await build_agent_execution_service(session).cancel_agent_execution(
+        execution_id=execution_id, tenant_id=tenant_id,
+    )
+
+
+@router.post("/executions/actions/{execution_id}/retry", response_model=AgentExecutionResponse, status_code=status.HTTP_201_CREATED)
+async def retry_agent_execution(
+    execution_id: UUID, tenant_id: UUID = Query(...), actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> AgentExecutionResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "execute_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    try:
+        return await build_agent_execution_service(session).retry_agent_execution(
+            execution_id=execution_id, tenant_id=tenant_id, actor=actor,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
 @router.get("/executions/metrics", response_model=AgentExecutionMetricsResponse)

@@ -403,7 +403,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                   className="h-11 rounded-full border-slate-200/90 bg-white px-4 text-sm font-semibold text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.08)]"
                   variant="outline"
                 >
-                  <Sparkles className="mr-2 h-4 w-4 text-violet-500" />
+                  <Sparkles className="h-4 w-4 text-violet-500" />
                   {t("auth.eyebrow")}
                 </Badge>
                 <Badge className="h-9 rounded-full border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700" variant="outline">

@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LockKeyhole, RefreshCw, UserCircle2 } from "lucide-react";
+import { KeyRound, LockKeyhole, MonitorSmartphone, RefreshCw, ShieldCheck, UserCircle2 } from "lucide-react";
 
 import {
-  ConsoleMetricCard,
-  ConsoleMetricGrid,
+  ConsoleEmptyState,
   ConsoleOutlineBadge,
   ConsolePage,
   ConsoleSurface,
@@ -69,13 +68,13 @@ export default function SettingsConsolePage() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [activeSessionsErrorMessage, setActiveSessionsErrorMessage] = useState<string | null>(null);
   const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
-  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [supportsPasswordInput, setSupportsPasswordInput] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"profile" | "sessions" | "security">("profile");
 
   useEffect(() => {
     setDisplayName(session?.displayName ?? "");
@@ -241,20 +240,6 @@ export default function SettingsConsolePage() {
     }
   }
 
-  async function handleRefreshSession() {
-    try {
-      setIsRefreshingSession(true);
-      setSaveErrorMessage(null);
-      await refreshSession();
-      await loadCurrentUserAccessSummary();
-      await loadCurrentUserSessions();
-    } catch (error) {
-      setSaveErrorMessage(error instanceof Error ? error.message : t("settings.status.sessionRefreshFailed"));
-    } finally {
-      setIsRefreshingSession(false);
-    }
-  }
-
   async function handleChangePassword() {
     if (!session?.userId) {
       notifyError(t("settings.status.passwordChangeUnavailable"));
@@ -310,25 +295,19 @@ export default function SettingsConsolePage() {
     <ConsoleShell activeHref="/settings">
       <PageTitleSync title={t("settings.title")} />
       <ConsolePage className="gap-5">
-        <ConsoleMetricGrid>
-          <ConsoleMetricCard
-            detail={session?.email ?? t("settings.activity.notAvailable")}
-            label={t("settings.fields.role")}
-            value={roleLabel}
-          />
-          <ConsoleMetricCard
-            detail={t("settings.sessions.title")}
-            label={t("settings.sessions.summary.total")}
-            value={sessionSummary.activeSessions}
-          />
-          <ConsoleMetricCard
-            detail={hasAdminAccess ? t("settings.fields.adminAllowed") : t("settings.fields.adminDenied")}
-            label={t("settings.fields.memberships")}
-            value={sessionSummary.activeMemberships}
-          />
-        </ConsoleMetricGrid>
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+        <div className="grid h-[calc(100dvh-128px)] min-h-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] xl:grid-cols-[292px_minmax(0,1fr)]">
+          <aside className="min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/70 xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-950/70">
+            <div className="p-4 text-lg font-semibold text-slate-950 dark:text-slate-50">{t("settings.title")}</div>
+            <div className="space-y-1 border-t border-slate-200 p-4">
+              {(["profile", "sessions", "security"] as const).map((section) => (
+                <button className={`w-full rounded-xl px-3 py-2.5 text-left text-sm ${settingsSection === section ? "bg-blue-50 font-medium text-blue-700" : "text-slate-600 hover:bg-white"}`} key={section} onClick={() => setSettingsSection(section)} type="button">
+                  {t(`settings.navigation.${section}`)}
+                </button>
+              ))}
+            </div>
+          </aside>
+          <div className="min-h-0 overflow-y-auto p-5">
+          {settingsSection === "profile" ? (
           <ConsoleSurface>
             <ConsoleSurfaceHeader title={t("settings.sections.sessionTitle")} />
             <div className="space-y-5 p-6">
@@ -347,7 +326,7 @@ export default function SettingsConsolePage() {
                 <ConsoleOutlineBadge
                   className={hasAdminAccess ? "border-emerald-200 bg-emerald-50 text-emerald-700" : undefined}
                 >
-                  {hasAdminAccess ? t("settings.fields.adminAllowed") : t("settings.fields.adminDenied")}
+                  {roleLabel}
                 </ConsoleOutlineBadge>
               </div>
 
@@ -432,34 +411,15 @@ export default function SettingsConsolePage() {
                 <Button disabled={!canSaveProfile || isSavingProfile} onClick={() => void handleSaveProfile()} type="button">
                   {isSavingProfile ? t("settings.actions.savingProfile") : t("settings.actions.saveProfile")}
                 </Button>
-                <Button
-                  className="bg-white"
-                  disabled={!session?.userId || isRefreshingSession}
-                  onClick={() => void handleRefreshSession()}
-                  type="button"
-                  variant="outline"
-                >
-                  <RefreshCw className={isRefreshingSession ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-                  {isRefreshingSession ? t("settings.actions.refreshingSession") : t("settings.actions.refreshSession")}
-                </Button>
-                {supportsPasswordInput ? (
-                  <Button
-                    className="bg-white"
-                    onClick={() => setIsPasswordDialogOpen(true)}
-                    type="button"
-                    variant="outline"
-                  >
-                    <LockKeyhole className="h-4 w-4" />
-                    {t("settings.actions.changePassword")}
-                  </Button>
-                ) : null}
               </div>
 
               {saveState === "saved" ? <div className="text-sm text-emerald-600">{t("settings.status.profileSaved")}</div> : null}
               {saveErrorMessage ? <div className="text-sm text-rose-600">{saveErrorMessage}</div> : null}
             </div>
           </ConsoleSurface>
+          ) : null}
 
+          {settingsSection === "sessions" ? (
           <ConsoleSurface>
             <ConsoleSurfaceHeader
               action={
@@ -484,9 +444,9 @@ export default function SettingsConsolePage() {
               ) : null}
 
               {activeSessions.length === 0 && !isLoadingSessions ? (
-                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm text-slate-500">
+                <ConsoleEmptyState>
                   {t("settings.sessions.empty")}
-                </div>
+                </ConsoleEmptyState>
               ) : (
                 activeSessions.map((trackedSession) => (
                   <div className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-4" key={trackedSession.id}>
@@ -531,6 +491,73 @@ export default function SettingsConsolePage() {
               )}
             </div>
           </ConsoleSurface>
+          ) : null}
+          {settingsSection === "security" ? (
+            <ConsoleSurface>
+              <ConsoleSurfaceHeader
+                description={t("settings.security.description")}
+                title={t("settings.security.title")}
+              />
+              <div className="space-y-5 p-6 text-sm text-slate-600">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="rounded-[18px] border border-emerald-100 bg-emerald-50/70 p-4">
+                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    <div className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-emerald-700">
+                      {t("settings.security.accountStatus")}
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-slate-950">
+                      {session ? t("settings.security.verified") : t("settings.security.signedOut")}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
+                    <MonitorSmartphone className="h-5 w-5 text-blue-600" />
+                    <div className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                      {t("settings.security.activeSessions")}
+                    </div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-950">{sessionSummary.activeSessions}</div>
+                  </div>
+                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-4">
+                    <LockKeyhole className="h-5 w-5 text-amber-600" />
+                    <div className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                      {t("settings.security.recentFailedSignIns")}
+                    </div>
+                    <div className="mt-1 text-2xl font-semibold text-slate-950">{sessionSummary.recentFailedSignIns}</div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-[18px] border border-slate-200 p-5">
+                    <div className="flex items-center gap-3">
+                      <KeyRound className="h-5 w-5 text-slate-700" />
+                      <div className="font-semibold text-slate-950">{t("settings.security.credentials")}</div>
+                    </div>
+                    <div className="mt-3 leading-6 text-slate-500">
+                      {supportsPasswordInput
+                        ? t("settings.security.passwordManaged")
+                        : t("settings.security.externallyManaged")}
+                    </div>
+                    {supportsPasswordInput ? (
+                      <Button className="mt-4" onClick={() => setIsPasswordDialogOpen(true)} type="button">
+                        {t("settings.actions.changePassword")}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="rounded-[18px] border border-slate-200 p-5">
+                    <div className="font-semibold text-slate-950">{t("settings.security.currentSignIn")}</div>
+                    <div className="mt-4 grid gap-3">
+                      <div className="flex items-center justify-between gap-4"><span>{t("settings.security.role")}</span><Badge variant="outline">{roleLabel}</Badge></div>
+                      <div className="flex items-center justify-between gap-4"><span>{t("settings.security.lastSignedIn")}</span><span className="text-right font-medium text-slate-800">{formatTimestamp(session?.lastSignedInAt ?? null)}</span></div>
+                      <div className="flex items-center justify-between gap-4"><span>{t("settings.security.sessionExpires")}</span><span className="text-right font-medium text-slate-800">{formatTimestamp(session?.sessionExpiresAt ?? null)}</span></div>
+                    </div>
+                    <Button className="mt-4 bg-white" onClick={() => setSettingsSection("sessions")} type="button" variant="outline">
+                      {t("settings.security.manageSessions")}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </ConsoleSurface>
+          ) : null}
+          </div>
         </div>
       </ConsolePage>
 

@@ -246,11 +246,3 @@ Useful release helpers:
 ## License
 
 RAGPilot is licensed under [Apache-2.0](./LICENSE).
-
-## Product Principles
-
-- build complete product loops, not disconnected demos
-- keep knowledge, retrieval, workflow, and governance connected
-- preserve core architecture while simplifying visible user surfaces
-- remove dead UI and unused code when they do not strengthen the main flow
-- keep the product usable from the operator point of view, not just from an engineering point of view

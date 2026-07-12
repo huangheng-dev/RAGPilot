@@ -123,7 +123,7 @@ export function WorkspaceWorkflowsView({
   const { t } = useI18n();
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_396px]">
-      <div className="min-h-0 overflow-y-auto px-6 py-6">
+      <div className="min-h-0 overflow-y-auto p-5">
         <div className="mx-auto flex max-w-6xl flex-col gap-6">
           <div className="flex flex-wrap gap-2">
             <Button className="bg-white" onClick={onFocusFailedWorkflowRuns} type="button" variant="outline">

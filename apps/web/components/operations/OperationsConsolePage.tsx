@@ -20,8 +20,6 @@ import {
   ConsolePage,
   ConsoleSurface,
   ConsoleSurfaceHeader,
-  ConsoleToolbar,
-  ConsoleToolbarGroup,
 } from "@/components/console/ConsolePrimitives";
 import { ConsoleRuntimeTaskPacket } from "@/components/console/ConsoleRuntimeTaskPacket";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
@@ -2280,85 +2278,37 @@ export default function OperationsConsolePage() {
     <ConsoleShell activeHref="/operations">
       <PageTitleSync title={t("operations.title")} />
       <ConsolePage className="gap-6">
-        <ConsoleToolbar>
-          <ConsoleToolbarGroup>
-            <Select
-              disabled={isLoading || tenants.length === 0}
-              onValueChange={setSelectedTenantId}
-              value={selectedTenantId}
-            >
-              <SelectTrigger className="min-w-[240px] rounded-xl border-slate-200 bg-white">
-                <SelectValue placeholder={t("operations.filters.tenant")} />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map((tenant) => (
-                  <SelectItem key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+        <div className="grid h-[calc(100dvh-128px)] min-h-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] xl:grid-cols-[292px_minmax(0,1fr)]">
+          <aside className="min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/70 xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-950/70">
+            <div className="grid gap-3 p-4"><div className="mb-1 text-lg font-semibold text-slate-950 dark:text-slate-50">{t("operations.title")}</div>
+            <Select disabled={isLoading || tenants.length === 0} onValueChange={setSelectedTenantId} value={selectedTenantId}>
+              <SelectTrigger className="w-full bg-white"><SelectValue placeholder={t("operations.filters.tenant")} /></SelectTrigger>
+              <SelectContent>{tenants.map((tenant) => <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>)}</SelectContent>
             </Select>
-            <Button
-              className="rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              disabled={isLoading}
-              onClick={() => window.location.reload()}
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", isLoading && "animate-spin")}
-              />
-              {t("operations.actions.refresh")}
+            <Button className="w-full bg-white" disabled={isLoading} onClick={() => window.location.reload()} type="button" variant="outline">
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />{t("operations.actions.refresh")}
             </Button>
-            <Badge
-              className={cn(
-                "border",
-                hasRetryAccess
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700",
-              )}
-              variant="outline"
-            >
-              {hasRetryAccess
-                ? t("operations.access.retryEnabled")
-                : t("operations.access.readOnly")}
-            </Badge>
-          </ConsoleToolbarGroup>
-        </ConsoleToolbar>
-        <ConsoleToolbar className="px-4 py-3">
-          <ConsoleToolbarGroup>
-            {operationsSections.map((section) => (
-              <Button
-                className={operationsSection === section.key ? "" : "bg-white"}
-                key={section.key}
-                onClick={() => setOperationsSection(section.key)}
-                type="button"
-                variant={
-                  operationsSection === section.key ? "default" : "outline"
-                }
-              >
-                {section.label}
-              </Button>
-            ))}
-          </ConsoleToolbarGroup>
-          {lastRefreshedAt ? (
-            <div className="text-sm text-slate-400">
-              {t("operations.status.lastRefreshed", {
-                value: formatTimestamp(lastRefreshedAt),
-              })}
+            </div><div className="space-y-3 border-t border-slate-200 p-4"><div className="space-y-1">
+              {operationsSections.map((section) => (
+                <button className={`w-full rounded-xl px-3 py-2.5 text-left text-sm ${operationsSection === section.key ? "bg-blue-50 font-medium text-blue-700" : "text-slate-600 hover:bg-white"}`} key={section.key} onClick={() => setOperationsSection(section.key)} type="button">{section.label}</button>
+              ))}
             </div>
-          ) : null}
-        </ConsoleToolbar>
+            <Badge className={hasRetryAccess ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"} variant="outline">
+              {hasRetryAccess ? t("operations.access.retryEnabled") : t("operations.access.readOnly")}
+            </Badge>
+            {lastRefreshedAt ? <div className="text-xs leading-5 text-slate-400">{t("operations.status.lastRefreshed", {value: formatTimestamp(lastRefreshedAt)})}</div> : null}</div>
+          </aside>
+          <main className="min-h-0 overflow-y-auto p-5">
 
         <div className="grid gap-6">
           {operationsSection === "overview" ? (
             <>
-              <ConsoleSurface className="p-3">
-                <div className="grid gap-3 p-3 lg:grid-cols-4">
+              <ConsoleSurface className="p-5">
+                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
                   {laneItems.map((item) => (
                     <button
                       className={cn(
-                        "rounded-[20px] border px-5 py-5 text-left transition",
+                        "rounded-xl border px-4 py-4 text-left transition",
                         operationsLane === item.key
                           ? "border-blue-200 bg-blue-50/70 shadow-sm"
                           : "border-slate-100 bg-slate-50/70 hover:border-slate-200 hover:bg-white",
@@ -2381,65 +2331,6 @@ export default function OperationsConsolePage() {
                 </div>
               </ConsoleSurface>
 
-              <div className="grid gap-4 xl:grid-cols-4">
-                <OperationsMetricCard
-                  hint={t("operations.metrics.totalHint")}
-                  label={t("operations.metrics.total")}
-                  value={workflowMetrics.total_runs}
-                />
-                <OperationsMetricCard
-                  hint={t("operations.metrics.activeHint")}
-                  label={t("operations.metrics.active")}
-                  value={workflowMetrics.active_runs}
-                  accentClassName="border-amber-200"
-                />
-                <OperationsMetricCard
-                  hint={t("operations.metrics.failedHint")}
-                  label={t("operations.metrics.failed")}
-                  value={workflowMetrics.failed_runs}
-                  accentClassName="border-rose-200"
-                />
-                <OperationsMetricCard
-                  hint={t("operations.metrics.agentsHint")}
-                  label={t("operations.metrics.activeAgents")}
-                  value={agentMetrics.active_agents}
-                />
-              </div>
-
-              <ConsoleSurface>
-                <ConsoleSurfaceHeader
-                  title={t("operations.runtimeTaskPacket.title")}
-                />
-                <div className="p-6">
-                  <ConsoleRuntimeTaskPacket
-                    detail={operationsRuntimeTaskPacket.detail}
-                    objective={operationsRuntimeTaskPacket.objective}
-                    objectiveLabel={t(
-                      "operations.runtimeTaskPacket.fields.objective",
-                    )}
-                    primaryActionHref={
-                      operationsRuntimeTaskPacket.primaryActionHref
-                    }
-                    primaryActionLabel={t(
-                      "operations.runtimeTaskPacket.primaryAction",
-                    )}
-                    primaryActionRunRecord={
-                      operationsRuntimeTaskPacket.primaryActionRunRecord
-                    }
-                    prompt={operationsRuntimeTaskPacket.prompt}
-                    promptLabel={t(
-                      "operations.runtimeTaskPacket.fields.prompt",
-                    )}
-                    secondaryActions={
-                      operationsRuntimeTaskPacket.secondaryActions
-                    }
-                    statusLabel={operationsRuntimeTaskPacket.statusLabel}
-                    statusTone={operationsRuntimeTaskPacket.statusTone}
-                    summaryItems={operationsRuntimeTaskPacket.summaryItems}
-                    title={operationsRuntimeTaskPacket.title}
-                  />
-                </div>
-              </ConsoleSurface>
             </>
           ) : null}
 
@@ -3359,74 +3250,76 @@ export default function OperationsConsolePage() {
 
               <ConsoleSurface>
                 <ConsoleSurfaceHeader title={t("operations.directory.title")} />
-                <div className="grid gap-3 border-b border-slate-100 px-6 py-4 md:grid-cols-[minmax(0,1fr)_220px_220px]">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      className="pl-9"
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder={t("operations.filters.searchPlaceholder")}
-                      value={query}
-                    />
+                <div className="px-6 pb-4 pt-2">
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-[minmax(0,1fr)_220px_220px]">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        className="bg-white pl-9"
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder={t("operations.filters.searchPlaceholder")}
+                        value={query}
+                      />
+                    </div>
+                    <Select
+                      onValueChange={(value) =>
+                        setStatusFilter(value as StatusFilter)
+                      }
+                      value={statusFilter}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue
+                          placeholder={t("operations.filters.status")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("operations.filters.allStatuses")}
+                        </SelectItem>
+                        <SelectItem value="queued">
+                          {t("operations.queues.queued")}
+                        </SelectItem>
+                        <SelectItem value="running">
+                          {t("operations.queues.running")}
+                        </SelectItem>
+                        <SelectItem value="failed">
+                          {t("operations.queues.failed")}
+                        </SelectItem>
+                        <SelectItem value="cancelled">
+                          {formatStatusLabel("cancelled")}
+                        </SelectItem>
+                        <SelectItem value="completed">
+                          {t("operations.queues.completed")}
+                        </SelectItem>
+                        <SelectItem value="pending">
+                          {t("operations.queues.pending")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      onValueChange={(value) =>
+                        setRetryMode(value as WorkflowRetryMode)
+                      }
+                      value={retryMode}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue
+                          placeholder={t("operations.filters.retryMode")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("operations.filters.allRetries")}
+                        </SelectItem>
+                        <SelectItem value="originals">
+                          {t("operations.filters.originals")}
+                        </SelectItem>
+                        <SelectItem value="retries">
+                          {t("operations.filters.retries")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Select
-                    onValueChange={(value) =>
-                      setStatusFilter(value as StatusFilter)
-                    }
-                    value={statusFilter}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue
-                        placeholder={t("operations.filters.status")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {t("operations.filters.allStatuses")}
-                      </SelectItem>
-                      <SelectItem value="queued">
-                        {t("operations.queues.queued")}
-                      </SelectItem>
-                      <SelectItem value="running">
-                        {t("operations.queues.running")}
-                      </SelectItem>
-                      <SelectItem value="failed">
-                        {t("operations.queues.failed")}
-                      </SelectItem>
-                      <SelectItem value="cancelled">
-                        {formatStatusLabel("cancelled")}
-                      </SelectItem>
-                      <SelectItem value="completed">
-                        {t("operations.queues.completed")}
-                      </SelectItem>
-                      <SelectItem value="pending">
-                        {t("operations.queues.pending")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    onValueChange={(value) =>
-                      setRetryMode(value as WorkflowRetryMode)
-                    }
-                    value={retryMode}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue
-                        placeholder={t("operations.filters.retryMode")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {t("operations.filters.allRetries")}
-                      </SelectItem>
-                      <SelectItem value="originals">
-                        {t("operations.filters.originals")}
-                      </SelectItem>
-                      <SelectItem value="retries">
-                        {t("operations.filters.retries")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
                 <div className="space-y-3 p-4">
                   {workflowRuns.length === 0 ? (
@@ -4587,6 +4480,8 @@ export default function OperationsConsolePage() {
               </ConsoleSurface>
             </div>
           ) : null}
+        </div>
+          </main>
         </div>
       </ConsolePage>
     </ConsoleShell>

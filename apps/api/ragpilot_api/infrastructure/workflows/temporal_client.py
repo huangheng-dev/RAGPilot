@@ -48,3 +48,29 @@ class TemporalWorkflowClient:
             reason=reason,
             rpc_timeout=timedelta(seconds=10),
         )
+
+    async def start_agent_execution_workflow(
+        self,
+        *,
+        agent_execution_id: str,
+        tenant_id: str,
+        actor_user_id: str | None,
+        actor_role: str,
+    ) -> str:
+        client = await Client.connect(
+            self.settings.temporal_address,
+            namespace=self.settings.temporal_namespace,
+        )
+        temporal_workflow_id = f"agent-execution-{agent_execution_id}"
+        await client.start_workflow(
+            "AgentExecutionWorkflow",
+            {
+                "agent_execution_id": agent_execution_id,
+                "tenant_id": tenant_id,
+                "actor_user_id": actor_user_id,
+                "actor_role": actor_role,
+            },
+            id=temporal_workflow_id,
+            task_queue=self.settings.agent_temporal_task_queue,
+        )
+        return temporal_workflow_id

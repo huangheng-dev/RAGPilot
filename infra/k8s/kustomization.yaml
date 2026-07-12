@@ -6,6 +6,7 @@ resources:
   - configmap.yaml
   - api-deployment.yaml
   - worker-deployment.yaml
+  - agent-worker-deployment.yaml
   - web-deployment.yaml
   - api-service.yaml
   - web-service.yaml

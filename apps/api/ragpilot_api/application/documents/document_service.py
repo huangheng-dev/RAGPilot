@@ -1,6 +1,7 @@
 import hashlib
 import re
 import uuid
+from datetime import datetime, timezone
 from html import unescape
 from urllib.parse import urlparse
 from uuid import UUID
@@ -16,6 +17,7 @@ from ragpilot_api.contracts.http.document_contracts import (
     DocumentDeleteResponse,
     DocumentDetailResponse,
     DocumentMetricsResponse,
+    DocumentPermanentDeleteResponse,
     DocumentResponse,
     DocumentRestoreResponse,
     DocumentUploadResponse,
@@ -23,7 +25,7 @@ from ragpilot_api.contracts.http.document_contracts import (
     DocumentWorkflowActionResponse,
     WebPageImportRequest,
 )
-from ragpilot_api.application.errors import ResourceNotFoundError
+from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.infrastructure.database.models import Document, DocumentChunk
 from ragpilot_api.infrastructure.database.repositories.document_repository import DocumentRepository
 from ragpilot_api.infrastructure.database.repositories.workflow_repository import WorkflowRepository
@@ -416,6 +418,33 @@ class DocumentService:
         return DocumentRestoreResponse(
             document=build_document_response(restored_document),
             restored_at=restored_document.updated_at,
+        )
+
+    async def permanently_delete_document(
+        self,
+        *,
+        document_id: UUID,
+        knowledge_base_id: UUID,
+        confirmation_title: str,
+    ) -> DocumentPermanentDeleteResponse:
+        candidate = await self.document_repository.get_permanent_delete_candidate(
+            document_id=document_id,
+            knowledge_base_id=knowledge_base_id,
+        )
+        if candidate is None:
+            raise ResourceNotFoundError("Deleted document not found.")
+        document = candidate["document"]
+        if confirmation_title.strip() != document.title:
+            raise ResourceConflictError("Document title confirmation does not match.")
+        if candidate["citation_count"] > 0:
+            raise ResourceConflictError("Document cannot be permanently deleted while answer citations still reference it.")
+        storage = self.document_storage or DocumentStorage()
+        for storage_bucket, storage_key in candidate["assets"]:
+            storage.delete_document_object(storage_bucket=storage_bucket, storage_key=storage_key)
+        await self.document_repository.permanently_delete_document(document_id=document.id)
+        return DocumentPermanentDeleteResponse(
+            document_id=document.id,
+            permanently_deleted_at=datetime.now(timezone.utc),
         )
 
 

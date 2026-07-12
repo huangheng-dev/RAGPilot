@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import String, and_, case, func, or_, select
+from sqlalchemy import String, and_, case, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ragpilot_api.application.errors import ResourceConflictError
-from ragpilot_api.infrastructure.database.models import Document, DocumentAsset, DocumentChunk, DocumentVersion, WorkflowRun
+from ragpilot_api.infrastructure.database.models import Document, DocumentAsset, DocumentChunk, DocumentChunkEmbedding, DocumentVersion, MessageCitation, WorkflowRun
 
 
 class DocumentRepository:
@@ -819,6 +819,26 @@ class DocumentRepository:
         await self.session.commit()
         await self.session.refresh(document)
         return document
+
+    async def get_permanent_delete_candidate(self, *, document_id: UUID, knowledge_base_id: UUID) -> dict | None:
+        document = await self.get_document(document_id=document_id, knowledge_base_id=knowledge_base_id, include_deleted=True, only_deleted=True)
+        if document is None:
+            return None
+        version_ids = select(DocumentVersion.id).where(DocumentVersion.document_id == document.id)
+        chunk_ids = select(DocumentChunk.id).where(DocumentChunk.document_version_id.in_(version_ids))
+        citation_count = int((await self.session.scalar(select(func.count()).select_from(MessageCitation).where(MessageCitation.document_chunk_id.in_(chunk_ids)))) or 0)
+        assets = (await self.session.execute(select(DocumentAsset.storage_bucket, DocumentAsset.storage_key).where(DocumentAsset.document_version_id.in_(version_ids)))).all()
+        return {"document": document, "assets": [(row[0], row[1]) for row in assets], "citation_count": citation_count}
+
+    async def permanently_delete_document(self, *, document_id: UUID) -> None:
+        version_ids = select(DocumentVersion.id).where(DocumentVersion.document_id == document_id)
+        chunk_ids = select(DocumentChunk.id).where(DocumentChunk.document_version_id.in_(version_ids))
+        await self.session.execute(delete(DocumentChunkEmbedding).where(DocumentChunkEmbedding.document_chunk_id.in_(chunk_ids)))
+        await self.session.execute(delete(DocumentChunk).where(DocumentChunk.document_version_id.in_(version_ids)))
+        await self.session.execute(delete(DocumentAsset).where(DocumentAsset.document_version_id.in_(version_ids)))
+        await self.session.execute(delete(DocumentVersion).where(DocumentVersion.document_id == document_id))
+        await self.session.execute(delete(Document).where(Document.id == document_id))
+        await self.session.commit()
 
 
 def build_document_sort_order(sort_order: str) -> tuple:

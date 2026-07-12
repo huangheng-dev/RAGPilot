@@ -205,12 +205,12 @@ export function WorkspaceSidebar({
     <>
       <button
         aria-label={t("workspace.sidebar.closeContextControls")}
-        className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-sm"
+        className="fixed inset-0 z-[80] bg-slate-950/45 backdrop-blur-sm"
         onClick={() => setShowConsoleControls(false)}
         type="button"
       />
 
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[480px] overflow-y-auto border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+      <div className="fixed inset-y-0 right-0 z-[90] w-full max-w-[480px] overflow-y-auto border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
         <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
           <div className="flex items-start justify-between gap-3">
             <div>

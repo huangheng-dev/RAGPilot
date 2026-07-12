@@ -4,6 +4,9 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from ragpilot_api.application.agents.agent_runtime_governance_service import (
+    AgentRuntimeGovernanceService,
+)
 from ragpilot_api.contracts.http.agent_contracts import AgentRuntimeGovernanceItemResponse
 from ragpilot_api.infrastructure.database.session import get_database_session
 from ragpilot_api.main import app
@@ -240,6 +243,52 @@ def test_agent_definition_list_route_can_include_runtime_governance(monkeypatch)
     assert body[0]["runtime_governance"]["approval_required_tool_registration_id"] == str(tool_registration_id)
     assert body[0]["runtime_governance"]["resolved_model_endpoint"]["runtime_issue"] == "missing_base_url"
     assert captured["runtime_kwargs"] == {
+        "tenant_id": tenant_id,
+        "status": None,
+        "mode": None,
+        "query": None,
+    }
+
+
+def test_agent_definition_list_route_constructs_runtime_governance_service(monkeypatch) -> None:
+    tenant_id = uuid4()
+    captured: dict[str, object] = {}
+
+    class FakeAgentService:
+        async def list_agent_definitions(self, *, tenant_id, status=None, mode=None, query=None):
+            return []
+
+    async def fake_get_runtime_governance_posture(self, **kwargs):
+        captured["service"] = self
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(items=[])
+
+    monkeypatch.setattr(agent_routes, "build_agent_service", lambda session: FakeAgentService())
+    monkeypatch.setattr(
+        AgentRuntimeGovernanceService,
+        "get_runtime_governance_posture",
+        fake_get_runtime_governance_posture,
+    )
+    app.dependency_overrides[get_database_session] = override_database_session
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/agents",
+        params={
+            "tenant_id": str(tenant_id),
+            "include_runtime_governance": "true",
+        },
+        headers={
+            "X-RAGPilot-Role": "operator",
+            "X-RAGPilot-Actor-Id": str(uuid4()),
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert isinstance(captured["service"], AgentRuntimeGovernanceService)
+    assert captured["kwargs"] == {
         "tenant_id": tenant_id,
         "status": None,
         "mode": None,

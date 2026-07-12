@@ -33,6 +33,8 @@ work/
 .codex-runtime/
 .codex-temp/
 .playwright-cli/
+test-results/
+playwright-report/
 docs/internal/
 docs/private/
 docs/

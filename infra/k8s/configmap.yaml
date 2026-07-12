@@ -15,6 +15,7 @@ data:
   TEMPORAL_ADDRESS: temporal-frontend.temporal.svc.cluster.local:7233
   TEMPORAL_NAMESPACE: default
   TEMPORAL_TASK_QUEUE: ragpilot-ingestion
+  AGENT_TEMPORAL_TASK_QUEUE: ragpilot-agent-execution
   TEMPORAL_CONNECT_MAX_ATTEMPTS: "30"
   TEMPORAL_CONNECT_RETRY_SECONDS: "2"
   RETRIEVAL_ENGINE: native

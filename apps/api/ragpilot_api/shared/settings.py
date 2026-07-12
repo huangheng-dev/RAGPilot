@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "ragpilot-ingestion"
+    agent_temporal_task_queue: str = "ragpilot-agent-execution"
     minio_endpoint: str = "http://minio:9000"
     minio_root_user: str = "ragpilot"
     minio_root_password: str = "ragpilot123"

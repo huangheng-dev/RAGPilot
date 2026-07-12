@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,6 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <FormDialog
-      description={typeof description === "string" ? description : undefined}
       onClose={onCancel}
       open={open}
       size="md"
@@ -51,7 +51,22 @@ export function ConfirmDialog({
         </DialogFormActions>
       }
     >
-      {typeof description === "string" ? null : description}
+      <div
+        className={
+          tone === "danger"
+            ? "flex min-h-32 flex-col items-center justify-center gap-3 px-5 py-7 text-center text-sm leading-6 text-rose-800"
+            : "flex min-h-32 flex-col items-center justify-center gap-3 px-5 py-7 text-center text-sm leading-6 text-slate-600"
+        }
+      >
+        <AlertTriangle
+          className={
+            tone === "danger"
+              ? "h-10 w-10 shrink-0 stroke-[1.5] text-rose-500"
+              : "h-10 w-10 shrink-0 stroke-[1.5] text-slate-400"
+          }
+        />
+        <div className="max-w-xl">{description}</div>
+      </div>
     </FormDialog>
   );
 }

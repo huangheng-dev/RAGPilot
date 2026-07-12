@@ -6,8 +6,8 @@ import { ConsoleOutlineBadge } from "@/components/console/ConsolePrimitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  buildAdminHref,
   buildRuntimeGovernanceWorklistFollowUp,
-  buildSettingsHref
 } from "@/lib/console-route-builders";
 import { useI18n } from "@/lib/i18n/provider";
 import type {
@@ -177,7 +177,7 @@ export function RuntimeGovernanceOverviewCard({
               </Button>
             ) : null}
             <Button asChild className="bg-white" size="sm" type="button" variant="outline">
-              <Link href={followUp?.settingsHref ?? buildSettingsHref()}>{t("admin.runtimeQueue.actions.openSettings")}</Link>
+              <Link href={followUp?.settingsHref ?? buildAdminHref({ section: "overview" })}>{t("admin.runtimeQueue.actions.openSettings")}</Link>
             </Button>
             {followUp?.definitionsHref ? (
               <Button asChild className="bg-white" size="sm" type="button" variant="outline">
