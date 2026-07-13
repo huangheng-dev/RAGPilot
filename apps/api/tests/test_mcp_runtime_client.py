@@ -15,7 +15,7 @@ def install_mock_client(monkeypatch, handler):
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_initialize_sends_initialized_notification_and_preserves_session(monkeypatch):
     methods = []
 
@@ -46,7 +46,7 @@ async def test_initialize_sends_initialized_notification_and_preserves_session(m
     assert methods == ["initialize", "notifications/initialized"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_tools_follows_pagination(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
@@ -62,7 +62,7 @@ async def test_list_tools_follows_pagination(monkeypatch):
     assert [tool["name"] for tool in tools] == ["first", "second"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_invalid_json_rpc_response_is_rejected(monkeypatch):
     install_mock_client(monkeypatch, lambda request: httpx.Response(200, json={"result": {}}))
 

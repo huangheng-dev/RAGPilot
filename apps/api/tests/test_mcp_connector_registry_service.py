@@ -245,6 +245,18 @@ async def test_mcp_connector_registry_service_previews_remote_connector_reachabi
     class FakeResponse:
         status_code = 200
         headers = {"content-type": "application/json"}
+        is_success = True
+
+        def json(self):
+            return {
+                "jsonrpc": "2.0",
+                "id": "ragpilot-preview",
+                "result": {
+                    "protocolVersion": "2025-03-26",
+                    "serverInfo": {"name": "test", "version": "1"},
+                    "capabilities": {"tools": {}},
+                },
+            }
 
     class FakeAsyncClient:
         def __init__(self, *args, **kwargs):
@@ -256,13 +268,29 @@ async def test_mcp_connector_registry_service_previews_remote_connector_reachabi
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def get(self, url):
+        async def post(self, url, *, headers, json):
             assert url == connector.base_url
+            assert headers["Content-Type"] == "application/json"
+            assert json["method"] == "initialize"
             return FakeResponse()
+
+    class FakeRuntimeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def initialize(self):
+            return None
+
+        async def list_tools(self):
+            return []
 
     monkeypatch.setattr(
         "ragpilot_api.application.mcp_connectors.mcp_connector_registry_service.httpx.AsyncClient",
         FakeAsyncClient,
+    )
+    monkeypatch.setattr(
+        "ragpilot_api.application.mcp_connectors.mcp_connector_registry_service.McpStreamableHttpClient",
+        FakeRuntimeClient,
     )
 
     response = await service.preview_mcp_connector(mcp_connector_id=connector.id)
