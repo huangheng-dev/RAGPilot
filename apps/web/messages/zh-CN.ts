@@ -17,12 +17,13 @@ const zhCN = {
       subtitle: "英文优先的开源工作台",
       home: "首页",
       workspace: "工作台",
-      operations: "运营操作",
+      operations: "运行中心",
       admin: "管理后台",
       settings: "系统设置",
       signIn: "登录",
       signOut: "退出登录",
       rolePrefix: "角色：",
+      currentTenant: "当前租户",
       memberships: "成员关系",
       noMemberships: "当前还没有租户成员关系。"
     },
@@ -262,7 +263,7 @@ const zhCN = {
       allModelEndpoints: "全部运行时模型",
       allModelProviders: "全部模型提供方",
       allToolRegistrations: "全部注册工具",
-      searchPlaceholder: "按名称、标识、范围或指令搜索"
+      searchPlaceholder: "搜索智能体"
     },
     governance: {
       title: "治理问题通道",
@@ -338,7 +339,7 @@ const zhCN = {
     tools: {
       chat: "对话",
       documents: "文档",
-      operations: "运营操作",
+      operations: "运行中心",
       admin: "管理后台"
     },
     connectivity: {
@@ -503,7 +504,7 @@ const zhCN = {
         workspace: "工作台",
         home: "首页",
         admin: "管理后台",
-        operations: "运营操作"
+        operations: "运行中心"
       },
       statuses: {
         launched: "已启动",
@@ -780,7 +781,12 @@ const zhCN = {
       retryEnabled: "允许重试",
       readOnly: "只读重试模式"
     },
-    title: "运营操作",
+    title: "运行中心",
+    navigation: {
+      overview: "运行概览",
+      queue: "任务队列",
+      detail: "运行详情"
+    },
     header: {
       eyebrow: "Execution Control",
       title: "运营操作台",
@@ -837,6 +843,7 @@ const zhCN = {
     scope: {
       title: "执行范围",
       description: "运营操作台以租户为监督范围，同时保留与智能体和工作区目录的联动。",
+      currentTenant: "当前租户",
       notAvailable: "暂无",
       recoveryAgent: "恢复智能体",
       selectRecoveryAgent: "选择恢复智能体",
@@ -861,6 +868,9 @@ const zhCN = {
       retries: "重试",
       completed: "已完成",
       pending: "待处理"
+    },
+    statusSummary: {
+      title: "运行状态摘要"
     },
     directory: {
       title: "工作流目录",
@@ -1073,7 +1083,7 @@ const zhCN = {
     }
   },
   settings: {
-    title: "设置",
+    title: "系统设置",
     navigation: {
       profile: "个人资料",
       sessions: "会话管理",
@@ -1081,7 +1091,7 @@ const zhCN = {
     },
     security: {
       title: "安全中心",
-      description: "集中查看当前账号的认证方式、会话状态和安全风险。",
+      description: "更新当前账号的登录密码，保护账号访问安全。",
       accountStatus: "账号状态",
       verified: "已验证",
       signedOut: "未登录",
@@ -1102,8 +1112,8 @@ const zhCN = {
       description: "把本地会话、治理入口和仓库入口收拢到一起，不去虚构暂时还不存在的设置项。"
     },
     sections: {
-      sessionTitle: "当前会话",
-      sessionDescription: "这个本地会话决定浏览器里受保护页面的访问权限。",
+      sessionTitle: "个人资料",
+      sessionDescription: "维护当前账号的基本信息、联系方式和所属组织。",
       roleTitle: "体验与访问",
       roleDescription: "在当前本地运营环境中调整语言、外观与待生效访问角色。",
       accessTitle: "访问活动",
@@ -1118,7 +1128,7 @@ const zhCN = {
       role: "角色",
       roleManaged: "角色由成员目录和当前访问策略统一管理。",
       directoryLinked: "已绑定持久化成员目录",
-      memberships: "租户成员关系",
+      memberships: "所属组织",
       noMemberships: "当前会话还没有绑定任何持久化租户成员关系。",
       password: "登录密码",
       passwordHint: "在不退出当前会话的前提下，更新这个成员用于登录的密码。",
@@ -1168,7 +1178,7 @@ const zhCN = {
       runtimeHealthFailed: "运行健康状态加载失败。"
     },
     actions: {
-      saveProfile: "保存会话",
+      saveProfile: "保存资料",
       savingProfile: "保存中...",
       changePassword: "修改密码",
       refreshSession: "刷新会话",
@@ -1221,14 +1231,16 @@ const zhCN = {
       loginModeInvitationActivation: "邀请激活"
     },
     sessions: {
-      title: "活跃会话",
-      description: "查看当前登录成员仍然有效的 bearer 会话。",
+      title: "会话管理",
+      description: "查看当前账号的登录状态与近期安全活动，并管理仍然有效的设备会话。",
       current: "当前",
       other: "其他会话",
       startedAt: "开始时间",
       expiresAt: "过期时间",
       deviceLabel: "设备",
       ipAddress: "IP",
+      loading: "正在加载活跃会话...",
+      loadMore: "加载更多",
       empty: "当前成员暂时没有可见的后端活跃会话。",
       summary: {
         total: "活跃会话",
@@ -1251,7 +1263,7 @@ const zhCN = {
       currentPassword: "当前密码",
       currentPasswordPlaceholder: "输入当前密码",
       newPassword: "新密码",
-      newPasswordPlaceholder: "输入新密码",
+      newPasswordPlaceholder: "输入至少 8 位新密码",
       confirmPassword: "确认密码",
       confirmPasswordPlaceholder: "再次输入新密码",
       cancel: "取消",
@@ -1611,7 +1623,7 @@ const zhCN = {
       surfaces: {
         chat: "对话",
         documents: "文档",
-        operations: "运营操作",
+        operations: "运行中心",
         admin: "管理后台",
         agents: "智能体"
       },
@@ -2314,7 +2326,9 @@ const zhCN = {
       draftOnly: "仅草稿",
       returnToValidation: "返回验证",
       refreshDirectory: "刷新目录",
-      refreshingDirectory: "刷新中..."
+      refreshingDirectory: "刷新中...",
+      resourceFilters: "资源筛选",
+      memberFilters: "成员筛选"
     },
     actions: {
       edit: "编辑",
@@ -2371,28 +2385,29 @@ const zhCN = {
     },
     sections: {
       title: "治理分区",
-      description: "把平台管理明确拆分为总览、资源目录、成员访问控制和安全复核四个治理分区。",
-      overview: "总览",
+      description: "把平台管理明确拆分为管理概览、资源管理、成员与权限和 AI 运行配置。",
+      overview: "管理概览",
       overviewDescription: "查看跨租户治理信号、关注项和平台对话活动。",
-      directory: "资源目录",
+      directory: "资源管理",
       directoryDescription: "集中处理租户资产、知识治理和智能体范围复核。",
-      access: "访问控制",
+      access: "成员与权限",
       accessDescription: "集中处理成员目录、邀请链路和最近访问审计。",
-      runtime: "运行资源",
+      runtime: "AI 运行配置",
       runtimeDescription: "管理模型、工具、MCP 连接器和检索策略。",
       security: "安全复核",
       securityDescription: "集中处理邀请时效、沉默账号和敏感治理事件。"
     },
     runtimeResources: {
-      title: "运行资源",
+      title: "AI 运行配置",
       description: "配置、测试、启停并审计智能体和检索链路使用的运行资源。",
       refresh: "刷新", create: "新建资源", search: "按名称、标识或资源 ID 搜索",
-      enabled: "已启用", disabled: "已停用", default: "默认", edit: "编辑", test: "测试",
+      enabled: "已启用", disabled: "已停用", default: "默认", edit: "编辑", test: "测试", testConnection: "连接测试", moreActions: "更多操作",
       enable: "启用", disable: "停用", makeDefault: "设为默认", empty: "当前视图没有匹配的资源。",
       createTitle: "新建运行资源", editTitle: "编辑运行资源", cancel: "取消", save: "保存", saving: "保存中...",
-      saved: "运行资源已保存。", loadFailed: "运行资源加载失败。", saveFailed: "运行资源保存失败。",
+      saved: "运行资源已保存。", loading: "正在加载当前资源...", loadFailed: "运行资源加载失败。", saveFailed: "运行资源保存失败。",
       selectTenant: "测试工具前请先选择一个租户。",
       previewComplete: "运行测试已完成。", actionComplete: "治理动作已完成。", actionFailed: "治理动作执行失败。",
+      disableTitle: "停用运行资源", disableDescription: "确定停用 {name} 吗？当前有 {count} 个关联对象可能受到影响。停用后，新请求将不能继续使用该资源。", confirmDisable: "确认停用",
       deleteTitle: "删除运行资源", deleteDescription: "确定删除 {name} 吗？存在绑定关系时系统会拒绝删除。", delete: "删除", deleteFailed: "运行资源删除失败。",
       kinds: { model_endpoint: "模型服务", tool_registration: "工具", mcp_connector: "MCP 连接器", retrieval_profile: "检索策略" },
       fields: {
@@ -3132,7 +3147,7 @@ const zhCN = {
       displayName: "显示名称",
       displayNamePlaceholder: "工作区运营员",
       email: "邮箱",
-      emailPlaceholder: "operator@ragpilot.local",
+      emailPlaceholder: "请输入邮箱地址",
       password: "密码",
       passwordPlaceholder: "请输入密码",
       invitationToken: "邀请码",
@@ -3724,7 +3739,7 @@ const zhCN = {
       sources: {
         home: "首页",
         admin: "管理后台",
-        operations: "运营操作",
+        operations: "运行中心",
         agents: "智能体",
         workspace: "工作区"
       },
@@ -3863,6 +3878,9 @@ const zhCN = {
       noIndexedDocumentsWarning:
         "当前知识库还没有可检索文档，请先上传内容并完成索引，再进行知识问答。",
       citations: "引用",
+      citationCount: "{count} 条引用",
+      runtimeDetails: "运行信息",
+      reviewContext: "复核上下文",
       sourcesCount: "{count} 个来源",
       sourceRank: "来源 #{rank}",
       score: "分数 {score}",
@@ -4289,6 +4307,17 @@ const zhCN = {
       documentIndexing: "文档索引",
       currentVersionTokens: "当前版本词元数",
       contentType: "内容类型",
+      contentTypes: {
+        pdf: "PDF 文档",
+        word: "Word 文档",
+        spreadsheet: "电子表格",
+        presentation: "演示文稿",
+        image: "图片",
+        web: "网页",
+        json: "JSON 数据",
+        text: "文本文件",
+        other: "其他文件",
+      },
       unknown: "未知",
       versionState: "版本状态",
       latestAttempt: "最近一次尝试",

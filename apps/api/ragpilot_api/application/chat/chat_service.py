@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from ragpilot_api.application.chat.conversation_intent import build_conversational_response
 from ragpilot_api.application.chat.response_builder import build_suggested_conversation_title
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.application.model_gateway.model_gateway import ModelGateway
@@ -288,6 +289,27 @@ class ChatService:
             model_name=None,
             usage_json={},
         )
+
+        conversational_response = build_conversational_response(request.question)
+        if conversational_response is not None:
+            assistant_message = await self.message_repository.create_message(
+                tenant_id=request.tenant_id,
+                conversation_id=conversation.id,
+                role="assistant",
+                content=conversational_response,
+                model_name="ragpilot-intent-router",
+                usage_json={
+                    "provider": "intent_router",
+                    "intent": "greeting",
+                    "retrieval_skipped": True,
+                    "retrieval_result_count": 0,
+                },
+            )
+            return ChatAskResponse(
+                conversation=build_conversation_response(conversation),
+                user_message=build_message_response(user_message, []),
+                assistant_message=build_message_response(assistant_message, []),
+            )
 
         retrieval_outcome = await execute_retrieval(
             retrieval_repository=self.retrieval_repository,

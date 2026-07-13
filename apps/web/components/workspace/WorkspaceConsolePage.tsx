@@ -19,6 +19,7 @@ import { authenticatedApiRequest, authenticatedApiRequestWithHeaders, authentica
 import { formatOperatorErrorMessage } from "@/lib/api-errors";
 import { hasDirectoryCapability } from "@/lib/auth/access";
 import { useAuth } from "@/lib/auth/provider";
+import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
 import { useI18n } from "@/lib/i18n/provider";
 import { useStatusNotifications } from "@/lib/notifications/use-status-notifications";
 import {
@@ -111,9 +112,11 @@ import type {
 const DEMO_TENANT_SLUG = "ragpilot-demo";
 const DEMO_WORKSPACE_SLUG = "ragpilot-operations";
 const DEMO_KNOWLEDGE_BASE_SLUG = "ragpilot-handbook";
-const DOCUMENT_PAGE_SIZE = 5;
+const DEFAULT_WORKSPACE_SLUG = "customer-operations";
+const DEFAULT_KNOWLEDGE_BASE_SLUG = "customer-service";
+const DOCUMENT_PAGE_SIZE = 10;
 const WORKFLOW_PAGE_SIZE = 6;
-const CONVERSATION_PAGE_SIZE = 30;
+const CONVERSATION_PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 250;
 const MAX_DOCUMENT_UPLOAD_BYTES = 25 * 1024 * 1024;
 const SUPPORTED_DOCUMENT_EXTENSIONS = [".txt", ".md", ".markdown", ".html", ".htm", ".csv", ".json", ".pdf", ".docx", ".xlsx"];
@@ -471,8 +474,9 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
 
   async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection): Promise<{ resources: BootstrapState; catalog: WorkspaceCatalog }> {
   let tenants = await listTenants();
+  const preferredTenantId = preferredSelection?.tenantId || readCurrentTenantId();
   let tenant =
-    (preferredSelection?.tenantId ? tenants.find((item) => item.id === preferredSelection.tenantId) : null) ??
+    (preferredTenantId ? tenants.find((item) => item.id === preferredTenantId) : null) ??
     tenants.find((item) => item.slug === DEMO_TENANT_SLUG);
   if (!tenant) {
     tenant = await apiRequest<Tenant>("/tenants", {
@@ -488,6 +492,7 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
   let workspaces = await listWorkspaces(tenant.id);
   let workspace =
     (preferredSelection?.workspaceId ? workspaces.find((item) => item.id === preferredSelection.workspaceId) : null) ??
+    workspaces.find((item) => item.slug === DEFAULT_WORKSPACE_SLUG) ??
     workspaces.find((item) => item.slug === DEMO_WORKSPACE_SLUG) ??
     workspaces[0];
   if (!workspace) {
@@ -508,6 +513,7 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
     (preferredSelection?.knowledgeBaseId
       ? knowledgeBases.find((item) => item.id === preferredSelection.knowledgeBaseId)
       : null) ??
+    knowledgeBases.find((item) => item.slug === DEFAULT_KNOWLEDGE_BASE_SLUG) ??
     knowledgeBases.find((item) => item.slug === DEMO_KNOWLEDGE_BASE_SLUG) ??
     knowledgeBases[0];
   if (!knowledgeBase) {
@@ -3415,6 +3421,7 @@ export default function WorkspaceConsolePage({
         }
 
         setCatalog(bootstrapCatalog);
+        writeCurrentTenantId(resources.tenant.id);
         setStatusMessage(t("workspace.status.loadingConversations"));
         await hydrateWorkspace(resources, {
           preferredConversationId: initialLocationState.conversationId,
@@ -3856,13 +3863,13 @@ export default function WorkspaceConsolePage({
     setErrorMessage(null);
   }
 
-  async function handleDeleteConversation() {
-    if (!bootstrap || !selectedConversationId || isDeletingConversation) {
+  async function handleDeleteConversation(conversationId: string) {
+    if (!bootstrap || !conversationId || isDeletingConversation) {
       return;
     }
 
     const conversationTitle =
-      selectedConversation?.title ??
+      conversations.find((conversation) => conversation.id === conversationId)?.title ??
       t("workspace.headerBar.startConversationPlaceholder");
 
     try {
@@ -3871,16 +3878,19 @@ export default function WorkspaceConsolePage({
       setStatusMessage(t("workspace.status.deletingConversation"));
 
       await apiRequest<void>(
-        `/chat/conversations/${selectedConversationId}?tenant_id=${bootstrap.tenant.id}`,
+        `/chat/conversations/${conversationId}?tenant_id=${bootstrap.tenant.id}`,
         {
           method: "DELETE",
         }
       );
 
-      setMessages([]);
-      setQuestion("");
-      setIsConversationEditorOpen(false);
-      setConversationDraftTitle("");
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null);
+        setMessages([]);
+        setQuestion("");
+        setIsConversationEditorOpen(false);
+        setConversationDraftTitle("");
+      }
       await refreshConversations();
       setStatusMessage(t("workspace.status.conversationDeleted", { title: conversationTitle }));
     } catch (error) {
@@ -3935,10 +3945,29 @@ export default function WorkspaceConsolePage({
       return;
     }
 
+    const submittedQuestion = question.trim();
+    const optimisticMessageId = `pending-${crypto.randomUUID()}`;
+    const optimisticMessage: Message = {
+      id: optimisticMessageId,
+      tenant_id: bootstrap.tenant.id,
+      conversation_id: selectedConversationId ?? "",
+      role: "user",
+      content: submittedQuestion,
+      model_name: null,
+      usage_json: {},
+      created_at: new Date().toISOString(),
+      citations: [],
+      feedback_entries: [],
+    };
+
     try {
       setIsSending(true);
       setErrorMessage(null);
       setStatusMessage(t("workspace.status.generatingGroundedReply"));
+      setQuestion("");
+      setMessages((currentMessages) =>
+        selectedConversationId ? [...currentMessages, optimisticMessage] : [optimisticMessage]
+      );
 
       const response = await apiRequest<ChatAskResponse>("/chat/messages", {
         method: "POST",
@@ -3948,17 +3977,18 @@ export default function WorkspaceConsolePage({
           knowledge_base_id: bootstrap.knowledgeBase.id,
           agent_definition_id: activeAgentContext?.id ?? null,
           conversation_id: selectedConversationId,
-          question: question.trim(),
+          question: submittedQuestion,
           top_k: 3
         })
       });
 
-      setQuestion("");
-      await refreshConversations(response.conversation.id);
-      await refreshOperations();
       setMessages((currentMessages) =>
         response.conversation.id === selectedConversationId
-          ? [...currentMessages, response.user_message, response.assistant_message]
+          ? [
+              ...currentMessages.filter((message) => message.id !== optimisticMessageId),
+              response.user_message,
+              response.assistant_message,
+            ]
           : [response.user_message, response.assistant_message]
       );
       setStatusMessage(
@@ -3966,7 +3996,15 @@ export default function WorkspaceConsolePage({
           ? t("workspace.status.groundedAnswerReadyWithAgent", { name: activeAgentContext.name })
           : t("workspace.status.groundedAnswerReady")
       );
+      void Promise.allSettled([
+        refreshConversations(response.conversation.id),
+        refreshOperations(),
+      ]);
     } catch (error) {
+      setMessages((currentMessages) =>
+        currentMessages.filter((message) => message.id !== optimisticMessageId)
+      );
+      setQuestion(submittedQuestion);
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.questionFailed")));
       setStatusMessage(t("workspace.status.questionFailed"));
     } finally {
@@ -5544,7 +5582,7 @@ export default function WorkspaceConsolePage({
           }}
         />
 
-        <section className={`flex h-[calc(100dvh-128px)] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/92 ${workspaceView === "chat" || workspaceView === "documents" ? "xl:flex-row" : ""}`}>
+        <section className={`min-w-0 rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/92 ${workspaceView === "chat" || workspaceView === "documents" ? "console-split-layout" : "min-h-[calc(100dvh-152px)] xl:h-[calc(100dvh-128px)] xl:min-h-0 xl:overflow-hidden"}`}>
           <WorkspaceHeaderBar
             conversationDraftTitle={conversationDraftTitle}
             conversationSearchQuery={conversationSearchQuery}

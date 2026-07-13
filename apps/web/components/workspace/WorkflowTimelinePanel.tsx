@@ -93,14 +93,14 @@ export function WorkflowTimelinePanel({
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              className="min-w-64 bg-white pl-9"
+              className="w-full min-w-0 bg-white pl-9 xl:min-w-64"
               onChange={(event) => onWorkflowQueryChange(event.target.value)}
               placeholder={t("workspace.workflowTimeline.searchPlaceholder")}
               value={workflowQuery}
             />
             </div>
             <Select onValueChange={onWorkflowTypeFilterChange} value={workflowTypeFilter}>
-              <SelectTrigger className="w-full min-w-[180px] bg-white">
+              <SelectTrigger className="w-full min-w-0 bg-white xl:min-w-[180px]">
                 <SelectValue placeholder={t("workspace.workflowTimeline.workflowType")} />
               </SelectTrigger>
               <SelectContent>
@@ -109,7 +109,7 @@ export function WorkflowTimelinePanel({
               </SelectContent>
             </Select>
             <Select onValueChange={onWorkflowStatusFilterChange} value={workflowStatusFilter}>
-              <SelectTrigger className="w-full min-w-[160px] bg-white">
+              <SelectTrigger className="w-full min-w-0 bg-white xl:min-w-[160px]">
                 <SelectValue placeholder={t("workspace.workflowTimeline.status")} />
               </SelectTrigger>
               <SelectContent>
@@ -123,7 +123,7 @@ export function WorkflowTimelinePanel({
               </SelectContent>
             </Select>
             <Select onValueChange={onWorkflowRetryModeChange} value={workflowRetryMode}>
-              <SelectTrigger className="w-full min-w-[180px] bg-white">
+              <SelectTrigger className="w-full min-w-0 bg-white xl:min-w-[180px]">
                 <SelectValue placeholder={t("workspace.workflowTimeline.retryMode")} />
               </SelectTrigger>
               <SelectContent>
@@ -133,7 +133,7 @@ export function WorkflowTimelinePanel({
               </SelectContent>
             </Select>
             <Select onValueChange={(value) => onWorkflowSortOrderChange(value as WorkflowSortOrder)} value={workflowSortOrder}>
-              <SelectTrigger className="w-full min-w-[190px] bg-white">
+              <SelectTrigger className="w-full min-w-0 bg-white xl:min-w-[190px]">
                 <SelectValue placeholder={t("workspace.workflowTimeline.sortWorkflows")} />
               </SelectTrigger>
               <SelectContent>

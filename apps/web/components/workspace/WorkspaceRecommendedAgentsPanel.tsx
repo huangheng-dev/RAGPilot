@@ -13,6 +13,7 @@ type WorkspaceRecommendedAgentsPanelProps = {
   isActivatingRecommendation?: boolean;
   onActivateRecommendation: (recommendation: WorkspaceAgentRecommendation) => void | Promise<void>;
   getActionLabel: (targetView: "chat" | "documents" | "workflows") => string;
+  presentation?: "default" | "dialog";
 };
 
 export function WorkspaceRecommendedAgentsPanel({
@@ -21,7 +22,8 @@ export function WorkspaceRecommendedAgentsPanel({
   title,
   isActivatingRecommendation = false,
   onActivateRecommendation,
-  getActionLabel
+  getActionLabel,
+  presentation = "default"
 }: WorkspaceRecommendedAgentsPanelProps) {
   const { t } = useI18n();
 
@@ -30,12 +32,12 @@ export function WorkspaceRecommendedAgentsPanel({
   }
 
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-3">
-      <div className="font-medium text-slate-900">{title}</div>
-      <div className="mt-1 text-slate-600">{description}</div>
+    <div className={cn("border border-blue-200 bg-blue-50/50", presentation === "dialog" ? "rounded-xl p-4" : "rounded-md px-3 py-3")}>
+      <div className="text-sm font-semibold text-slate-950">{title}</div>
+      <div className="mt-1 text-sm leading-6 text-slate-600">{description}</div>
       <div className="mt-3 space-y-2">
         {recommendations.map((recommendation) => (
-          <div key={recommendation.agent.id} className="rounded-md border border-blue-100 bg-white px-3 py-3">
+          <div key={recommendation.agent.id} className={cn("border border-blue-100 bg-white px-3 py-3", presentation === "dialog" ? "rounded-xl" : "rounded-md")}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="font-medium text-slate-900">{recommendation.agent.name}</div>

@@ -6,6 +6,8 @@ RAGPilot is an open-source AI knowledge operations platform for teams that need 
 
 It is built for real production workflows rather than isolated chat demos. The product combines knowledge access, document processing, retrieval diagnostics, citation-backed answers, long-running workflow execution, model governance, and operator-facing control surfaces into a single platform.
 
+The current release provides a complete operator workflow from scoped knowledge intake to governed answers and operational follow-up. Its web console, API, worker, persistence layer, runtime controls, deployment assets, and release checks are maintained as one versioned product surface.
+
 ## What RAGPilot Delivers
 
 - retrieval-grounded chat with citations and persisted conversation history
@@ -23,11 +25,11 @@ RAGPilot keeps the visible product focused on the main operating path:
 
 - `Home` for a concise overview of recent chats, documents, and agents
 - `Chat` for grounded question answering with traceable sources
-- `Documents` for knowledge asset ingestion, indexing, and lifecycle operations
-- `Agents` for agent definitions, execution entry, and governed follow-up
-- `Admin` for tenants, workspaces, memberships, invitations, and governance controls
-- `Operations` for workflow supervision, retry handling, and run inspection
-- `Settings` for account, session, and access review
+- `Documents` for multi-file or web-page intake, knowledge-base filtering, indexing, and lifecycle operations
+- `Agents` for governed agent definitions, model and tool bindings, execution entry, and review
+- `Admin` for tenant directories, workspaces, knowledge bases, members, access, and runtime governance
+- `Operations` for platform-wide workflow supervision, queue visibility, retry handling, and run inspection
+- `Settings` for profile, active-session, and password management
 
 ## Core Operating Flow
 
@@ -71,7 +73,9 @@ Source
 - hybrid retrieval across semantic and keyword signals
 - rerank and context assembly
 - source citation return and answer traceability
-- persisted multi-session conversation history
+- persisted, searchable conversation history with rename and deletion controls
+- knowledge-scope selection at workspace and knowledge-base level
+- lightweight conversational intent handling that avoids irrelevant retrieval for greetings
 
 ### Agents and Workflows
 
@@ -148,14 +152,24 @@ The shipped Docker API baseline includes the optional `LlamaIndex` and `LangGrap
 
 ## Local Development
 
-1. Copy `.env.example` to `.env`
-2. Start RAGPilot in stable local mode:
+Prerequisites:
+
+- Node.js and npm
+- Python 3.11 or newer
+- Docker Desktop or a compatible Docker Compose environment
+- an optional Ollama or OpenAI-compatible endpoint when using a non-deterministic chat model
+
+1. Copy `.env.example` to `.env` and replace development credentials before shared or production use.
+2. Install repository dependencies with `npm install`.
+3. Start RAGPilot in stable local mode:
 
 ```bash
 npm run stable:mode:up
 ```
 
 This mode keeps dependency services in Docker while running the web and API through stable host processes.
+
+RAGPilot does not publish a default production account or password. Authentication users, secrets, model endpoints, and runtime credentials must be provisioned for each environment.
 
 Default local targets:
 
@@ -184,7 +198,7 @@ npm run web:serve
 
 ## Production Deployment
 
-RAGPilot now ships with a public production-delivery baseline rather than only local development scaffolding.
+RAGPilot ships with a production-delivery baseline rather than only local development scaffolding. Operators remain responsible for environment-specific security hardening, secret management, backups, observability retention, capacity planning, and disaster recovery.
 
 Delivery assets included in this repository:
 
@@ -209,6 +223,12 @@ For Kubernetes-oriented rollout:
 2. replace placeholder image references such as `ghcr.io/your-org/ragpilot-api:0.1.0`
 3. point [`infra/k8s/configmap.yaml`](./infra/k8s/configmap.yaml) at your real managed dependency endpoints
 4. apply the manifests through [`infra/k8s/kustomization.yaml`](./infra/k8s/kustomization.yaml)
+
+Before exposing an environment publicly, configure trusted origins, replace all template secrets, provision authentication identities, verify model endpoint reachability, apply database migrations, and run the release preflight.
+
+## Release Quality
+
+The release gate covers the public documentation set, Markdown links, frontend lint and type safety, the optimized web build, API tests, authenticated core-surface browser checks, deployment assets, and common secret-leakage patterns. These checks are intended to keep product behavior, documentation, and deployment configuration aligned before a release is tagged.
 
 ## Release Workflow
 

@@ -97,6 +97,7 @@ import {
 } from "@/lib/agent-runtime";
 import { hasDirectoryCapability } from "@/lib/auth/access";
 import { useAuth } from "@/lib/auth/provider";
+import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
 import {
   buildAdminHref,
   buildAgentsHref,
@@ -988,7 +989,7 @@ export default function AgentsConsolePage() {
   useEffect(() => {
     function applyLocationState() {
       const searchParams = new URLSearchParams(window.location.search);
-      setSelectedTenantId(searchParams.get("tenant_id") ?? "");
+      setSelectedTenantId(searchParams.get("tenant_id") ?? readCurrentTenantId());
       setStatusFilter(readAllowedAgentStatusFilter(searchParams.get("status")));
       setModeFilter(readAllowedAgentModeFilter(searchParams.get("mode")));
       setReadinessFilter(
@@ -1038,6 +1039,10 @@ export default function AgentsConsolePage() {
       window.removeEventListener("popstate", applyLocationState);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedTenantId) writeCurrentTenantId(selectedTenantId);
+  }, [selectedTenantId]);
 
   useEffect(() => {
     const nextUrl = new URL(window.location.href);
@@ -2297,6 +2302,7 @@ export default function AgentsConsolePage() {
           name: savedAgent.name || t("agents.editor.newAgentName"),
         }),
       );
+      setAgentSection("directory");
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : t("agents.status.saveFailed"),
@@ -2349,6 +2355,7 @@ export default function AgentsConsolePage() {
             ? t("agents.status.paused", { name: savedAgent.name })
             : t("agents.status.returnedToDraft", { name: savedAgent.name }),
       );
+      setAgentSection("directory");
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : t("agents.status.saveFailed"),
@@ -3384,28 +3391,13 @@ export default function AgentsConsolePage() {
     <ConsoleShell activeHref="/agents">
       <PageTitleSync title={t("agents.title")} />
       <ConsolePage className="gap-6">
-        <div className="h-[calc(100dvh-128px)] min-h-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)]">
-            <ConsoleSurface className="grid h-full min-h-0 grid-cols-1 rounded-none border-0 shadow-none xl:grid-cols-[292px_minmax(0,1fr)]">
-              <div className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 xl:border-b-0 xl:border-r dark:border-slate-800 dark:bg-slate-950/70">
+        <div className="min-w-0 overflow-visible rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] xl:overflow-hidden">
+            <ConsoleSurface className="console-split-layout overflow-visible rounded-none border-0 shadow-none lg:overflow-hidden">
+              <div className="console-split-sidebar flex flex-col bg-slate-50/70 dark:bg-slate-950/70">
               <div className="p-4">
                 <div className="mb-4 text-lg font-semibold text-slate-950 dark:text-slate-50">{t("shell.nav.agents")}</div>
-                <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("agents.filters.scopeTitle")}</div>
-                <Select
-                  disabled={isLoading || tenants.length === 0 || isMutating}
-                  onValueChange={setSelectedTenantId}
-                  value={selectedTenantId}
-                >
-                  <SelectTrigger className="w-full bg-white dark:border-slate-800 dark:bg-slate-900">
-                    <SelectValue placeholder={t("agents.filters.tenantScope")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tenants.map((tenant) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
                 <Button
-                  className="mt-3 w-full justify-center"
+                  className="w-full justify-center"
                   disabled={!hasAgentWriteAccess || !selectedTenantId || isMutating}
                   onClick={() => void handleCreateAgent()}
                   type="button"
@@ -3415,7 +3407,7 @@ export default function AgentsConsolePage() {
                 </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto border-t border-slate-200 p-4">
-                <div className="mb-2 flex items-center justify-between gap-3 px-1"><div className="text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("agents.filters.filterTitle")}</div><span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] tabular-nums text-slate-600">{scopedAgents.length}</span></div>
+                <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("agents.filters.filterTitle")}</div>
                 <div className="grid gap-2">
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -3432,7 +3424,7 @@ export default function AgentsConsolePage() {
                 </div>
               </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto bg-white p-5 dark:bg-slate-950">
+              <div className="console-split-content console-split-content-padding flex-1 bg-white dark:bg-slate-950">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t("agents.directory.title")}</h2>
@@ -3468,7 +3460,7 @@ export default function AgentsConsolePage() {
                     return (
                       <TableRow
                         className={cn(
-                          "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50",
+                          "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 [&>td]:py-[14px]",
                           selectedAgentId === agent.id
                             ? "bg-blue-50/70"
                             : "bg-white",
@@ -3480,7 +3472,7 @@ export default function AgentsConsolePage() {
                         }}
                       >
                         <TableCell className="px-3 align-middle"><button aria-label={t("agents.directory.selectAgent", { name: agent.name })} className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition hover:bg-slate-100", selectedAgentIds.includes(agent.id) ? "text-blue-600" : "text-slate-400 hover:text-slate-600")} onClick={(event) => { event.stopPropagation(); setSelectedAgentIds((ids) => ids.includes(agent.id) ? ids.filter((id) => id !== agent.id) : [...ids, agent.id]); }} type="button">{selectedAgentIds.includes(agent.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}</button></TableCell>
-                        <TableCell className="px-5 align-middle"><div className="font-medium text-slate-900">{agent.name}</div><div className="mt-1 truncate text-xs text-slate-400">{agent.slug}</div></TableCell>
+                        <TableCell className="px-5 align-middle"><div className="font-medium text-slate-900">{agent.name}</div></TableCell>
                         <TableCell className="align-middle"><div className="flex items-center gap-2"><Badge className={cn("border", getAgentStatusClass(agent.status))} variant="outline">{t(`agents.statuses.${agent.status}`)}</Badge>{!readiness?.isReady ? <Badge className="border-amber-200 bg-amber-50 text-amber-700" variant="outline">{t("agents.readiness.attention")}</Badge> : null}</div></TableCell>
                         <TableCell className="align-middle text-sm text-slate-600">{t(`agents.modes.${agent.mode}`)}</TableCell>
                         <TableCell className="max-w-64 align-middle"><div className="truncate text-sm text-slate-600">{agent.knowledgeBaseScope.trim() || t("agents.metrics.noScope")}</div></TableCell>
@@ -3515,48 +3507,6 @@ export default function AgentsConsolePage() {
                 <div className="flex flex-wrap justify-end gap-3">
                   <Button
                     className="rounded-xl bg-white"
-                    disabled={
-                      !hasAgentWriteAccess ||
-                      !selectedAgent ||
-                      selectedAgent.status === "active" ||
-                      isMutating
-                    }
-                    onClick={() => void handleTransitionAgentStatus("active")}
-                    type="button"
-                    variant="outline"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    {t("agents.actions.activate")}
-                  </Button>
-                  <Button
-                    className="rounded-xl bg-white"
-                    disabled={
-                      !hasAgentWriteAccess ||
-                      !selectedAgent ||
-                      selectedAgent.status !== "active" ||
-                      isMutating
-                    }
-                    onClick={() => void handleTransitionAgentStatus("paused")}
-                    type="button"
-                    variant="outline"
-                  >
-                    <Waypoints className="h-4 w-4" />
-                    {t("agents.actions.pause")}
-                  </Button>
-                  <Button
-                    className="rounded-xl bg-white"
-                    disabled={!canOperateSelectedAgentRuntime || isExecutingAgent}
-                    onClick={() => void handleExecuteAgent()}
-                    type="button"
-                    variant="outline"
-                  >
-                    <BrainCircuit className="h-4 w-4" />
-                    {isExecutingAgent
-                      ? t("agents.actions.executing")
-                      : t("agents.actions.execute")}
-                  </Button>
-                  <Button
-                    className="rounded-xl bg-white"
                     disabled={isMutating}
                     onClick={() => setAgentSection("directory")}
                     type="button"
@@ -3583,10 +3533,12 @@ export default function AgentsConsolePage() {
             presentation="side"
             size="xl"
             title={selectedAgent?.name ?? t("agents.editor.title")}
+            titleClassName="text-base"
           >
             {selectedAgent ? (
               <DialogFormLayout>
-                <DialogFormGrid>
+                <DialogFormGrid className="xl:grid-cols-3">
+                  <div className="xl:col-span-2">
                   <DialogFormField label={t("agents.editor.name")}>
                     <Input
                       disabled={!hasAgentWriteAccess}
@@ -3605,6 +3557,7 @@ export default function AgentsConsolePage() {
                       value={selectedAgent.name}
                     />
                   </DialogFormField>
+                  </div>
                   <DialogFormField label={t("agents.editor.slug")}>
                     <Input
                       disabled={!hasAgentWriteAccess}
@@ -3621,7 +3574,37 @@ export default function AgentsConsolePage() {
                   </DialogFormField>
                 </DialogFormGrid>
 
-                <DialogFormGrid className="xl:grid-cols-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      {t("agents.editor.status")}
+                    </div>
+                    <Badge className={cn("border", getAgentStatusClass(selectedAgent.status))} variant="outline">
+                      {t(`agents.statuses.${selectedAgent.status}`)}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedAgent.status !== "active" ? (
+                      <Button className="rounded-xl bg-white" disabled={!hasAgentWriteAccess || isMutating} onClick={() => void handleTransitionAgentStatus("active")} size="sm" type="button" variant="outline">
+                        <CheckCircle2 className="h-4 w-4" />
+                        {t("agents.actions.activate")}
+                      </Button>
+                    ) : (
+                      <Button className="rounded-xl bg-white" disabled={!hasAgentWriteAccess || isMutating} onClick={() => void handleTransitionAgentStatus("paused")} size="sm" type="button" variant="outline">
+                        <Waypoints className="h-4 w-4" />
+                        {t("agents.actions.pause")}
+                      </Button>
+                    )}
+                    {canOperateSelectedAgentRuntime ? (
+                      <Button className="rounded-xl bg-white" disabled={isExecutingAgent} onClick={() => void handleExecuteAgent()} size="sm" type="button" variant="outline">
+                        <BrainCircuit className="h-4 w-4" />
+                        {isExecutingAgent ? t("agents.actions.executing") : t("agents.actions.execute")}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <DialogFormGrid className="xl:grid-cols-3">
                   <DialogFormField label={t("agents.editor.mode")}>
                     <Select
                       disabled={!hasAgentWriteAccess}
@@ -3645,34 +3628,6 @@ export default function AgentsConsolePage() {
                         </SelectItem>
                         <SelectItem value="workflow_recovery">
                           {t("agents.modes.workflow_recovery")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </DialogFormField>
-
-                  <DialogFormField label={t("agents.editor.status")}>
-                    <Select
-                      disabled={!hasAgentWriteAccess}
-                      onValueChange={(value) => {
-                        updateSelectedAgent((agent) => ({
-                          ...agent,
-                          status: value as AgentStatus,
-                        }));
-                      }}
-                      value={selectedAgent.status}
-                    >
-                      <SelectTrigger className="bg-white">
-                        <SelectValue placeholder={t("agents.editor.status")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="draft">
-                          {t("agents.statuses.draft")}
-                        </SelectItem>
-                        <SelectItem value="active">
-                          {t("agents.statuses.active")}
-                        </SelectItem>
-                        <SelectItem value="paused">
-                          {t("agents.statuses.paused")}
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -3744,7 +3699,8 @@ export default function AgentsConsolePage() {
                   </DialogFormField>
                 </DialogFormGrid>
 
-                <DialogFormGrid className="xl:grid-cols-3">
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                <DialogFormGrid>
                   <DialogFormField label={t("agents.editor.workspaceScope")}>
                     <Select
                       disabled={!hasAgentWriteAccess}
@@ -3803,21 +3759,16 @@ export default function AgentsConsolePage() {
                       </SelectContent>
                     </Select>
                   </DialogFormField>
-                  <DialogFormField label={t("agents.editor.scopePreview")}>
-                    <Input
-                      readOnly
-                      value={
-                        selectedAgent.knowledgeBaseScope ||
-                        t("agents.editor.unscoped")
-                      }
-                    />
-                  </DialogFormField>
                 </DialogFormGrid>
+                  <div className="text-xs leading-5 text-slate-500">
+                    {t("agents.editor.scopePreview")}: <span className="font-medium text-slate-700">{selectedAgent.knowledgeBaseScope || t("agents.editor.unscoped")}</span>
+                  </div>
+                </div>
 
                 <DialogFormField label={t("agents.editor.objective")}>
                   <Textarea
                     disabled={!hasAgentWriteAccess}
-                    className="min-h-[96px] resize-y"
+                    className="min-h-[72px] resize-y"
                     onChange={(event) => {
                       updateSelectedAgent((agent) => ({
                         ...agent,
@@ -3832,7 +3783,7 @@ export default function AgentsConsolePage() {
                 <DialogFormField label={t("agents.editor.instructions")}>
                   <Textarea
                     disabled={!hasAgentWriteAccess}
-                    className="min-h-[160px] resize-y"
+                    className="min-h-[128px] resize-y"
                     onChange={(event) => {
                       updateSelectedAgent((agent) => ({
                         ...agent,
@@ -3844,7 +3795,7 @@ export default function AgentsConsolePage() {
                   />
                 </DialogFormField>
 
-                <div className="space-y-3">
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                       {t("agents.editor.tools")}
@@ -3903,7 +3854,7 @@ export default function AgentsConsolePage() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                       {t("agents.editor.registeredTools")}
@@ -3927,10 +3878,10 @@ export default function AgentsConsolePage() {
                         return (
                           <button
                             className={cn(
-                              "flex items-start gap-3 rounded-[18px] border px-4 py-4 text-left transition",
+                              "flex items-start gap-3 rounded-xl border p-4 text-left transition",
                               isBound
-                                ? "border-emerald-200 bg-emerald-50/70"
-                                : "border-slate-200 bg-white hover:border-slate-300",
+                                ? "border-emerald-200 bg-emerald-50/70 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50/70",
                             )}
                             disabled={!hasAgentWriteAccess}
                             key={toolRegistration.id}

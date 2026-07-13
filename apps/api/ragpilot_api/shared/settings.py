@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     chat_model_name: str = "ragpilot-grounded-template"
     chat_model_api_base_url: str | None = None
     chat_model_api_key: str | None = None
-    chat_model_request_timeout_seconds: int = 60
+    chat_model_request_timeout_seconds: int = 180
     model_preview_review_window_hours: int = 24
     mcp_preview_review_window_hours: int = 24
     tool_preview_review_window_hours: int = 24

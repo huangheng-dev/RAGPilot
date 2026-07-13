@@ -223,7 +223,7 @@ export function DocumentRegistryPanel({
               <TableRow
                 key={document.id}
                 className={cn(
-                  "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50",
+                  "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 [&>td]:py-[14px]",
                   document.id === selectedDocumentId ? "bg-blue-50/70" : "bg-white"
                 )}
                 onClick={() => void onSelectDocument(document.id)}

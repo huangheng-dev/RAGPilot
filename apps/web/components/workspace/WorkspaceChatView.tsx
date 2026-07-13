@@ -1,16 +1,15 @@
 "use client";
 
-import { type ComponentProps, type FormEvent, useEffect, useRef, useState } from "react";
+import { type ComponentProps, type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Copy, Info, LoaderCircle, MessageSquareText, Send, ShieldAlert, X } from "lucide-react";
+import { CheckCircle2, Copy, Info, LoaderCircle, MessageSquareText, Send, ShieldAlert } from "lucide-react";
 import { ConsoleEmptyState } from "@/components/console/ConsolePrimitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DialogFormActions, FormDialog } from "@/components/ui/form-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { SelectedDocumentPanel } from "@/components/workspace/SelectedDocumentPanel";
 import { WorkspaceRetrievalFollowUpCard } from "@/components/workspace/WorkspaceRetrievalFollowUpCard";
-import { SelectedWorkflowRunPanel } from "@/components/workspace/SelectedWorkflowRunPanel";
 import { useI18n } from "@/lib/i18n/provider";
 import type { RetrievalFollowUpActionDescriptor } from "@/lib/workspace-retrieval-follow-up";
 import type {
@@ -27,6 +26,7 @@ import { cn } from "@/lib/utils";
 import {
   formatStatusLabel,
   formatTimestamp,
+  formatWorkflowTypeLabel,
   getStatusBadgeClass,
 } from "@/lib/workspace-formatters";
 import type {
@@ -227,7 +227,7 @@ export function WorkspaceChatView({
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [isLoadingMessages, messages.length, selectedConversation?.id]);
+  }, [isLoadingMessages, isSending, messages.length, selectedConversation?.id]);
 
   async function copyAnswer(message: Message) {
     await navigator.clipboard.writeText(message.content);
@@ -252,11 +252,13 @@ export function WorkspaceChatView({
   }
   const hasConversationSelection = selectedConversation !== null;
   const hasMessages = messages.length > 0;
+  const hasActiveConversationView =
+    hasConversationSelection || hasMessages || isSending;
   useEffect(() => {
-    if (!hasConversationSelection && !isBusy && !isSending && canSendChatMessages) {
+    if (!hasActiveConversationView && !isBusy && !isSending && canSendChatMessages) {
       welcomeInputRef.current?.focus();
     }
-  }, [canSendChatMessages, hasConversationSelection, isBusy, isSending]);
+  }, [canSendChatMessages, hasActiveConversationView, isBusy, isSending]);
   const activeAgentModeLabel = activeAgentContext
     ? t(`agents.modes.${activeAgentContext.mode}`)
     : null;
@@ -592,9 +594,9 @@ export function WorkspaceChatView({
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {!hasConversationSelection ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-10">
+    <div className="console-split-content flex min-w-0 flex-1 flex-col">
+      {!hasActiveConversationView ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-3 py-10 sm:px-5">
           <div className="w-full max-w-2xl text-center">
             <div className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-slate-50">
               {t("workspace.chatView.welcomeTitle")}
@@ -641,7 +643,7 @@ export function WorkspaceChatView({
           </div>
         </div>
       ) : null}
-      <div className={cn("min-h-0 flex-1 overflow-y-auto p-5", !hasConversationSelection && "hidden")}>
+      <div className={cn("console-split-content-padding min-h-0 flex-1 overflow-y-auto", !hasActiveConversationView && "hidden")}>
         <div className="flex w-full flex-col gap-3">
           <Card className="border-slate-200 bg-slate-50/50 shadow-sm">
             <CardHeader className="gap-3 border-b border-slate-200 pb-4">
@@ -669,7 +671,7 @@ export function WorkspaceChatView({
                 </div>
               )}
 
-              {!isLoadingMessages && !hasConversationSelection ? (
+              {!isLoadingMessages && !hasActiveConversationView ? (
                 <ConsoleEmptyState icon={<MessageSquareText className="h-9 w-9 stroke-[1.5]" />}>
                   <div className="text-base font-semibold text-slate-900">
                     {t("workspace.chatView.noConversationSelected")}
@@ -681,7 +683,7 @@ export function WorkspaceChatView({
               ) : null}
 
               {!isLoadingMessages &&
-              hasConversationSelection &&
+              hasActiveConversationView &&
               !hasMessages ? (
                 <ConsoleEmptyState icon={<MessageSquareText className="h-9 w-9 stroke-[1.5]" />}>
                   <div className="text-base font-semibold text-slate-900">
@@ -822,7 +824,7 @@ export function WorkspaceChatView({
                   ) : null}
                   {message.role === "assistant" &&
                     message.citations.length > 0 && (
-                      <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                      <div className="mt-4 space-y-2.5 border-t border-slate-200 pt-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                             {t("workspace.chatView.citations")}
@@ -836,116 +838,33 @@ export function WorkspaceChatView({
                             })}
                           </Badge>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {message.citations.map((citation) => (
                             <div
                               key={citation.id}
-                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                             >
-                              <div className="flex items-center justify-between gap-4">
-                                <span className="font-medium text-slate-900">
-                                  {t("workspace.chatView.sourceRank", {
-                                    rank: String(citation.rank),
-                                  })}
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {hasNumericScore(citation.score)
-                                    ? t("workspace.chatView.score", {
-                                        score:
-                                          formatNumericScore(citation.score) ??
-                                          "0.000",
-                                      })
-                                    : t("workspace.chatView.unscored")}
-                                </span>
-                              </div>
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  variant="outline"
-                                >
-                                  {citation.document_title ??
-                                    `Chunk ${citation.document_chunk_id.slice(0, 8)}`}
-                                </Badge>
-                                {citation.retrieval_method ? (
-                                  <Badge
-                                    className="border-slate-200 bg-white text-slate-600"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.retrievalMethod", {
-                                      method:
-                                        formatCitationMethod(
-                                          citation.retrieval_method,
-                                        ) ?? citation.retrieval_method,
-                                    })}
-                                  </Badge>
-                                ) : null}
-                                {citation.chunk_index !== null ? (
-                                  <Badge
-                                    className="border-slate-200 bg-white text-slate-600"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.chunkIndex", {
-                                      index: String(citation.chunk_index),
-                                    })}
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              {hasNumericScore(citation.vector_score) ||
-                              hasNumericScore(citation.lexical_score) ||
-                              hasNumericScore(
-                                citation.lexical_normalized_score,
-                              ) ? (
-                                <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                                  {hasNumericScore(citation.vector_score) ? (
-                                    <span>
-                                      {t("workspace.chatView.vectorScore", {
-                                        score:
-                                          formatNumericScore(
-                                            citation.vector_score,
-                                          ) ?? "0.000",
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-slate-900">
+                                    {citation.document_title ??
+                                      t("workspace.chatView.sourceRank", {
+                                        rank: String(citation.rank),
                                       })}
-                                    </span>
-                                  ) : null}
-                                  {hasNumericScore(citation.lexical_score) ? (
-                                    <span>
-                                      {t("workspace.chatView.lexicalScore", {
-                                        score:
-                                          formatNumericScore(
-                                            citation.lexical_score,
-                                          ) ?? "0.000",
-                                      })}
-                                    </span>
-                                  ) : null}
-                                  {hasNumericScore(
-                                    citation.lexical_normalized_score,
-                                  ) ? (
-                                    <span>
-                                      {t(
-                                        "workspace.chatView.lexicalNormalizedScore",
-                                        {
-                                          score:
-                                            formatNumericScore(
-                                              citation.lexical_normalized_score,
-                                            ) ?? "0.000",
-                                        },
-                                      )}
-                                    </span>
-                                  ) : null}
+                                  </div>
+                                  {citation.quote ? (
+                                    <p className="mt-1 truncate text-xs leading-5 text-slate-600">
+                                      {citation.quote}
+                                    </p>
+                                  ) : (
+                                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                                      {t("workspace.chatView.citationWithoutQuote")}
+                                    </p>
+                                  )}
                                 </div>
-                              ) : null}
-                              {citation.quote ? (
-                                <p className="mt-2 whitespace-pre-wrap leading-6 text-slate-700">
-                                  {citation.quote}
-                                </p>
-                              ) : (
-                                <p className="mt-2 leading-6 text-slate-500">
-                                  {t("workspace.chatView.citationWithoutQuote")}
-                                </p>
-                              )}
-                              {citation.document_id ? (
-                                <div className="mt-3 flex flex-wrap gap-2">
+                                {citation.document_id ? (
                                   <Button
-                                    className="bg-white"
+                                    className="h-8 shrink-0 bg-white px-3"
                                     onClick={() =>
                                       void onInspectCitationDocument(citation)
                                     }
@@ -955,19 +874,8 @@ export function WorkspaceChatView({
                                   >
                                     {t("workspace.chatView.inspectSource")}
                                   </Button>
-                                  <Button
-                                    className="bg-white"
-                                    onClick={() =>
-                                      void onOpenCitationDocumentView(citation)
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.openDocumentView")}
-                                  </Button>
-                                </div>
-                              ) : null}
+                                ) : null}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -975,6 +883,14 @@ export function WorkspaceChatView({
                     )}
                 </article>
               ))}
+              {isSending ? (
+                <article className="max-w-4xl rounded-xl border border-slate-200 bg-white px-5 py-4 text-slate-600 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+                    {t("workspace.chatView.generating")}
+                  </div>
+                </article>
+              ) : null}
               <div aria-hidden="true" ref={messageEndRef} />
             </CardContent>
           </Card>
@@ -1326,7 +1242,7 @@ export function WorkspaceChatView({
       </div>
 
       <form
-        className={cn("shrink-0 border-t border-slate-200 bg-white/95 px-4 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95", !hasConversationSelection && "hidden")}
+        className={cn("shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-5 dark:border-slate-800 dark:bg-slate-950/95", !hasActiveConversationView && "hidden")}
                 onSubmit={handleSendQuestion}
               >
         <div className="w-full">
@@ -1337,7 +1253,7 @@ export function WorkspaceChatView({
                   disabled={
                     isBusy ||
                     isSending ||
-                    !hasConversationSelection ||
+                    !hasActiveConversationView ||
                     !canSendChatMessages
                   }
                   onChange={(event) => setQuestion(event.target.value)}
@@ -1350,7 +1266,7 @@ export function WorkspaceChatView({
                     }
                   }}
                   placeholder={
-                    !hasConversationSelection
+                    !hasActiveConversationView
                       ? t("workspace.chatView.startOrSelectConversation")
                       : !hasDocuments
                         ? t("workspace.chatView.uploadContentBeforeAsk")
@@ -1377,7 +1293,7 @@ export function WorkspaceChatView({
                     disabled={
                       isBusy ||
                       isSending ||
-                      !hasConversationSelection ||
+                      !hasActiveConversationView ||
                       !canSendChatMessages ||
                       !hasDocuments ||
                       question.trim().length === 0
@@ -1401,28 +1317,17 @@ export function WorkspaceChatView({
       </form>
 
       {detailMessage ? (
-        <div className="fixed inset-0 z-[70]">
-          <button
-            aria-label={t("workspace.chatView.closeAnswerDetails")}
-            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
-            onClick={() => setDetailMessage(null)}
-            type="button"
-          />
-          <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  {t("workspace.chatView.answerDetails")}
-                </div>
-                <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  {formatTimestamp(detailMessage.created_at)}
-                </div>
-              </div>
-              <Button aria-label={t("workspace.chatView.closeAnswerDetails")} onClick={() => setDetailMessage(null)} size="icon" type="button" variant="ghost">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+        <FormDialog
+          eyebrow={t("workspace.chatView.answerDetails")}
+          footer={<DialogFormActions><Button className="rounded-xl" onClick={() => setDetailMessage(null)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button></DialogFormActions>}
+          onClose={() => setDetailMessage(null)}
+          open
+          presentation="side"
+          size="xl"
+          title={formatTimestamp(detailMessage.created_at)}
+          titleClassName="text-base"
+        >
+            <div className="space-y-5">
               {(() => {
                 const runtime = extractRuntimeSummary(detailMessage);
                 const retrieval = extractRetrievalSummary(detailMessage);
@@ -1436,12 +1341,10 @@ export function WorkspaceChatView({
                 ].filter((item): item is [string, string] => Boolean(item[1]));
 
                 return details.length > 0 ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <AgentAlignedDrawerSection title={t("workspace.chatView.runtimeDetails")}>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {details.map(([label, value]) => (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900" key={label}>
-                        <div className="text-xs font-medium text-slate-500">{label}</div>
-                        <div className="mt-1 break-all text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</div>
-                      </div>
+                      <DrawerMetric key={label} label={label} value={value} />
                     ))}
                     {runtime?.fallbackApplied ? (
                       <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">
@@ -1449,20 +1352,18 @@ export function WorkspaceChatView({
                       </div>
                     ) : null}
                   </div>
+                  </AgentAlignedDrawerSection>
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">
                     {t("workspace.chatView.noRuntimeDetails")}
                   </div>
                 );
               })()}
-              <div>
-                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  {t("workspace.chatView.citations")}
-                </div>
+              <AgentAlignedDrawerSection badge={<Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">{t("workspace.chatView.citationCount", { count: String(detailMessage.citations.length) })}</Badge>} title={t("workspace.chatView.citations")}>
                 <div className="space-y-2">
                   {detailMessage.citations.length > 0 ? detailMessage.citations.map((citation) => (
                     <button
-                      className="w-full rounded-xl border border-slate-200 p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
+                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
                       key={citation.id}
                       onClick={() => void onInspectCitationDocument(citation)}
                       type="button"
@@ -1479,46 +1380,29 @@ export function WorkspaceChatView({
                     </div>
                   )}
                 </div>
-              </div>
+              </AgentAlignedDrawerSection>
             </div>
-          </aside>
-        </div>
+        </FormDialog>
       ) : null}
 
-      {isDiagnosticsOpen ? <div className="fixed inset-0 z-[70]">
-        <button aria-label={t("workspace.chatView.closeDiagnostics")} className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={() => setIsDiagnosticsOpen(false)} type="button" />
-      <aside className="absolute inset-y-0 right-0 w-full max-w-2xl overflow-y-auto border-l border-slate-200 bg-slate-50 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
-          <div className="text-sm font-semibold">{t("workspace.chatView.diagnosticsTitle")}</div>
-          <Button aria-label={t("workspace.chatView.closeDiagnostics")} onClick={() => setIsDiagnosticsOpen(false)} size="icon" type="button" variant="ghost"><X className="h-4 w-4" /></Button>
-        </div>
-        <div className="space-y-5 px-5 py-5 xl:sticky xl:top-6 xl:px-6 xl:py-6">
+      {isDiagnosticsOpen ? <FormDialog
+        eyebrow={t("workspace.chatView.diagnosticsTitle")}
+        footer={<DialogFormActions><Button className="rounded-xl" onClick={() => setIsDiagnosticsOpen(false)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button></DialogFormActions>}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        open
+        presentation="side"
+        size="xl"
+        title={t("workspace.chatView.answerReviewTitle")}
+        titleClassName="text-base"
+      >
+        <div className="space-y-5">
           {retrievalEvaluationSummary ? (
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader className="gap-2 pb-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <CardTitle>{t("workspace.chatView.retrievalIntelligenceTitle")}</CardTitle>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      {retrievalEvaluationSummary.intelligence_reason}
-                    </p>
-                  </div>
-                  <Badge
-                    className={cn(
-                      "shrink-0 border",
-                      getRetrievalIntelligenceStatusClassName(
-                        retrievalEvaluationSummary.intelligence_status,
-                      ),
-                    )}
-                    variant="outline"
-                  >
-                    {t(
-                      `workspace.chatView.retrievalIntelligenceStatuses.${retrievalEvaluationSummary.intelligence_status}`,
-                    )}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="grid grid-cols-3 gap-3 px-4 pb-4 pt-4">
+            <AgentAlignedDrawerSection
+              badge={<Badge className={cn("shrink-0 border", getRetrievalIntelligenceStatusClassName(retrievalEvaluationSummary.intelligence_status))} variant="outline">{t(`workspace.chatView.retrievalIntelligenceStatuses.${retrievalEvaluationSummary.intelligence_status}`)}</Badge>}
+              description={retrievalEvaluationSummary.intelligence_reason}
+              title={t("workspace.chatView.retrievalIntelligenceTitle")}
+            >
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   {
                     label: t("workspace.chatView.retrievalIntelligenceEvaluations"),
@@ -1533,90 +1417,24 @@ export function WorkspaceChatView({
                     value: retrievalEvaluationSummary.follow_up_breakdown.pending,
                   },
                 ].map((metric) => (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3" key={metric.label}>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                      {metric.label}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {metric.value}
-                    </div>
-                  </div>
+                  <DrawerMetric key={metric.label} label={metric.label} value={metric.value} />
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </AgentAlignedDrawerSection>
           ) : null}
 
-          <SelectedDocumentPanel
-            chunkPreviewClassName="line-clamp-5"
-            detail={selectedDocumentDetail}
-            emptyState={t("workspace.chatView.selectDocumentToInspect")}
-            focusedChunkId={focusedChunkId}
-            canManageDocuments={canManageDocuments}
-            isRunningDocumentAction={isRunningDocumentAction}
-            onDeleteDocument={onDeleteDocument}
-            onPermanentlyDeleteDocument={onPermanentlyDeleteDocument}
-            onOpenWorkflowView={onOpenWorkflowView}
-            onInspectWorkflowRun={onSelectWorkflowRun}
-            onReindexDocument={onReindexDocument}
-            onRestoreDocument={onRestoreDocument}
-            onSelectVersion={onSelectDocumentVersion}
-            relatedWorkflowRuns={
-              selectedDocumentId
-                ? workflowRuns
-                    .filter(
-                      (workflowRun) =>
-                        workflowRun.subject_id === selectedDocumentId,
-                    )
-                    .sort(
-                      (left, right) =>
-                        new Date(right.created_at).getTime() -
-                        new Date(left.created_at).getTime(),
-                    )
-                : []
-            }
-            selectedDocumentVersionId={
-              selectedDocumentDetail?.document_version_id ?? null
-            }
-          />
+          {(selectedDocumentDetail || selectedWorkflowRunDetail) ? <AgentAlignedDrawerSection title={t("workspace.chatView.reviewContext")}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {selectedDocumentDetail ? <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{t("workspace.selectedDocument.selectedDocument")}</div><div className="mt-2 truncate text-sm font-semibold text-slate-950">{selectedDocumentDetail.document.title}</div><Button className="mt-3 bg-white" onClick={onOpenDocumentsView} size="sm" type="button" variant="outline">{t("workspace.selectedDocument.openDocumentRegistry")}</Button></div> : null}
+              {selectedWorkflowRunDetail ? <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{t("workspace.selectedDocument.latestWorkflow")}</div><div className="mt-2 text-sm font-semibold text-slate-950">{formatWorkflowTypeLabel(selectedWorkflowRunDetail.workflow_type)}</div><Button className="mt-3 bg-white" onClick={onOpenWorkflowView} size="sm" type="button" variant="outline">{t("workspace.selectedDocument.openWorkflowSupervision")}</Button></div> : null}
+            </div>
+          </AgentAlignedDrawerSection> : null}
 
-          <SelectedWorkflowRunPanel
-            detail={selectedWorkflowRunDetail}
-            emptyState={t("workspace.chatView.selectWorkflowToInspect")}
-            emptyStepsMessage={t("workspace.chatView.workflowStepsAppear")}
-            canEditOperatorNotes={canManageWorkflowRuns}
-            isCancellingWorkflow={isCancellingWorkflow}
-            isSavingOperatorNotes={isSavingWorkflowNotes}
-            isRetryingWorkflow={isRetryingWorkflow}
-            onCancelWorkflowRun={onCancelWorkflowRun}
-            onOpenDocumentsView={onOpenDocumentsView}
-            onOpenWorkflowView={onOpenWorkflowView}
-            onSaveOperatorNotes={onSaveWorkflowOperatorNotes}
-            onSelectDocument={onSelectDocument}
-            onRetryWorkflowRun={onRetryWorkflowRun}
-          />
-
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="gap-2 pb-5">
-              <CardTitle>{t("workspace.chatView.answerReviewTitle")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 px-4 pb-4 pt-5">
+          <AgentAlignedDrawerSection title={t("workspace.chatView.answerReviewTitle")}>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.feedbackPendingMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {pendingFeedbackItems.length}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.feedbackResolvedMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {resolvedFeedbackCount}
-                  </div>
-                </div>
+                <DrawerMetric label={t("workspace.chatView.feedbackPendingMetric")} value={pendingFeedbackItems.length} />
+                <DrawerMetric label={t("workspace.chatView.feedbackResolvedMetric")} value={resolvedFeedbackCount} />
               </div>
 
               {pendingFeedbackItems.length === 0 ? (
@@ -1731,35 +1549,14 @@ export function WorkspaceChatView({
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </AgentAlignedDrawerSection>
 
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="gap-2 pb-5">
-              <CardTitle>
-                {t("workspace.chatView.tuningCandidatesTitle")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 px-4 pb-4 pt-5">
+          <AgentAlignedDrawerSection title={t("workspace.chatView.tuningCandidatesTitle")}>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.candidatePendingMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {retrievalEvaluationSummary?.follow_up_breakdown.pending ??
-                      0}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.candidateResolvedMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {retrievalEvaluationSummary?.follow_up_breakdown.resolved ??
-                      0}
-                  </div>
-                </div>
+                <DrawerMetric label={t("workspace.chatView.candidatePendingMetric")} value={retrievalEvaluationSummary?.follow_up_breakdown.pending ?? 0} />
+                <DrawerMetric label={t("workspace.chatView.candidateResolvedMetric")} value={retrievalEvaluationSummary?.follow_up_breakdown.resolved ?? 0} />
               </div>
 
               {pendingRetrievalCandidates.length === 0 ? (
@@ -1852,16 +1649,11 @@ export function WorkspaceChatView({
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </AgentAlignedDrawerSection>
 
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="gap-2 pb-4">
-              <CardTitle>
-                {t("workspace.retrievalInspector.recentEvaluationsTitle")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 p-4">
+          <AgentAlignedDrawerSection title={t("workspace.retrievalInspector.recentEvaluationsTitle")}>
+            <div className="space-y-3">
               {recentEvaluations.length === 0 ? (
                 <ConsoleEmptyState>
                   {t("workspace.retrievalInspector.recentEvaluationsEmpty")}
@@ -1947,10 +1739,44 @@ export function WorkspaceChatView({
                   );
                 })
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </AgentAlignedDrawerSection>
         </div>
-      </aside></div> : null}
+      </FormDialog> : null}
+    </div>
+  );
+}
+
+function AgentAlignedDrawerSection({
+  badge,
+  children,
+  description,
+  title,
+}: {
+  badge?: ReactNode;
+  children: ReactNode;
+  description?: ReactNode;
+  title: ReactNode;
+}) {
+  return (
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{title}</div>
+          {description ? <div className="mt-1 text-sm leading-6 text-slate-500">{description}</div> : null}
+        </div>
+        {badge}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function DrawerMetric({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-slate-50">{value}</div>
     </div>
   );
 }

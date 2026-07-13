@@ -26,6 +26,7 @@ import {
 import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
 import { authenticatedApiRequest } from "@/lib/authenticated-api";
 import { useAuth } from "@/lib/auth/provider";
+import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
 import { buildAgentsHref } from "@/lib/console-route-builders";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
@@ -221,7 +222,7 @@ export default function HomePage() {
 
   const activeAgents = useMemo(
     () =>
-      tenantAgents
+      [...tenantAgents]
         .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()),
     [tenantAgents]
   );
@@ -238,7 +239,7 @@ export default function HomePage() {
   useEffect(() => {
     function applyLocationState() {
       const searchParams = new URLSearchParams(window.location.search);
-      setSelectedTenantId(searchParams.get("tenant_id") ?? "");
+      setSelectedTenantId(searchParams.get("tenant_id") ?? readCurrentTenantId());
       setSelectedWorkspaceId(searchParams.get("workspace_id") ?? "");
       setSelectedKnowledgeBaseId(searchParams.get("knowledge_base_id") ?? "");
     }
@@ -270,6 +271,10 @@ export default function HomePage() {
     }
     window.history.replaceState({}, "", nextUrl);
   }, [selectedKnowledgeBaseId, selectedTenantId, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (selectedTenantId) writeCurrentTenantId(selectedTenantId);
+  }, [selectedTenantId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -576,7 +581,7 @@ export default function HomePage() {
             <div className="text-[22px] font-semibold tracking-tight text-slate-950 sm:text-[26px]">{welcomeTitle}</div>
             <div className="mt-1 text-sm leading-6 text-slate-500">{t("home.welcome.description")}</div>
           </div>
-          <ConsoleToolbarGroup className="w-full justify-start xl:w-auto xl:justify-end">
+          <ConsoleToolbarGroup className="w-full justify-start lg:w-auto lg:justify-end">
             <Button asChild size="sm" type="button">
               <Link href={chatHref}>{t("home.commandCenter.retrieval.primaryChat")}</Link>
             </Button>

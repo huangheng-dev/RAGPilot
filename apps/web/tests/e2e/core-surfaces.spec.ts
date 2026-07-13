@@ -35,24 +35,26 @@ test("authenticated core surfaces load and security is populated", async ({ page
   expect(modelResponse.ok()).toBeTruthy();
   const [model] = await modelResponse.json();
   await page.goto(`/admin?section=runtime&runtime_resource=model_endpoint&model_endpoint_id=${model.id}`);
-  await expect(page.getByRole("main").getByText("Runtime resources", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("AI runtime configuration", { exact: true })).toBeVisible();
   await expect(page.getByText("Edit runtime resource", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Runtime resource saved.", { exact: true })).toBeVisible();
 
   await page.goto("/settings");
-  await page.getByRole("button", { name: "Security" }).click();
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
   await expect(page.getByText("Account status", { exact: true })).toBeVisible();
   await expect(page.getByText("Active sessions", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Change Password" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Security" }).click();
+  await expect(page.getByRole("button", { name: "Update Password" })).toHaveCount(1);
 
   await page.evaluate(() => window.localStorage.setItem("ragpilot-language", "zh-CN"));
   await page.reload();
-  await page.getByRole("button", { name: "安全中心" }).click();
+  await page.getByRole("button", { name: "会话管理" }).click();
   await expect(page.getByText("账号状态", { exact: true })).toBeVisible();
   await expect(page.getByText("活跃会话", { exact: true })).toBeVisible();
 
   await page.goto("/documents");
   await expect(page.getByPlaceholder("搜索文档")).toBeVisible();
+  await page.getByRole("button", { name: "添加文档" }).click();
   await expect(page.getByRole("button", { name: "导入网页" })).toBeVisible();
 });

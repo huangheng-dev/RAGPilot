@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChevronDown,
@@ -29,6 +29,7 @@ import { useI18n } from "@/lib/i18n/provider";
 import { usePreferences } from "@/lib/preferences/provider";
 import { cn } from "@/lib/utils";
 import { readWorkspaceView } from "@/lib/workspace-navigation";
+import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
 
 type ConsoleShellProps = {
   activeHref?: "/" | "/workspace" | "/chat" | "/documents" | "/agents" | "/operations" | "/admin" | "/settings";
@@ -46,6 +47,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
   const { themeMode, toggleThemeMode } = usePreferences();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
+  const [currentTenantId, setCurrentTenantId] = useState("");
   const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   const primaryNavigation: Array<{
@@ -88,6 +90,34 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
     };
   }, [isUserMenuOpen]);
 
+  const activeMemberships = useMemo(
+    () => (session?.memberships ?? []).filter((membership) => membership.membership_status === "active"),
+    [session?.memberships],
+  );
+
+  useEffect(() => {
+    const storedTenantId = readCurrentTenantId();
+    const nextTenantId = activeMemberships.some((membership) => membership.tenant_id === storedTenantId)
+      ? storedTenantId
+      : (activeMemberships[0]?.tenant_id ?? "");
+    setCurrentTenantId(nextTenantId);
+    if (nextTenantId) writeCurrentTenantId(nextTenantId);
+  }, [activeMemberships]);
+
+  function handleTenantChange(tenantId: string) {
+    setCurrentTenantId(tenantId);
+    writeCurrentTenantId(tenantId);
+    const nextUrl = new URL(window.location.href);
+    const tenantAwarePaths = ["/", "/chat", "/documents", "/agents", "/operations"];
+    if (!tenantAwarePaths.includes(pathname)) {
+      nextUrl.pathname = "/";
+      nextUrl.search = "";
+    }
+    nextUrl.searchParams.set("tenant_id", tenantId);
+    ["workspace_id", "knowledge_base_id", "conversation_id", "document_id", "agent_id", "workflow_run_id"].forEach((key) => nextUrl.searchParams.delete(key));
+    window.location.assign(nextUrl.toString());
+  }
+
   const userInitials = session?.displayName
     .split(" ")
     .filter(Boolean)
@@ -117,7 +147,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-400 text-white shadow-[0_8px_24px_rgba(37,99,235,0.24)] transition-transform group-hover:scale-[1.03]">
               <Sparkles className="h-[18px] w-[18px]" />
             </div>
-            <span className="text-xl font-semibold tracking-[-0.025em] text-slate-950 dark:text-slate-50">RAGPilot</span>
+            <span className="hidden text-xl font-semibold tracking-[-0.025em] text-slate-950 sm:inline dark:text-slate-50">RAGPilot</span>
           </Link>
 
           <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-xl bg-slate-100/80 p-1 ring-1 ring-slate-200/60 dark:bg-slate-900/80 dark:ring-slate-800 lg:flex">
@@ -216,6 +246,28 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{session.email}</div>
                     </div>
 
+                    {activeMemberships.length > 0 ? (
+                      <div className="mt-2 rounded-xl border border-slate-200/80 p-2 dark:border-slate-800">
+                        <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          {t("shell.userMenu.currentTenant")}
+                        </div>
+                        {activeMemberships.length > 1 ? (
+                          <Select onValueChange={handleTenantChange} value={currentTenantId}>
+                            <SelectTrigger className="h-9 w-full bg-white"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {activeMemberships.map((membership) => (
+                                <SelectItem key={membership.id} value={membership.tenant_id}>{membership.tenant_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="truncate px-1 pb-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {activeMemberships[0].tenant_name}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
                     <div className="mt-2 space-y-1">
                       <Link
                         className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-50"
@@ -308,7 +360,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 py-6 md:px-8">{children}</div>
+      <div className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 sm:py-5 md:px-8 md:py-6">{children}</div>
     </div>
   );
 }

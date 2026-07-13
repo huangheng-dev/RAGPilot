@@ -31,8 +31,8 @@ export function RuntimePostureCard({
   runtimeHealth: RuntimeHealthSnapshot | null;
   isLoading: boolean;
   errorMessage: string | null;
-  actionHref: ComponentProps<typeof Link>["href"];
-  actionLabel: string;
+  actionHref?: ComponentProps<typeof Link>["href"];
+  actionLabel?: string;
   className?: string;
 }) {
   const { t } = useI18n();
@@ -131,11 +131,13 @@ export function RuntimePostureCard({
         </div>
       ) : null}
 
-      <div className="mt-4">
-        <Button asChild className="bg-white" size="sm" type="button" variant="outline">
-          <Link href={actionHref}>{actionLabel}</Link>
-        </Button>
-      </div>
+      {actionHref && actionLabel ? (
+        <div className="mt-4">
+          <Button asChild className="bg-white" size="sm" type="button" variant="outline">
+            <Link href={actionHref}>{actionLabel}</Link>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

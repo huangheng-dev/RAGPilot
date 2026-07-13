@@ -49,7 +49,7 @@ export function ConsoleSurfaceHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("px-6 pb-3 pt-6", className)}>
+    <div className={cn("px-6 pb-3 pt-6", className)} data-ui="console-surface-header">
       <div className={cn("flex flex-col gap-3", actionPlacement === "side" && "sm:flex-row sm:items-start sm:justify-between")}>
         <div className="min-w-0">
           <div className="text-lg font-semibold text-slate-950 dark:text-slate-50">{title}</div>

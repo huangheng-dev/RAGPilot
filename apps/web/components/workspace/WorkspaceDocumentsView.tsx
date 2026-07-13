@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, RotateCcw, Trash2, X } from "lucide-react";
+import { ArrowLeft, RotateCcw, Trash2 } from "lucide-react";
 import { DocumentRegistryPanel } from "@/components/workspace/DocumentRegistryPanel";
-import { SelectedDocumentPanel } from "@/components/workspace/SelectedDocumentPanel";
+import { DocumentDetailsDrawerPanel } from "@/components/workspace/DocumentDetailsDrawerPanel";
 import { SelectedWorkflowRunPanel } from "@/components/workspace/SelectedWorkflowRunPanel";
 import { Button } from "@/components/ui/button";
 import { DialogFormActions, FormDialog } from "@/components/ui/form-dialog";
@@ -67,7 +67,7 @@ type WorkspaceDocumentsViewProps = {
   workflowRuns: WorkflowRun[];
 };
 
-const DOCUMENT_PAGE_SIZE = 5;
+const DOCUMENT_PAGE_SIZE = 10;
 
 export function WorkspaceDocumentsView({
   activeAgentContext,
@@ -125,7 +125,7 @@ export function WorkspaceDocumentsView({
 
   return (
     <>
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="console-split-content console-split-content-padding flex-1">
         <div className="flex w-full flex-col gap-3">
           <DocumentRegistryPanel
             activeAgentContext={activeAgentContext}
@@ -170,18 +170,13 @@ export function WorkspaceDocumentsView({
           size="xl"
           title={selectedDocumentDetail.document.title}
         >
-              <SelectedDocumentPanel
+              <DocumentDetailsDrawerPanel
                 detail={selectedDocumentDetail}
-                emptyState={t("workspace.documentsView.selectDocumentToInspect")}
                 focusedChunkId={focusedChunkId}
                 canManageDocuments={canManageDocuments}
                 isActivatingRecommendation={isActivatingRecommendation}
                 isRunningDocumentAction={isRunningDocumentAction}
-              onDeleteDocument={onDeleteDocument}
-              onPermanentlyDeleteDocument={onPermanentlyDeleteDocument}
-                onOpenChatView={onOpenChatView}
-                onOpenFailedDocumentsQueue={onOpenFailedDocumentsQueue}
-                onOpenWorkflowView={onOpenWorkflowView}
+                onPermanentlyDeleteDocument={onPermanentlyDeleteDocument}
                 onActivateRecommendedAgent={onActivateRecommendedAgent}
                 onInspectWorkflowRun={async (workflowRunId) => {
                   setWorkflowOpenedFromDocument(true);
@@ -189,15 +184,10 @@ export function WorkspaceDocumentsView({
                   setIsWorkflowDetailOpen(true);
                   await onSelectWorkflowRun(workflowRunId);
                 }}
-                onReindexDocument={onReindexDocument}
                 onRestoreDocument={onRestoreDocument}
                 recommendedAgents={selectedDocumentRecommendedAgents}
                 onSelectVersion={onSelectDocumentVersion}
-                relatedWorkflowRuns={workflowRuns}
-                selectedDocumentVersionId={selectedDocumentDetail.document_version_id ?? null}
-                showExtendedMetadata
-                embeddedInDialog
-                hideLifecycleActions={!selectedDocumentDetail.document.is_deleted}
+                workflowRuns={workflowRuns}
               />
         </FormDialog>
       ) : null}
@@ -222,39 +212,15 @@ export function WorkspaceDocumentsView({
         title={t("workspace.selectedDocument.reindex")}
       />
       {selectedWorkflowRunDetail && isWorkflowDetailOpen ? (
-        <div className="fixed inset-0 z-[70]">
-          <button
-            aria-label={t("workspace.documentsView.closeWorkflowDetails")}
-            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
-            onClick={() => setIsWorkflowDetailOpen(false)}
-            type="button"
-          />
-          <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-              <div className="flex min-w-0 items-center gap-2">
-                {workflowOpenedFromDocument ? (
-                  <Button
-                    aria-label={t("workspace.documentsView.backToDocument")}
-                    onClick={() => {
-                      setIsWorkflowDetailOpen(false);
-                      setIsDocumentDetailOpen(true);
-                    }}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                  </Button>
-                ) : null}
-                <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">
-                  {t("workspace.documentsView.relatedWorkflow")}
-                </div>
-              </div>
-              <Button aria-label={t("workspace.documentsView.closeWorkflowDetails")} onClick={() => setIsWorkflowDetailOpen(false)} size="icon" type="button" variant="ghost">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <FormDialog
+          eyebrow={t("workspace.documentsView.documentDetails")}
+          footer={<DialogFormActions>{workflowOpenedFromDocument ? <Button className="rounded-xl bg-white" onClick={() => { setIsWorkflowDetailOpen(false); setIsDocumentDetailOpen(true); }} type="button" variant="outline"><ArrowLeft className="h-4 w-4" />{t("workspace.documentsView.backToDocument")}</Button> : null}<Button className="rounded-xl" onClick={() => setIsWorkflowDetailOpen(false)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button></DialogFormActions>}
+          onClose={() => setIsWorkflowDetailOpen(false)}
+          open
+          presentation="side"
+          size="xl"
+          title={t("workspace.documentsView.relatedWorkflow")}
+        >
               <SelectedWorkflowRunPanel
                 detail={selectedWorkflowRunDetail}
                 emptyState={t("workspace.documentsView.selectDocumentOrWorkflow")}
@@ -274,9 +240,7 @@ export function WorkspaceDocumentsView({
                 retryHelpText={t("workspace.documentsView.retryHelp")}
                 title={t("workspace.documentsView.relatedWorkflow")}
               />
-            </div>
-          </aside>
-        </div>
+        </FormDialog>
       ) : null}
     </>
   );

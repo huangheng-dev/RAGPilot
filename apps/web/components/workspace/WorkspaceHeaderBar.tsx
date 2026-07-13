@@ -21,7 +21,7 @@ type Props = {
   onCancelConversationEditing: () => void; onConversationDraftTitleChange: (value: string) => void;
   onSwitchKnowledgeScope: (selection: WorkspaceSelection) => void | Promise<void>;
   onLoadMoreConversations: () => void | Promise<void>;
-  onConversationSearchQueryChange: (value: string) => void; onDeleteConversation: () => void | Promise<void>;
+  onConversationSearchQueryChange: (value: string) => void; onDeleteConversation: (conversationId: string) => void | Promise<void>;
   onFileSelection: (event: ChangeEvent<HTMLInputElement>) => void; onImportWebPage: () => void | Promise<void>;
   onDocumentLifecycleFilterChange: (value: DocumentLifecycleFilter) => void; onDocumentQueryChange: (value: string) => void;
   onDocumentSourceFilterChange: (value: DocumentSourceFilter) => void; onDocumentSortOrderChange: (value: DocumentSortOrder) => void;
@@ -36,14 +36,14 @@ type Props = {
 
 export function WorkspaceHeaderBar(props: Props) {
   const { t } = useI18n();
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDeleteConversationId, setPendingDeleteConversationId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [documentSourceDialogOpen, setDocumentSourceDialogOpen] = useState(false);
   const [knowledgeScopeDialogOpen, setKnowledgeScopeDialogOpen] = useState(false);
   const [documentSourceTab, setDocumentSourceTab] = useState<"files" | "web">("files");
   const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
   const conversationMenuRef = useRef<HTMLDivElement>(null);
-  const selectedTitle = props.conversations.find((item) => item.id === props.selectedConversationId)?.title ?? "";
+  const pendingDeleteConversation = props.conversations.find((item) => item.id === pendingDeleteConversationId);
   useEffect(() => {
     if (!openConversationMenuId) return;
     const closeMenu = (event: MouseEvent) => {
@@ -70,12 +70,14 @@ export function WorkspaceHeaderBar(props: Props) {
   };
 
   return <>
-    {props.workspaceView === "chat" ? <aside className="flex max-h-72 w-full shrink-0 flex-col border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/70 xl:max-h-none xl:w-[292px] xl:border-b-0 xl:border-r">
+    {props.workspaceView === "chat" ? <aside className="console-split-sidebar flex w-full flex-col bg-slate-50/70 dark:bg-slate-950/70">
       <div className="border-b border-slate-200 p-4 dark:border-slate-800">
         <div className="mb-4 text-lg font-semibold">{t("shell.nav.chat")}</div>
-        <Button className="w-full" disabled={props.isBusy} onClick={props.onStartNewConversation} type="button"><Plus className="h-4 w-4" />{t("workspace.headerBar.newConversation")}</Button>
+        <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("workspace.headerBar.knowledgeScope")}</div>
+        <Button className="h-auto w-full justify-start bg-white px-3 py-2.5 text-left" onClick={() => setKnowledgeScopeDialogOpen(true)} type="button" variant="outline"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-slate-800">{props.currentWorkspaceName}</div><div className="mt-0.5 truncate text-xs font-normal text-slate-500">{props.currentKnowledgeBaseName}</div></div><ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /></Button>
+        <Button className="mt-3 w-full" disabled={props.isBusy} onClick={props.onStartNewConversation} type="button"><Plus className="h-4 w-4" />{t("workspace.headerBar.newConversation")}</Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4" onScroll={(event) => { const element = event.currentTarget; if (element.scrollHeight - element.scrollTop - element.clientHeight < 80 && props.hasMoreConversations && !props.isLoadingMoreConversations) void props.onLoadMoreConversations(); }}><div className="mb-2 flex items-center justify-between gap-3 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500"><span>{t("workspace.headerBar.conversations")}</span><span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] tabular-nums text-slate-600">{props.conversations.length}</span></div><div className="relative mb-3"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="bg-white pl-9" value={props.conversationSearchQuery} onChange={(e) => props.onConversationSearchQueryChange(e.target.value)} placeholder={t("workspace.headerBar.searchConversations")} /></div><div className="space-y-0.5">
+      <div className="min-h-0 flex-1 pb-3"><div className="conversation-list-scrollbar h-full overflow-y-auto px-4 pb-8 pt-4" onScroll={(event) => { const element = event.currentTarget; if (element.scrollHeight - element.scrollTop - element.clientHeight < 80 && props.hasMoreConversations && !props.isLoadingMoreConversations) void props.onLoadMoreConversations(); }}><div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("workspace.headerBar.conversations")}</div><div className="relative mb-3"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="bg-white pl-9" value={props.conversationSearchQuery} onChange={(e) => props.onConversationSearchQueryChange(e.target.value)} placeholder={t("workspace.headerBar.searchConversations")} /></div><div className="space-y-0.5">
         {props.conversations.length ? props.conversations.map((item) => {
           const isSelected = item.id === props.selectedConversationId;
           const isMenuOpen = item.id === openConversationMenuId;
@@ -85,15 +87,15 @@ export function WorkspaceHeaderBar(props: Props) {
               <button aria-expanded={isMenuOpen} aria-haspopup="menu" aria-label={t("workspace.headerBar.conversationActions")} className={`rounded-md p-1.5 text-slate-400 transition hover:bg-white hover:text-slate-700 focus:opacity-100 ${isSelected || isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} onClick={() => { if (!isSelected) props.onSelectConversation(item.id); setOpenConversationMenuId(isMenuOpen ? null : item.id); }} type="button"><MoreHorizontal className="h-4 w-4" /></button>
               {isMenuOpen ? <div className="absolute right-2 top-[calc(100%-4px)] z-30 min-w-32 rounded-xl border border-slate-200 bg-white p-1 shadow-lg" role="menu">
                 <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { setOpenConversationMenuId(null); props.onOpenConversationEditor(item.id); }} role="menuitem" type="button"><PencilLine className="h-4 w-4" />{t("workspace.headerBar.renameTitle")}</button>
-                <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50" onClick={() => { setOpenConversationMenuId(null); setDeleteOpen(true); }} role="menuitem" type="button"><Trash2 className="h-4 w-4" />{t("workspace.headerBar.deleteConversation")}</button>
+                <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50" onClick={() => { setOpenConversationMenuId(null); setPendingDeleteConversationId(item.id); }} role="menuitem" type="button"><Trash2 className="h-4 w-4" />{t("workspace.headerBar.deleteConversation")}</button>
               </div> : null}
             </div>
           </div>;
         }) : <div className="rounded-xl border border-dashed p-3 text-sm text-slate-500">{t("workspace.headerBar.noConversations")}</div>}
-      </div>{props.isLoadingMoreConversations ? <div className="py-3 text-center text-xs text-slate-400">{t("workspace.headerBar.loadingMoreConversations")}</div> : null}</div>
+      </div>{props.isLoadingMoreConversations ? <div className="py-3 text-center text-xs text-slate-400">{t("workspace.headerBar.loadingMoreConversations")}</div> : null}</div></div>
     </aside> : null}
 
-    {props.workspaceView === "documents" ? <aside className="flex max-h-80 w-full shrink-0 flex-col border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/70 xl:max-h-none xl:w-[292px] xl:border-b-0 xl:border-r"><div className="p-4">
+    {props.workspaceView === "documents" ? <aside className="console-split-sidebar flex w-full flex-col bg-slate-50/70 dark:bg-slate-950/70"><div className="p-4">
       <div><div className="mb-4 text-lg font-semibold">{t("shell.nav.documents")}</div><div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("workspace.headerBar.knowledgeScope")}</div><Button className="h-auto w-full justify-start bg-white px-3 py-2.5 text-left" onClick={() => setKnowledgeScopeDialogOpen(true)} type="button" variant="outline"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-slate-800">{props.currentWorkspaceName}</div><div className="mt-0.5 truncate text-xs font-normal text-slate-500">{props.currentKnowledgeBaseName}</div></div><ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /></Button><Button className="mt-3 w-full" disabled={props.isBusy} onClick={() => setDocumentSourceDialogOpen(true)} type="button"><Plus className="h-4 w-4" />{t("workspace.headerBar.addDocument")}</Button></div>
     </div><div className="min-h-0 flex-1 space-y-2 overflow-y-auto border-t border-slate-200 p-4"><div className="px-1 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">{t("workspace.headerBar.documentFilters")}</div><div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="bg-white pl-9" value={props.documentQuery} onChange={(e) => props.onDocumentQueryChange(e.target.value)} placeholder={t("workspace.headerBar.documentSearch")} /></div>
       <Select value={props.documentStatusFilter} onValueChange={props.onDocumentStatusFilterChange}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("workspace.headerBar.filters.allStatuses")}</SelectItem>{["completed","running","failed","pending"].map(v=><SelectItem key={v} value={v}>{filterLabel(v)}</SelectItem>)}</SelectContent></Select>
@@ -113,6 +115,6 @@ export function WorkspaceHeaderBar(props: Props) {
     </FormDialog>
 
     <FormDialog open={props.isConversationEditing} onClose={props.onCancelConversationEditing} title={t("workspace.headerBar.renameTitle")} description={t("workspace.headerBar.conversationTitlePlaceholder")} footer={<DialogFormActions><Button onClick={props.onCancelConversationEditing} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button><Button disabled={props.isBusy || !props.conversationDraftTitle.trim()} onClick={()=>void props.onSubmitConversationTitle()} type="button">{t("workspace.headerBar.saveTitle")}</Button></DialogFormActions>}><DialogFormField label={t("workspace.headerBar.renameTitle")}><Input value={props.conversationDraftTitle} onChange={(e)=>props.onConversationDraftTitleChange(e.target.value)} /></DialogFormField></FormDialog>
-    <ConfirmDialog open={deleteOpen} title={t("workspace.headerBar.deleteConversation")} description={t("workspace.confirm.deleteConversation",{title:selectedTitle})} confirmLabel={t("workspace.headerBar.deleteConversation")} cancelLabel={t("workspace.headerBar.cancel")} isLoading={props.isDeletingConversation} onCancel={()=>setDeleteOpen(false)} onConfirm={async()=>{await props.onDeleteConversation();setDeleteOpen(false);}} />
+    <ConfirmDialog open={Boolean(pendingDeleteConversationId)} title={t("workspace.headerBar.deleteConversation")} description={t("workspace.confirm.deleteConversation",{title:pendingDeleteConversation?.title ?? ""})} confirmLabel={t("workspace.headerBar.deleteConversation")} cancelLabel={t("workspace.headerBar.cancel")} isLoading={props.isDeletingConversation} onCancel={()=>setPendingDeleteConversationId(null)} onConfirm={async()=>{if (!pendingDeleteConversationId) return; await props.onDeleteConversation(pendingDeleteConversationId); setPendingDeleteConversationId(null);}} />
   </>;
 }

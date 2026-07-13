@@ -36,21 +36,19 @@ type ActivationCandidate = {
 type LoginProfile = "admin" | "operator";
 
 const DEFAULT_ADMIN_DISPLAY_NAME = "Platform Owner";
-const DEFAULT_ADMIN_EMAIL = "admin@ragpilot.local";
 const DEFAULT_OPERATOR_DISPLAY_NAME = "Workspace Operator";
-const DEFAULT_OPERATOR_EMAIL = "operator@ragpilot.local";
 
 function getProfileDefaults(profile: LoginProfile) {
   if (profile === "admin") {
     return {
       displayName: DEFAULT_ADMIN_DISPLAY_NAME,
-      email: DEFAULT_ADMIN_EMAIL,
+      email: "",
     };
   }
 
   return {
     displayName: DEFAULT_OPERATOR_DISPLAY_NAME,
-    email: DEFAULT_OPERATOR_EMAIL,
+    email: "",
   };
 }
 
@@ -118,7 +116,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
   const { t } = useI18n();
   const [loginProfile, setLoginProfile] = useState<LoginProfile>("admin");
   const [displayName, setDisplayName] = useState(DEFAULT_ADMIN_DISPLAY_NAME);
-  const [email, setEmail] = useState(DEFAULT_ADMIN_EMAIL);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [invitationToken, setInvitationToken] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -445,7 +443,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                   </div>
                 </div>
               ) : (
-                <form className="space-y-5" onSubmit={handleSubmit}>
+                <form autoComplete="off" className="space-y-5" onSubmit={handleSubmit}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <button
                       className={`rounded-[24px] border px-4 py-4 text-left transition ${
@@ -474,7 +472,6 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                         </div>
                         {loginProfile === "admin" ? <CheckCircle2 className="h-5 w-5 text-blue-600" /> : null}
                       </div>
-                      <div className="mt-3 text-sm text-slate-500">{DEFAULT_ADMIN_EMAIL}</div>
                     </button>
                     <button
                       className={`rounded-[24px] border px-4 py-4 text-left transition ${
@@ -503,7 +500,6 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                         </div>
                         {loginProfile === "operator" ? <CheckCircle2 className="h-5 w-5 text-blue-600" /> : null}
                       </div>
-                      <div className="mt-3 text-sm text-slate-500">{DEFAULT_OPERATOR_EMAIL}</div>
                     </button>
                   </div>
 
@@ -517,6 +513,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                           <div className="relative">
                             <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                             <Input
+                              autoComplete="off"
                               className="h-14 rounded-2xl border-slate-200 bg-white pl-11 pr-4 text-base shadow-none"
                               onChange={(event) => setDisplayName(event.target.value)}
                               placeholder={t("auth.fields.displayNamePlaceholder")}
@@ -553,6 +550,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                           <div className="relative">
                             <LockKeyhole className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                             <Input
+                              autoComplete="new-password"
                               className="h-14 rounded-2xl border-slate-200 bg-white pl-11 pr-4 text-base shadow-none"
                               onChange={(event) => setPassword(event.target.value)}
                               placeholder={t("auth.fields.passwordPlaceholder")}
@@ -615,6 +613,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
                       <div className="relative">
                         <LockKeyhole className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-500" />
                         <Input
+                          autoComplete="new-password"
                           className="h-14 rounded-2xl border-amber-200 bg-white pl-11 pr-4 text-base shadow-none"
                           onChange={(event) => setPassword(event.target.value)}
                           placeholder={t("auth.fields.passwordPlaceholder")}

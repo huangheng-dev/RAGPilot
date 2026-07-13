@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, Dispatch, ReactNode, SetStateAction } from "react";
+import { Children, ChangeEvent, cloneElement, Dispatch, isValidElement, type ReactElement, ReactNode, SetStateAction } from "react";
 import { BookOpen, Building2, FileText, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -141,9 +141,24 @@ function ManagementDialog({
   onClose: () => void;
   title: string;
 }) {
+  let dialogContent = children;
+  let dialogFooter: ReactNode = null;
+  const rootChildren = Children.toArray(children);
+  const rootLayout = rootChildren.length === 1 ? rootChildren[0] : null;
+
+  if (isValidElement(rootLayout) && rootLayout.type === DialogFormLayout) {
+    const layoutElement = rootLayout as ReactElement<{ children?: ReactNode }>;
+    const layoutChildren = Children.toArray(layoutElement.props.children);
+    const footerCandidate = layoutChildren.at(-1);
+    if (isValidElement(footerCandidate) && footerCandidate.type === DialogFormActions) {
+      dialogFooter = footerCandidate;
+      dialogContent = cloneElement(layoutElement, undefined, layoutChildren.slice(0, -1));
+    }
+  }
+
   return (
-    <FormDialog description={description} onClose={onClose} open size="lg" title={title}>
-      {children}
+    <FormDialog description={description} footer={dialogFooter} onClose={onClose} open presentation="side" size="xl" title={title}>
+      {dialogContent}
     </FormDialog>
   );
 }
@@ -210,8 +225,8 @@ export function WorkspaceSidebar({
         type="button"
       />
 
-      <div className="fixed inset-y-0 right-0 z-[90] w-full max-w-[480px] overflow-y-auto border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+      <div className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-4xl flex-col overflow-hidden border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+        <div className="flex min-h-16 shrink-0 items-center border-b border-slate-200 bg-white px-5 py-3 sm:px-6 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{t("workspace.sidebar.contextControls")}</div>
@@ -225,7 +240,7 @@ export function WorkspaceSidebar({
           </div>
         </div>
 
-        <div className="space-y-5 px-5 py-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
           <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/70">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">

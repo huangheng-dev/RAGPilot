@@ -31,6 +31,7 @@ class OllamaChatProvider:
                     "model": self.model_name,
                     "messages": messages,
                     "stream": False,
+                    "think": False,
                 },
             )
             response.raise_for_status()

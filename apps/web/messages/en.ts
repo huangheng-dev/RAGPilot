@@ -23,6 +23,7 @@ const en = {
       signIn: "Sign In",
       signOut: "Sign Out",
       rolePrefix: "Role:",
+      currentTenant: "Current tenant",
       memberships: "Memberships",
       noMemberships: "No tenant memberships yet."
     },
@@ -264,7 +265,7 @@ const en = {
       allModelEndpoints: "All runtime models",
       allModelProviders: "All model providers",
       allToolRegistrations: "All registered tools",
-      searchPlaceholder: "Search by name, slug, scope, or instructions"
+      searchPlaceholder: "Search agents"
     },
     governance: {
       title: "Governance issue lanes",
@@ -783,6 +784,11 @@ const en = {
       readOnly: "Read-only retries"
     },
     title: "Operations",
+    navigation: {
+      overview: "Overview",
+      queue: "Task queue",
+      detail: "Run details"
+    },
     header: {
       eyebrow: "Execution Control",
       title: "Operations console",
@@ -840,6 +846,7 @@ const en = {
     scope: {
       title: "Execution scope",
       description: "Operations works at tenant level while staying connected to the current agent and workspace inventory.",
+      currentTenant: "Current tenant",
       notAvailable: "Not available",
       recoveryAgent: "Recovery agent",
       selectRecoveryAgent: "Select recovery agent",
@@ -864,6 +871,9 @@ const en = {
       retries: "Retries",
       completed: "Completed",
       pending: "Pending"
+    },
+    statusSummary: {
+      title: "Run status summary"
     },
     directory: {
       title: "Workflow directory",
@@ -1076,7 +1086,7 @@ const en = {
     }
   },
   settings: {
-    title: "Settings",
+    title: "System settings",
     navigation: {
       profile: "Profile",
       sessions: "Sessions",
@@ -1084,7 +1094,7 @@ const en = {
     },
     security: {
       title: "Security",
-      description: "Review authentication, session health, and account risk in one place.",
+      description: "Update the current account password and keep account access secure.",
       accountStatus: "Account status",
       verified: "Verified",
       signedOut: "Signed out",
@@ -1106,8 +1116,8 @@ const en = {
         "Keep local operator access, governance entry points, and repository links in one place without inventing settings that do not exist yet."
     },
     sections: {
-      sessionTitle: "Current session",
-      sessionDescription: "This local session controls access to protected RAGPilot routes in the browser.",
+      sessionTitle: "Profile",
+      sessionDescription: "Manage the current account's basic information, contact details, and organization memberships.",
       roleTitle: "Experience and access",
       roleDescription: "Adjust language, appearance, and pending access posture for this local operator environment.",
       accessTitle: "Access activity",
@@ -1122,7 +1132,7 @@ const en = {
       role: "Role",
       roleManaged: "Role is managed by the member directory and current access policy.",
       directoryLinked: "Linked to persisted member directory",
-      memberships: "Tenant memberships",
+      memberships: "Organizations",
       noMemberships: "No persisted tenant memberships are linked to this session yet.",
       password: "Password",
       passwordHint: "Rotate the sign-in password for this member without leaving the current session.",
@@ -1172,7 +1182,7 @@ const en = {
       runtimeHealthFailed: "Runtime health could not be loaded."
     },
     actions: {
-      saveProfile: "Save Session",
+      saveProfile: "Save profile",
       savingProfile: "Saving...",
       changePassword: "Change Password",
       refreshSession: "Refresh Session",
@@ -1225,14 +1235,16 @@ const en = {
       loginModeInvitationActivation: "Invitation activation"
     },
     sessions: {
-      title: "Active sessions",
-      description: "Review the bearer sessions currently still valid for this signed-in member.",
+      title: "Session management",
+      description: "Review the current account's sign-in status and recent security activity, and manage active device sessions.",
       current: "Current",
       other: "Other session",
       startedAt: "Started",
       expiresAt: "Expires",
       deviceLabel: "Device",
       ipAddress: "IP",
+      loading: "Loading active sessions...",
+      loadMore: "Load more",
       empty: "No active backend sessions are visible for this member right now.",
       summary: {
         total: "Active sessions",
@@ -1255,7 +1267,7 @@ const en = {
       currentPassword: "Current password",
       currentPasswordPlaceholder: "Enter current password",
       newPassword: "New password",
-      newPasswordPlaceholder: "Enter new password",
+      newPasswordPlaceholder: "Enter a new password of at least 8 characters",
       confirmPassword: "Confirm password",
       confirmPasswordPlaceholder: "Re-enter new password",
       cancel: "Cancel",
@@ -2323,7 +2335,9 @@ const en = {
       draftOnly: "Draft only",
       returnToValidation: "Return to validation",
       refreshDirectory: "Refresh directory",
-      refreshingDirectory: "Refreshing..."
+      refreshingDirectory: "Refreshing...",
+      resourceFilters: "Resource filters",
+      memberFilters: "Member filters"
     },
     actions: {
       edit: "Edit",
@@ -2380,28 +2394,29 @@ const en = {
     },
     sections: {
       title: "Governance architecture",
-      description: "Keep platform administration separated into overview, resource directory, member-access control, and security-review lanes.",
-      overview: "Overview",
+      description: "Separate platform administration into admin overview, resource management, members and access, and AI runtime configuration.",
+      overview: "Admin overview",
       overviewDescription: "Cross-tenant governance signals, watchlists, and platform chat activity.",
-      directory: "Directory",
+      directory: "Resource management",
       directoryDescription: "Tenant inventory, knowledge governance, and agent scope review.",
-      access: "Access",
+      access: "Members & access",
       accessDescription: "Member directory, invitation lifecycle, and recent access auditing.",
-      runtime: "Runtime resources",
+      runtime: "AI runtime configuration",
       runtimeDescription: "Models, tools, MCP connectors, and retrieval profiles.",
       security: "Security",
       securityDescription: "Invitation hygiene, dormant-account review, and sensitive governance events."
     },
     runtimeResources: {
-      title: "Runtime resources",
+      title: "AI runtime configuration",
       description: "Configure, test, enable, and audit the resources used by governed agents and retrieval.",
       refresh: "Refresh", create: "New resource", search: "Search by name, slug, or resource ID",
-      enabled: "Enabled", disabled: "Disabled", default: "Default", edit: "Edit", test: "Test",
+      enabled: "Enabled", disabled: "Disabled", default: "Default", edit: "Edit", test: "Test", testConnection: "Test connection", moreActions: "More actions",
       enable: "Enable", disable: "Disable", makeDefault: "Make default", empty: "No resources match this view.",
       createTitle: "Create runtime resource", editTitle: "Edit runtime resource", cancel: "Cancel", save: "Save", saving: "Saving...",
-      saved: "Runtime resource saved.", loadFailed: "Runtime resources could not be loaded.", saveFailed: "Runtime resource could not be saved.",
+      saved: "Runtime resource saved.", loading: "Loading current resources...", loadFailed: "Runtime resources could not be loaded.", saveFailed: "Runtime resource could not be saved.",
       selectTenant: "Select one tenant before testing a tool.",
       previewComplete: "Runtime test completed.", actionComplete: "Governance action completed.", actionFailed: "Governance action failed.",
+      disableTitle: "Disable runtime resource", disableDescription: "Disable {name}? {count} linked objects may be affected, and new requests will no longer use this resource.", confirmDisable: "Disable resource",
       deleteTitle: "Delete runtime resource", deleteDescription: "Delete {name}? Bound resources may reject this action.", delete: "Delete", deleteFailed: "Runtime resource could not be deleted.",
       kinds: { model_endpoint: "Model services", tool_registration: "Tools", mcp_connector: "MCP connectors", retrieval_profile: "Retrieval profiles" },
       fields: {
@@ -3142,7 +3157,7 @@ const en = {
       displayName: "Display name",
       displayNamePlaceholder: "Workspace Operator",
       email: "Email",
-      emailPlaceholder: "operator@ragpilot.local",
+      emailPlaceholder: "Enter your email address",
       password: "Password",
       passwordPlaceholder: "Enter your password",
       invitationToken: "Invitation code",
@@ -3878,6 +3893,9 @@ const en = {
       noIndexedDocumentsWarning:
         "No indexed documents are available in this knowledge base yet. Upload content first so grounded answers have retrieval context.",
       citations: "Citations",
+      citationCount: "{count} citations",
+      runtimeDetails: "Runtime details",
+      reviewContext: "Review context",
       sourcesCount: "{count} sources",
       sourceRank: "Source #{rank}",
       score: "score {score}",
@@ -4320,6 +4338,17 @@ const en = {
       documentIndexing: "Document Indexing",
       currentVersionTokens: "Current Version Tokens",
       contentType: "Content Type",
+      contentTypes: {
+        pdf: "PDF document",
+        word: "Word document",
+        spreadsheet: "Spreadsheet",
+        presentation: "Presentation",
+        image: "Image",
+        web: "Web page",
+        json: "JSON data",
+        text: "Text file",
+        other: "Other file",
+      },
       unknown: "unknown",
       versionState: "Version State",
       latestAttempt: "Latest Attempt",
