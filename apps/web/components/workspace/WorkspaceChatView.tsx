@@ -1,15 +1,15 @@
 "use client";
 
-import type { ComponentProps, FormEvent } from "react";
+import { type ComponentProps, type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, MessageSquareText, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Copy, Info, LoaderCircle, MessageSquareText, Send, ShieldAlert } from "lucide-react";
+import { ConsoleEmptyState } from "@/components/console/ConsolePrimitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DialogFormActions, FormDialog } from "@/components/ui/form-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { SelectedDocumentPanel } from "@/components/workspace/SelectedDocumentPanel";
 import { WorkspaceRetrievalFollowUpCard } from "@/components/workspace/WorkspaceRetrievalFollowUpCard";
-import { SelectedWorkflowRunPanel } from "@/components/workspace/SelectedWorkflowRunPanel";
 import { useI18n } from "@/lib/i18n/provider";
 import type { RetrievalFollowUpActionDescriptor } from "@/lib/workspace-retrieval-follow-up";
 import type {
@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import {
   formatStatusLabel,
   formatTimestamp,
+  formatWorkflowTypeLabel,
   getStatusBadgeClass,
 } from "@/lib/workspace-formatters";
 import type {
@@ -97,6 +98,7 @@ type WorkspaceChatViewProps = {
   messageFeedbackSummary: MessageFeedbackSummary | null;
   messages: Message[];
   onDeleteDocument: () => void | Promise<void>;
+  onPermanentlyDeleteDocument: (confirmationTitle: string) => void | Promise<void>;
   onOpenFeedbackConversation: (conversationId: string) => void;
   onInspectCitationDocument: (citation: Citation) => void | Promise<void>;
   onOpenDocumentsView: () => void;
@@ -179,6 +181,7 @@ export function WorkspaceChatView({
   messageFeedbackSummary,
   messages,
   onDeleteDocument,
+  onPermanentlyDeleteDocument,
   onOpenFeedbackConversation,
   onInspectCitationDocument,
   onOpenDocumentsView,
@@ -216,6 +219,21 @@ export function WorkspaceChatView({
   workflowRuns,
 }: WorkspaceChatViewProps) {
   const { t } = useI18n();
+  const [detailMessage, setDetailMessage] = useState<Message | null>(null);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const welcomeInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [isLoadingMessages, isSending, messages.length, selectedConversation?.id]);
+
+  async function copyAnswer(message: Message) {
+    await navigator.clipboard.writeText(message.content);
+    setCopiedMessageId(message.id);
+    window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1600);
+  }
   const { runtimeHealth } = useRuntimeHealth({
     enabled: Boolean(tenantId && knowledgeBaseId),
   });
@@ -234,6 +252,13 @@ export function WorkspaceChatView({
   }
   const hasConversationSelection = selectedConversation !== null;
   const hasMessages = messages.length > 0;
+  const hasActiveConversationView =
+    hasConversationSelection || hasMessages || isSending;
+  useEffect(() => {
+    if (!hasActiveConversationView && !isBusy && !isSending && canSendChatMessages) {
+      welcomeInputRef.current?.focus();
+    }
+  }, [canSendChatMessages, hasActiveConversationView, isBusy, isSending]);
   const activeAgentModeLabel = activeAgentContext
     ? t(`agents.modes.${activeAgentContext.mode}`)
     : null;
@@ -569,9 +594,57 @@ export function WorkspaceChatView({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_388px]">
-      <div className="min-h-0 overflow-y-auto px-6 py-6">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <div className="console-split-content flex min-w-0 flex-1 flex-col">
+      {!hasActiveConversationView ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-3 py-10 sm:px-5">
+          <div className="w-full max-w-2xl text-center">
+            <div className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-slate-50">
+              {t("workspace.chatView.welcomeTitle")}
+            </div>
+            <div className="mt-3 text-sm leading-6 text-slate-500">
+              {t("workspace.chatView.welcomeDescription")}
+            </div>
+            <form className="mt-7" onSubmit={handleSendQuestion}>
+              <div className="relative text-left">
+                <Textarea
+                  autoFocus
+                  ref={welcomeInputRef}
+                  className="max-h-40 min-h-[88px] w-full resize-none rounded-xl bg-slate-50 px-4 pb-9 pr-14 pt-3 text-base leading-6 shadow-sm focus-visible:bg-white"
+                  disabled={isBusy || isSending || !canSendChatMessages}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      if (!event.currentTarget.disabled && question.trim().length > 0 && hasDocuments) {
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }
+                  }}
+                  placeholder={hasDocuments ? t("workspace.chatView.welcomePlaceholder") : t("workspace.chatView.uploadContentBeforeAsk")}
+                  value={question}
+                />
+                <div className="pointer-events-none absolute bottom-3 left-4 flex max-w-[calc(100%-4.5rem)] items-center gap-1.5 truncate text-[11px] leading-none text-slate-400">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                  <span className="truncate">{t("workspace.chatView.scopeLimitedTo", {
+                    scope: bootstrap?.knowledgeBase.slug ?? bootstrap?.knowledgeBase.name ?? t("workspace.chatView.defaultScope"),
+                  })}</span>
+                </div>
+                <Button
+                  aria-label={isSending ? t("workspace.chatView.generating") : t("workspace.chatView.sendQuestion")}
+                  className="absolute bottom-2 right-2 h-9 w-9 rounded-lg p-0"
+                  disabled={isBusy || isSending || !canSendChatMessages || !hasDocuments || question.trim().length === 0}
+                  size="icon"
+                  type="submit"
+                >
+                  {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      <div className={cn("console-split-content-padding min-h-0 flex-1 overflow-y-auto", !hasActiveConversationView && "hidden")}>
+        <div className="flex w-full flex-col gap-3">
           <Card className="border-slate-200 bg-slate-50/50 shadow-sm">
             <CardHeader className="gap-3 border-b border-slate-200 pb-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -585,16 +658,10 @@ export function WorkspaceChatView({
                       t("workspace.chatView.groundedResponseConsole")}
                   </div>
                 </div>
-                <Badge
-                  className="border-slate-200 bg-white text-slate-700"
-                  variant="outline"
-                >
-                  {isLoadingMessages
-                    ? t("workspace.chatView.syncingHistory")
-                    : t("workspace.chatView.loadedCount", {
-                        count: String(messages.length),
-                      })}
-                </Badge>
+                <Button onClick={() => setIsDiagnosticsOpen(true)} size="sm" type="button" variant="outline">
+                  <Info className="h-4 w-4" />
+                  {t("workspace.chatView.openDiagnostics")}
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 p-4 sm:p-5">
@@ -604,21 +671,21 @@ export function WorkspaceChatView({
                 </div>
               )}
 
-              {!isLoadingMessages && !hasConversationSelection ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-6 text-sm text-slate-600">
+              {!isLoadingMessages && !hasActiveConversationView ? (
+                <ConsoleEmptyState icon={<MessageSquareText className="h-9 w-9 stroke-[1.5]" />}>
                   <div className="text-base font-semibold text-slate-900">
                     {t("workspace.chatView.noConversationSelected")}
                   </div>
                   <div className="mt-2 leading-7">
                     {t("workspace.chatView.streamPlaceholderNoConversation")}
                   </div>
-                </div>
+                </ConsoleEmptyState>
               ) : null}
 
               {!isLoadingMessages &&
-              hasConversationSelection &&
+              hasActiveConversationView &&
               !hasMessages ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-6 text-sm text-slate-600">
+                <ConsoleEmptyState icon={<MessageSquareText className="h-9 w-9 stroke-[1.5]" />}>
                   <div className="text-base font-semibold text-slate-900">
                     {t("workspace.chatView.firstTurnReady")}
                   </div>
@@ -630,7 +697,7 @@ export function WorkspaceChatView({
                       {t("workspace.chatView.noIndexedDocumentsWarning")}
                     </div>
                   ) : null}
-                </div>
+                </ConsoleEmptyState>
               ) : null}
 
               {messages.map((message) => (
@@ -669,133 +736,37 @@ export function WorkspaceChatView({
                     {message.content}
                   </div>
                   {message.role === "assistant" ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(() => {
-                        const runtimeSummary = extractRuntimeSummary(message);
-                        const retrievalSummary =
-                          extractRetrievalSummary(message);
-                        if (!runtimeSummary?.modelName) {
-                          return retrievalSummary?.engineName ? (
-                            <Badge
-                              className="border-slate-200 bg-slate-50 text-slate-600"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.retrievalEngine", {
-                                value: retrievalSummary.engineName,
-                              })}
-                            </Badge>
-                          ) : null;
-                        }
-
-                        return (
-                          <>
-                            {retrievalSummary?.engineName ? (
-                              <Badge
-                                className="border-slate-200 bg-slate-50 text-slate-600"
-                                variant="outline"
-                              >
-                                {t("workspace.chatView.retrievalEngine", {
-                                  value: retrievalSummary.engineName,
-                                })}
-                              </Badge>
-                            ) : null}
-                            <Badge
-                              className="border-slate-200 bg-slate-50 text-slate-700"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.runtimeModelBadge", {
-                                model: runtimeSummary.modelName,
-                              })}
-                            </Badge>
-                            {runtimeSummary.providerType ? (
-                              <Badge
-                                className="border-slate-200 bg-slate-50 text-slate-600"
-                                variant="outline"
-                              >
-                                {formatProviderLabel(
-                                  runtimeSummary.providerType,
-                                ) ?? runtimeSummary.providerType}
-                              </Badge>
-                            ) : null}
-                            {runtimeSummary.source ? (
-                              <Badge
-                                className="border-slate-200 bg-slate-50 text-slate-600"
-                                variant="outline"
-                              >
-                                {t("workspace.chatView.runtimeSource", {
-                                  source:
-                                    formatRuntimeSourceLabel(
-                                      runtimeSummary.source,
-                                    ) ?? runtimeSummary.source,
-                                })}
-                              </Badge>
-                            ) : null}
-                            {runtimeSummary.modelEndpointName ? (
-                              <Badge
-                                className="border-slate-200 bg-slate-50 text-slate-600"
-                                variant="outline"
-                              >
-                                {t("workspace.chatView.runtimeEndpoint", {
-                                  value: runtimeSummary.modelEndpointName,
-                                })}
-                              </Badge>
-                            ) : null}
-                            {runtimeSummary.fallbackApplied ? (
-                              <Badge
-                                className="border-amber-200 bg-amber-50 text-amber-800"
-                                variant="outline"
-                              >
-                                {t("workspace.chatView.runtimeFallbackBadge")}
-                              </Badge>
-                            ) : null}
-                            {runtimeSummary.apiBaseUrl ? (
-                              <Badge
-                                className="border-slate-200 bg-slate-50 text-slate-500"
-                                variant="outline"
-                              >
-                                {runtimeSummary.apiBaseUrl}
-                              </Badge>
-                            ) : null}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  ) : null}
-                  {message.role === "assistant" ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {(() => {
-                        const currentFeedback =
-                          readCurrentMessageFeedback(message);
-                        return currentFeedback ? (
-                          <Badge
-                            className={cn(
-                              "border",
-                              currentFeedback.answer_quality === "helpful"
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700",
-                            )}
-                            variant="outline"
-                          >
-                            {currentFeedback.answer_quality === "helpful"
-                              ? t("workspace.chatView.feedbackSubmittedHelpful")
-                              : t("workspace.chatView.feedbackSubmittedReview")}
-                          </Badge>
-                        ) : null;
-                      })()}
-                      {message.feedback_entries.length > 1 ? (
-                        <Badge
-                          className="border-slate-200 bg-slate-50 text-slate-600"
-                          variant="outline"
-                        >
-                          {t("workspace.chatView.feedbackCount", {
-                            count: String(message.feedback_entries.length),
-                          })}
-                        </Badge>
-                      ) : null}
+                      <Button
+                        className="bg-white"
+                        onClick={() => setDetailMessage(message)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Info className="h-4 w-4" />
+                        {t("workspace.chatView.answerDetails")}
+                      </Button>
+                      <Button
+                        className="bg-white"
+                        onClick={() => void copyAnswer(message)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Copy className="h-4 w-4" />
+                        {copiedMessageId === message.id
+                          ? t("workspace.chatView.answerCopied")
+                          : t("workspace.chatView.copyAnswer")}
+                      </Button>
                       {canSubmitMessageFeedback ? (
                         <>
                           <Button
-                            className="bg-white"
+                            className={cn(
+                              "bg-white",
+                              readCurrentMessageFeedback(message)?.answer_quality === "helpful" &&
+                                "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800",
+                            )}
                             disabled={messageFeedbackPendingId === message.id}
                             onClick={() =>
                               void onSubmitMessageFeedback(
@@ -807,13 +778,20 @@ export function WorkspaceChatView({
                             type="button"
                             variant="outline"
                           >
-                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            <CheckCircle2 className="h-4 w-4" />
                             {messageFeedbackPendingId === message.id
                               ? t("workspace.chatView.feedbackSubmitting")
-                              : t("workspace.chatView.feedbackHelpful")}
+                              : readCurrentMessageFeedback(message)?.answer_quality === "helpful"
+                                ? t("workspace.chatView.feedbackSubmittedHelpful")
+                                : t("workspace.chatView.feedbackHelpful")}
                           </Button>
                           <Button
-                            className="bg-white"
+                            className={cn(
+                              "bg-white",
+                              readCurrentMessageFeedback(message) !== null &&
+                                readCurrentMessageFeedback(message)?.answer_quality !== "helpful" &&
+                                "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800",
+                            )}
                             disabled={messageFeedbackPendingId === message.id}
                             onClick={() =>
                               void onSubmitMessageFeedback(message.id, "review")
@@ -822,18 +800,31 @@ export function WorkspaceChatView({
                             type="button"
                             variant="outline"
                           >
-                            <ShieldAlert className="mr-2 h-4 w-4" />
+                            <ShieldAlert className="h-4 w-4" />
                             {messageFeedbackPendingId === message.id
                               ? t("workspace.chatView.feedbackSubmitting")
-                              : t("workspace.chatView.feedbackReview")}
+                              : readCurrentMessageFeedback(message) !== null &&
+                                  readCurrentMessageFeedback(message)?.answer_quality !== "helpful"
+                                ? t("workspace.chatView.feedbackSubmittedReview")
+                                : t("workspace.chatView.feedbackReview")}
                           </Button>
                         </>
+                      ) : null}
+                      {message.feedback_entries.length > 1 ? (
+                        <Badge
+                          className="ml-auto border-slate-200 bg-slate-50 text-slate-600"
+                          variant="outline"
+                        >
+                          {t("workspace.chatView.feedbackCount", {
+                            count: String(message.feedback_entries.length),
+                          })}
+                        </Badge>
                       ) : null}
                     </div>
                   ) : null}
                   {message.role === "assistant" &&
                     message.citations.length > 0 && (
-                      <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                      <div className="mt-4 space-y-2.5 border-t border-slate-200 pt-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                             {t("workspace.chatView.citations")}
@@ -847,116 +838,33 @@ export function WorkspaceChatView({
                             })}
                           </Badge>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {message.citations.map((citation) => (
                             <div
                               key={citation.id}
-                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                             >
-                              <div className="flex items-center justify-between gap-4">
-                                <span className="font-medium text-slate-900">
-                                  {t("workspace.chatView.sourceRank", {
-                                    rank: String(citation.rank),
-                                  })}
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {hasNumericScore(citation.score)
-                                    ? t("workspace.chatView.score", {
-                                        score:
-                                          formatNumericScore(citation.score) ??
-                                          "0.000",
-                                      })
-                                    : t("workspace.chatView.unscored")}
-                                </span>
-                              </div>
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  variant="outline"
-                                >
-                                  {citation.document_title ??
-                                    `Chunk ${citation.document_chunk_id.slice(0, 8)}`}
-                                </Badge>
-                                {citation.retrieval_method ? (
-                                  <Badge
-                                    className="border-slate-200 bg-white text-slate-600"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.retrievalMethod", {
-                                      method:
-                                        formatCitationMethod(
-                                          citation.retrieval_method,
-                                        ) ?? citation.retrieval_method,
-                                    })}
-                                  </Badge>
-                                ) : null}
-                                {citation.chunk_index !== null ? (
-                                  <Badge
-                                    className="border-slate-200 bg-white text-slate-600"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.chunkIndex", {
-                                      index: String(citation.chunk_index),
-                                    })}
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              {hasNumericScore(citation.vector_score) ||
-                              hasNumericScore(citation.lexical_score) ||
-                              hasNumericScore(
-                                citation.lexical_normalized_score,
-                              ) ? (
-                                <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                                  {hasNumericScore(citation.vector_score) ? (
-                                    <span>
-                                      {t("workspace.chatView.vectorScore", {
-                                        score:
-                                          formatNumericScore(
-                                            citation.vector_score,
-                                          ) ?? "0.000",
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-slate-900">
+                                    {citation.document_title ??
+                                      t("workspace.chatView.sourceRank", {
+                                        rank: String(citation.rank),
                                       })}
-                                    </span>
-                                  ) : null}
-                                  {hasNumericScore(citation.lexical_score) ? (
-                                    <span>
-                                      {t("workspace.chatView.lexicalScore", {
-                                        score:
-                                          formatNumericScore(
-                                            citation.lexical_score,
-                                          ) ?? "0.000",
-                                      })}
-                                    </span>
-                                  ) : null}
-                                  {hasNumericScore(
-                                    citation.lexical_normalized_score,
-                                  ) ? (
-                                    <span>
-                                      {t(
-                                        "workspace.chatView.lexicalNormalizedScore",
-                                        {
-                                          score:
-                                            formatNumericScore(
-                                              citation.lexical_normalized_score,
-                                            ) ?? "0.000",
-                                        },
-                                      )}
-                                    </span>
-                                  ) : null}
+                                  </div>
+                                  {citation.quote ? (
+                                    <p className="mt-1 truncate text-xs leading-5 text-slate-600">
+                                      {citation.quote}
+                                    </p>
+                                  ) : (
+                                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                                      {t("workspace.chatView.citationWithoutQuote")}
+                                    </p>
+                                  )}
                                 </div>
-                              ) : null}
-                              {citation.quote ? (
-                                <p className="mt-2 whitespace-pre-wrap leading-6 text-slate-700">
-                                  {citation.quote}
-                                </p>
-                              ) : (
-                                <p className="mt-2 leading-6 text-slate-500">
-                                  {t("workspace.chatView.citationWithoutQuote")}
-                                </p>
-                              )}
-                              {citation.document_id ? (
-                                <div className="mt-3 flex flex-wrap gap-2">
+                                {citation.document_id ? (
                                   <Button
-                                    className="bg-white"
+                                    className="h-8 shrink-0 bg-white px-3"
                                     onClick={() =>
                                       void onInspectCitationDocument(citation)
                                     }
@@ -966,19 +874,8 @@ export function WorkspaceChatView({
                                   >
                                     {t("workspace.chatView.inspectSource")}
                                   </Button>
-                                  <Button
-                                    className="bg-white"
-                                    onClick={() =>
-                                      void onOpenCitationDocumentView(citation)
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.openDocumentView")}
-                                  </Button>
-                                </div>
-                              ) : null}
+                                ) : null}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -986,10 +883,19 @@ export function WorkspaceChatView({
                     )}
                 </article>
               ))}
+              {isSending ? (
+                <article className="max-w-4xl rounded-xl border border-slate-200 bg-white px-5 py-4 text-slate-600 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+                    {t("workspace.chatView.generating")}
+                  </div>
+                </article>
+              ) : null}
+              <div aria-hidden="true" ref={messageEndRef} />
             </CardContent>
           </Card>
 
-          <Card className="border-slate-200 shadow-sm">
+          <Card className="hidden border-slate-200 shadow-sm">
             <CardHeader className="gap-2">
               <CardTitle>{t("workspace.chatView.askKnowledgeBase")}</CardTitle>
               <p className="text-sm text-slate-600">
@@ -1330,22 +1236,37 @@ export function WorkspaceChatView({
                   ) : null}
                 </div>
               ) : null}
-              <form
-                className="flex flex-col gap-4"
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <form
+        className={cn("shrink-0 border-t border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:px-5 dark:border-slate-800 dark:bg-slate-950/95", !hasActiveConversationView && "hidden")}
                 onSubmit={handleSendQuestion}
               >
+        <div className="w-full">
+          <div className="relative">
                 <Textarea
                   id="question"
-                  className="min-h-32 rounded-xl bg-slate-50 px-4 py-3 leading-7 focus-visible:bg-white"
+                  className="max-h-28 min-h-[60px] w-full resize-none rounded-xl bg-slate-50 px-3 pb-8 pr-12 pt-2.5 leading-5 focus-visible:bg-white"
                   disabled={
                     isBusy ||
                     isSending ||
-                    !hasConversationSelection ||
+                    !hasActiveConversationView ||
                     !canSendChatMessages
                   }
                   onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      if (!event.currentTarget.disabled && question.trim().length > 0 && hasDocuments) {
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }
+                  }}
                   placeholder={
-                    !hasConversationSelection
+                    !hasActiveConversationView
                       ? t("workspace.chatView.startOrSelectConversation")
                       : !hasDocuments
                         ? t("workspace.chatView.uploadContentBeforeAsk")
@@ -1353,201 +1274,173 @@ export function WorkspaceChatView({
                   }
                   value={question}
                 />
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1 text-sm text-slate-500">
-                    <div>
-                      {t("workspace.chatView.scopeLimitedTo", {
-                        scope:
-                          bootstrap?.knowledgeBase.slug ??
-                          t("workspace.chatView.defaultScope"),
-                      })}{" "}
-                    </div>
-                    {currentRuntimeSummary?.modelName ||
-                    currentRetrievalEngineName ||
-                    currentRetrievalProfileName ? (
-                      <>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          {currentRetrievalEngineName ? (
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-600"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.retrievalEngine", {
-                                value: currentRetrievalEngineName,
-                              })}
-                            </Badge>
-                          ) : null}
-                          {currentRetrievalProfileName ? (
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-600"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.validationProfile", {
-                                value: currentRetrievalProfileName,
-                              })}
-                            </Badge>
-                          ) : null}
-                          {currentRuntimeSummary?.modelName ? (
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-700"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.runtimeModelBadge", {
-                                model: currentRuntimeSummary.modelName,
-                              })}
-                            </Badge>
-                          ) : null}
-                          {currentRuntimeSummary?.providerType ? (
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-600"
-                              variant="outline"
-                            >
-                              {formatProviderLabel(
-                                currentRuntimeSummary.providerType,
-                              ) ?? currentRuntimeSummary.providerType}
-                            </Badge>
-                          ) : null}
-                          {currentRuntimeSummary?.source ? (
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-600"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.runtimeSource", {
-                                source:
-                                  formatRuntimeSourceLabel(
-                                    currentRuntimeSummary.source,
-                                  ) ?? currentRuntimeSummary.source,
-                              })}
-                            </Badge>
-                          ) : null}
-                          {currentRuntimeSummary?.modelEndpointName ? (
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-600"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.runtimeEndpoint", {
-                                value: currentRuntimeSummary.modelEndpointName,
-                              })}
-                            </Badge>
-                          ) : null}
-                          {latestRuntimeSummary?.fallbackApplied ? (
-                            <Badge
-                              className="border-amber-200 bg-amber-50 text-amber-800"
-                              variant="outline"
-                            >
-                              {t("workspace.chatView.runtimeFallbackBadge")}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {latestRuntimeFallbackMessage ? (
-                          <div className="text-xs leading-5 text-amber-700">
-                            {latestRuntimeFallbackMessage}
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
+                  <div className="pointer-events-none absolute bottom-2.5 left-3 flex max-w-[calc(100%-4rem)] items-center gap-1.5 truncate text-[11px] leading-none text-slate-400 dark:text-slate-500">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                    <span className="truncate">{t("workspace.chatView.scopeLimitedTo", {
+                      scope:
+                        bootstrap?.knowledgeBase.slug ??
+                        bootstrap?.knowledgeBase.name ??
+                        t("workspace.chatView.defaultScope"),
+                    })}</span>
                   </div>
                   <Button
+                    aria-label={
+                      isSending
+                        ? t("workspace.chatView.generating")
+                        : t("workspace.chatView.sendQuestion")
+                    }
+                    className="absolute bottom-1.5 right-1.5 h-8 w-8 rounded-lg p-0"
                     disabled={
                       isBusy ||
                       isSending ||
-                      !hasConversationSelection ||
+                      !hasActiveConversationView ||
                       !canSendChatMessages ||
                       !hasDocuments ||
                       question.trim().length === 0
                     }
-                    size="lg"
+                    size="icon"
                     type="submit"
+                    title={
+                      isSending
+                        ? t("workspace.chatView.generating")
+                        : t("workspace.chatView.sendQuestion")
+                    }
                   >
-                    {isSending
-                      ? t("workspace.chatView.generating")
-                      : t("workspace.chatView.sendQuestion")}
+                    {isSending ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
                   </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
+          </div>
         </div>
-      </div>
+      </form>
 
-      <aside className="border-t border-slate-200 bg-slate-50/75 xl:border-l xl:border-t-0">
-        <div className="space-y-5 px-5 py-5 xl:sticky xl:top-6 xl:px-6 xl:py-6">
-          <SelectedDocumentPanel
-            chunkPreviewClassName="line-clamp-5"
-            detail={selectedDocumentDetail}
-            emptyState={t("workspace.chatView.selectDocumentToInspect")}
-            focusedChunkId={focusedChunkId}
-            canManageDocuments={canManageDocuments}
-            isRunningDocumentAction={isRunningDocumentAction}
-            onDeleteDocument={onDeleteDocument}
-            onOpenWorkflowView={onOpenWorkflowView}
-            onInspectWorkflowRun={onSelectWorkflowRun}
-            onReindexDocument={onReindexDocument}
-            onRestoreDocument={onRestoreDocument}
-            onSelectVersion={onSelectDocumentVersion}
-            relatedWorkflowRuns={
-              selectedDocumentId
-                ? workflowRuns
-                    .filter(
-                      (workflowRun) =>
-                        workflowRun.subject_id === selectedDocumentId,
-                    )
-                    .sort(
-                      (left, right) =>
-                        new Date(right.created_at).getTime() -
-                        new Date(left.created_at).getTime(),
-                    )
-                : []
-            }
-            selectedDocumentVersionId={
-              selectedDocumentDetail?.document_version_id ?? null
-            }
-          />
+      {detailMessage ? (
+        <FormDialog
+          eyebrow={t("workspace.chatView.answerDetails")}
+          footer={<DialogFormActions><Button className="rounded-xl" onClick={() => setDetailMessage(null)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button></DialogFormActions>}
+          onClose={() => setDetailMessage(null)}
+          open
+          presentation="side"
+          size="xl"
+          title={formatTimestamp(detailMessage.created_at)}
+          titleClassName="text-base"
+        >
+            <div className="space-y-5">
+              {(() => {
+                const runtime = extractRuntimeSummary(detailMessage);
+                const retrieval = extractRetrievalSummary(detailMessage);
+                const details = [
+                  [t("workspace.chatView.detailRetrievalEngine"), retrieval?.engineName],
+                  [t("workspace.chatView.detailModel"), runtime?.modelName],
+                  [t("workspace.chatView.detailProvider"), runtime?.providerType ? formatProviderLabel(runtime.providerType) ?? runtime.providerType : null],
+                  [t("workspace.chatView.detailEndpoint"), runtime?.modelEndpointName],
+                  [t("workspace.chatView.detailRuntimeSource"), runtime?.source ? formatRuntimeSourceLabel(runtime.source) ?? runtime.source : null],
+                  [t("workspace.chatView.detailApiBase"), runtime?.apiBaseUrl],
+                ].filter((item): item is [string, string] => Boolean(item[1]));
 
-          <SelectedWorkflowRunPanel
-            detail={selectedWorkflowRunDetail}
-            emptyState={t("workspace.chatView.selectWorkflowToInspect")}
-            emptyStepsMessage={t("workspace.chatView.workflowStepsAppear")}
-            canEditOperatorNotes={canManageWorkflowRuns}
-            isCancellingWorkflow={isCancellingWorkflow}
-            isSavingOperatorNotes={isSavingWorkflowNotes}
-            isRetryingWorkflow={isRetryingWorkflow}
-            onCancelWorkflowRun={onCancelWorkflowRun}
-            onOpenDocumentsView={onOpenDocumentsView}
-            onOpenWorkflowView={onOpenWorkflowView}
-            onSaveOperatorNotes={onSaveWorkflowOperatorNotes}
-            onSelectDocument={onSelectDocument}
-            onRetryWorkflowRun={onRetryWorkflowRun}
-          />
+                return details.length > 0 ? (
+                  <AgentAlignedDrawerSection title={t("workspace.chatView.runtimeDetails")}>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {details.map(([label, value]) => (
+                      <DrawerMetric key={label} label={label} value={value} />
+                    ))}
+                    {runtime?.fallbackApplied ? (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">
+                        {t("workspace.chatView.runtimeFallbackBadge")}
+                      </div>
+                    ) : null}
+                  </div>
+                  </AgentAlignedDrawerSection>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">
+                    {t("workspace.chatView.noRuntimeDetails")}
+                  </div>
+                );
+              })()}
+              <AgentAlignedDrawerSection badge={<Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">{t("workspace.chatView.citationCount", { count: String(detailMessage.citations.length) })}</Badge>} title={t("workspace.chatView.citations")}>
+                <div className="space-y-2">
+                  {detailMessage.citations.length > 0 ? detailMessage.citations.map((citation) => (
+                    <button
+                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
+                      key={citation.id}
+                      onClick={() => void onInspectCitationDocument(citation)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{citation.document_title ?? `Chunk ${citation.document_chunk_id.slice(0, 8)}`}</span>
+                        <span className="shrink-0 text-xs text-slate-500">{hasNumericScore(citation.score) ? formatNumericScore(citation.score) : t("workspace.chatView.unscored")}</span>
+                      </div>
+                      {citation.quote ? <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{citation.quote}</p> : null}
+                    </button>
+                  )) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">
+                      {t("workspace.chatView.noCitations")}
+                    </div>
+                  )}
+                </div>
+              </AgentAlignedDrawerSection>
+            </div>
+        </FormDialog>
+      ) : null}
 
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="gap-2 border-b border-slate-200 pb-5">
-              <CardTitle>{t("workspace.chatView.answerReviewTitle")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 px-4 pb-4 pt-5">
+      {isDiagnosticsOpen ? <FormDialog
+        eyebrow={t("workspace.chatView.diagnosticsTitle")}
+        footer={<DialogFormActions><Button className="rounded-xl" onClick={() => setIsDiagnosticsOpen(false)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button></DialogFormActions>}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        open
+        presentation="side"
+        size="xl"
+        title={t("workspace.chatView.answerReviewTitle")}
+        titleClassName="text-base"
+      >
+        <div className="space-y-5">
+          {retrievalEvaluationSummary ? (
+            <AgentAlignedDrawerSection
+              badge={<Badge className={cn("shrink-0 border", getRetrievalIntelligenceStatusClassName(retrievalEvaluationSummary.intelligence_status))} variant="outline">{t(`workspace.chatView.retrievalIntelligenceStatuses.${retrievalEvaluationSummary.intelligence_status}`)}</Badge>}
+              description={retrievalEvaluationSummary.intelligence_reason}
+              title={t("workspace.chatView.retrievalIntelligenceTitle")}
+            >
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {
+                    label: t("workspace.chatView.retrievalIntelligenceEvaluations"),
+                    value: retrievalEvaluationSummary.total_evaluations,
+                  },
+                  {
+                    label: t("workspace.chatView.retrievalIntelligenceQueries"),
+                    value: retrievalEvaluationSummary.total_queries,
+                  },
+                  {
+                    label: t("workspace.chatView.retrievalIntelligencePending"),
+                    value: retrievalEvaluationSummary.follow_up_breakdown.pending,
+                  },
+                ].map((metric) => (
+                  <DrawerMetric key={metric.label} label={metric.label} value={metric.value} />
+                ))}
+              </div>
+            </AgentAlignedDrawerSection>
+          ) : null}
+
+          {(selectedDocumentDetail || selectedWorkflowRunDetail) ? <AgentAlignedDrawerSection title={t("workspace.chatView.reviewContext")}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {selectedDocumentDetail ? <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{t("workspace.selectedDocument.selectedDocument")}</div><div className="mt-2 truncate text-sm font-semibold text-slate-950">{selectedDocumentDetail.document.title}</div><Button className="mt-3 bg-white" onClick={onOpenDocumentsView} size="sm" type="button" variant="outline">{t("workspace.selectedDocument.openDocumentRegistry")}</Button></div> : null}
+              {selectedWorkflowRunDetail ? <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{t("workspace.selectedDocument.latestWorkflow")}</div><div className="mt-2 text-sm font-semibold text-slate-950">{formatWorkflowTypeLabel(selectedWorkflowRunDetail.workflow_type)}</div><Button className="mt-3 bg-white" onClick={onOpenWorkflowView} size="sm" type="button" variant="outline">{t("workspace.selectedDocument.openWorkflowSupervision")}</Button></div> : null}
+            </div>
+          </AgentAlignedDrawerSection> : null}
+
+          <AgentAlignedDrawerSection title={t("workspace.chatView.answerReviewTitle")}>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.feedbackPendingMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {pendingFeedbackItems.length}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.feedbackResolvedMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {resolvedFeedbackCount}
-                  </div>
-                </div>
+                <DrawerMetric label={t("workspace.chatView.feedbackPendingMetric")} value={pendingFeedbackItems.length} />
+                <DrawerMetric label={t("workspace.chatView.feedbackResolvedMetric")} value={resolvedFeedbackCount} />
               </div>
 
               {pendingFeedbackItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+                <ConsoleEmptyState>
                   {t("workspace.chatView.feedbackQueueEmpty")}
-                </div>
+                </ConsoleEmptyState>
               ) : (
                 <div className="space-y-3">
                   {pendingFeedbackItems.map((item) => {
@@ -1656,41 +1549,20 @@ export function WorkspaceChatView({
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </AgentAlignedDrawerSection>
 
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="gap-2 border-b border-slate-200 pb-5">
-              <CardTitle>
-                {t("workspace.chatView.tuningCandidatesTitle")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 px-4 pb-4 pt-5">
+          <AgentAlignedDrawerSection title={t("workspace.chatView.tuningCandidatesTitle")}>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.candidatePendingMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {retrievalEvaluationSummary?.follow_up_breakdown.pending ??
-                      0}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("workspace.chatView.candidateResolvedMetric")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {retrievalEvaluationSummary?.follow_up_breakdown.resolved ??
-                      0}
-                  </div>
-                </div>
+                <DrawerMetric label={t("workspace.chatView.candidatePendingMetric")} value={retrievalEvaluationSummary?.follow_up_breakdown.pending ?? 0} />
+                <DrawerMetric label={t("workspace.chatView.candidateResolvedMetric")} value={retrievalEvaluationSummary?.follow_up_breakdown.resolved ?? 0} />
               </div>
 
               {pendingRetrievalCandidates.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+                <ConsoleEmptyState>
                   {t("workspace.chatView.tuningCandidatesEmpty")}
-                </div>
+                </ConsoleEmptyState>
               ) : (
                 <div className="space-y-3">
                   {pendingRetrievalCandidates.slice(0, 3).map((candidate) => {
@@ -1777,20 +1649,15 @@ export function WorkspaceChatView({
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </AgentAlignedDrawerSection>
 
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="gap-2 border-b border-slate-200 pb-4">
-              <CardTitle>
-                {t("workspace.retrievalInspector.recentEvaluationsTitle")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 p-4">
+          <AgentAlignedDrawerSection title={t("workspace.retrievalInspector.recentEvaluationsTitle")}>
+            <div className="space-y-3">
               {recentEvaluations.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
+                <ConsoleEmptyState>
                   {t("workspace.retrievalInspector.recentEvaluationsEmpty")}
-                </div>
+                </ConsoleEmptyState>
               ) : (
                 recentEvaluations.slice(0, 3).map((evaluation) => {
                   const followUpActions =
@@ -1872,10 +1739,44 @@ export function WorkspaceChatView({
                   );
                 })
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </AgentAlignedDrawerSection>
         </div>
-      </aside>
+      </FormDialog> : null}
+    </div>
+  );
+}
+
+function AgentAlignedDrawerSection({
+  badge,
+  children,
+  description,
+  title,
+}: {
+  badge?: ReactNode;
+  children: ReactNode;
+  description?: ReactNode;
+  title: ReactNode;
+}) {
+  return (
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-950 dark:text-slate-50">{title}</div>
+          {description ? <div className="mt-1 text-sm leading-6 text-slate-500">{description}</div> : null}
+        </div>
+        {badge}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function DrawerMetric({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-2 break-words text-sm font-semibold text-slate-950 dark:text-slate-50">{value}</div>
     </div>
   );
 }

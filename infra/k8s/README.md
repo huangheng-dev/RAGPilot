@@ -4,7 +4,7 @@ This directory now contains the first public production-delivery baseline for RA
 
 It is intentionally lean:
 
-- `web`, `api`, and `worker` run as Kubernetes deployments
+- `web`, `api`, document `worker`, and `agent-worker` run as Kubernetes deployments
 - ingress routes `/` to the web surface and `/api` to the FastAPI service
 - runtime configuration lives in `configmap.yaml`
 - secret values are documented through `secret.example.yaml`
@@ -17,6 +17,7 @@ It is intentionally lean:
 - `secret.example.yaml`
 - `api-deployment.yaml`
 - `worker-deployment.yaml`
+- `agent-worker-deployment.yaml`
 - `web-deployment.yaml`
 - `api-service.yaml`
 - `web-service.yaml`
@@ -33,7 +34,7 @@ The intended topology is:
 Ingress
 -> Web
 -> API
--> Worker
+-> Document Worker / Agent Worker
 -> PostgreSQL / Redis / MinIO / Elasticsearch / Temporal
 ```
 

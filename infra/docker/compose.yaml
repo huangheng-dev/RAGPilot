@@ -97,12 +97,13 @@ services:
       TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
+      AGENT_TEMPORAL_TASK_QUEUE: ${AGENT_TEMPORAL_TASK_QUEUE:-ragpilot-agent-execution}
       RETRIEVAL_ENGINE: ${RETRIEVAL_ENGINE:-native}
       CHAT_MODEL_PROVIDER: ${CHAT_MODEL_PROVIDER:-deterministic}
       CHAT_MODEL_NAME: ${CHAT_MODEL_NAME:-ragpilot-grounded-template}
       CHAT_MODEL_API_BASE_URL: ${CHAT_MODEL_API_BASE_URL:-}
       CHAT_MODEL_API_KEY: ${CHAT_MODEL_API_KEY:-}
-      CHAT_MODEL_REQUEST_TIMEOUT_SECONDS: ${CHAT_MODEL_REQUEST_TIMEOUT_SECONDS:-60}
+      CHAT_MODEL_REQUEST_TIMEOUT_SECONDS: ${CHAT_MODEL_REQUEST_TIMEOUT_SECONDS:-180}
       AUTH_PRIMARY_MODE: ${AUTH_PRIMARY_MODE:-directory_local}
       AUTH_PROVIDER_DISPLAY_NAME: ${AUTH_PROVIDER_DISPLAY_NAME:-Enterprise Identity}
       AUTH_PROVIDER_SIGN_IN_URL: ${AUTH_PROVIDER_SIGN_IN_URL:-}
@@ -123,6 +124,7 @@ services:
       TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
       TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
+      AGENT_TEMPORAL_TASK_QUEUE: ${AGENT_TEMPORAL_TASK_QUEUE:-ragpilot-agent-execution}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-ragpilot}
@@ -141,6 +143,35 @@ services:
       - temporal
       - postgres
       - minio
+
+  agent-worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      args:
+        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-retrieval-llamaindex,agent-langgraph}
+    restart: unless-stopped
+    command: ["python", "-m", "ragpilot_api.workers.agent_execution_worker"]
+    environment:
+      ENVIRONMENT: ${NODE_ENV:-development}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ragpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ragpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpilot}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
+      AGENT_TEMPORAL_TASK_QUEUE: ${AGENT_TEMPORAL_TASK_QUEUE:-ragpilot-agent-execution}
+      RETRIEVAL_ENGINE: ${RETRIEVAL_ENGINE:-native}
+      CHAT_MODEL_PROVIDER: ${CHAT_MODEL_PROVIDER:-deterministic}
+      CHAT_MODEL_NAME: ${CHAT_MODEL_NAME:-ragpilot-grounded-template}
+      CHAT_MODEL_API_BASE_URL: ${CHAT_MODEL_API_BASE_URL:-}
+      CHAT_MODEL_API_KEY: ${CHAT_MODEL_API_KEY:-}
+    depends_on:
+      - temporal
+      - postgres
 
   web:
     build:

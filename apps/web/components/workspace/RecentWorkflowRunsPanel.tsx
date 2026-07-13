@@ -4,6 +4,7 @@ import { formatStatusLabel, formatSubjectTypeLabel, formatTimestamp, formatWorkf
 import { formatOperatorErrorMessage } from "../../lib/api-errors";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConsoleEmptyState } from "@/components/console/ConsolePrimitives";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
@@ -98,11 +99,7 @@ export function RecentWorkflowRunsPanel({
           </button>
         ))}
         {emptyState && workflowRuns.length === 0 && (
-          <Card className="border-dashed border-slate-300 bg-slate-50 shadow-none">
-            <CardContent className="px-3 py-4 text-sm text-slate-500">
-            {emptyState}
-            </CardContent>
-          </Card>
+          <ConsoleEmptyState>{emptyState}</ConsoleEmptyState>
         )}
       </CardContent>
     </Card>

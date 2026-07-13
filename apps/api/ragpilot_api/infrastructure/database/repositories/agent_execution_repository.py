@@ -26,6 +26,7 @@ class AgentExecutionRepository:
         tool_registration_ids: list[str],
         execution_input: str | None,
         launched_by_user_id: UUID | None,
+        retry_of_execution_id: UUID | None = None,
     ) -> AgentExecution:
         agent_execution = AgentExecution(
             tenant_id=tenant_id,
@@ -40,6 +41,7 @@ class AgentExecutionRepository:
             tool_registration_ids_json=tool_registration_ids,
             execution_input=execution_input,
             launched_by_user_id=launched_by_user_id,
+            retry_of_execution_id=retry_of_execution_id,
         )
         self.session.add(agent_execution)
         await self.session.commit()
@@ -55,6 +57,44 @@ class AgentExecutionRepository:
         await self.session.refresh(agent_execution)
         return agent_execution
 
+    async def get_agent_execution(self, *, agent_execution_id: UUID, tenant_id: UUID) -> AgentExecution | None:
+        return await self.session.scalar(
+            select(AgentExecution).where(
+                AgentExecution.id == agent_execution_id,
+                AgentExecution.tenant_id == tenant_id,
+            )
+        )
+
+    async def attach_temporal_workflow(
+        self,
+        *,
+        agent_execution: AgentExecution,
+        temporal_workflow_id: str,
+    ) -> AgentExecution:
+        agent_execution.temporal_workflow_id = temporal_workflow_id
+        agent_execution.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(agent_execution)
+        return agent_execution
+
+    async def request_agent_execution_cancellation(self, *, agent_execution: AgentExecution) -> AgentExecution:
+        now = datetime.now(timezone.utc)
+        agent_execution.cancellation_requested_at = now
+        agent_execution.updated_at = now
+        await self.session.commit()
+        await self.session.refresh(agent_execution)
+        return agent_execution
+
+    async def cancel_agent_execution(self, *, agent_execution: AgentExecution) -> AgentExecution:
+        now = datetime.now(timezone.utc)
+        agent_execution.execution_status = "cancelled"
+        agent_execution.cancelled_at = now
+        agent_execution.completed_at = now
+        agent_execution.updated_at = now
+        await self.session.commit()
+        await self.session.refresh(agent_execution)
+        return agent_execution
+
     async def complete_agent_execution(
         self,
         *,
@@ -62,6 +102,9 @@ class AgentExecutionRepository:
         summary: str,
         result_payload_json: dict,
     ) -> AgentExecution:
+        await self.session.refresh(agent_execution)
+        if agent_execution.execution_status == "cancelled":
+            return agent_execution
         now = datetime.now(timezone.utc)
         agent_execution.execution_status = "completed"
         agent_execution.summary = summary
@@ -80,6 +123,9 @@ class AgentExecutionRepository:
         error_message: str,
         result_payload_json: dict | None = None,
     ) -> AgentExecution:
+        await self.session.refresh(agent_execution)
+        if agent_execution.execution_status == "cancelled":
+            return agent_execution
         now = datetime.now(timezone.utc)
         agent_execution.execution_status = "failed"
         agent_execution.error_message = error_message

@@ -11,7 +11,7 @@ type WorkspaceSourceContext =
     }
   | {
       sourceSurface: "admin";
-      sourceAdminSection: "overview" | "directory" | "access" | "security";
+      sourceAdminSection: "overview" | "directory" | "access" | "runtime" | "security";
     }
   | {
       sourceSurface: "operations";
@@ -41,7 +41,7 @@ export function buildAgentsWorkspaceHref(target: WorkspaceHandoffTarget) {
 }
 
 export function buildAdminWorkspaceHref(
-  section: "overview" | "directory" | "access" | "security",
+  section: "overview" | "directory" | "access" | "runtime" | "security",
   target: WorkspaceHandoffTarget
 ) {
   return buildWorkspaceHandoffHref(

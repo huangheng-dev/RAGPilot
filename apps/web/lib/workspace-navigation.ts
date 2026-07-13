@@ -23,7 +23,7 @@ const WORKFLOW_SORT_VALUES = [
   "type-asc"
 ] as const;
 const WORKSPACE_SOURCE_SURFACE_VALUES = ["home", "admin", "operations", "agents", "workspace"] as const;
-const WORKSPACE_SOURCE_ADMIN_SECTION_VALUES = ["overview", "directory", "access", "security"] as const;
+const WORKSPACE_SOURCE_ADMIN_SECTION_VALUES = ["overview", "directory", "access", "runtime", "security"] as const;
 const WORKSPACE_SOURCE_OPERATIONS_LANE_VALUES = ["overview", "failed", "retries", "pressure"] as const;
 const WORKSPACE_HANDOFF_INTENT_VALUES = [
   "agent_brief",

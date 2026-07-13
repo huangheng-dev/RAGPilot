@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "ragpilot-ingestion"
+    agent_temporal_task_queue: str = "ragpilot-agent-execution"
     minio_endpoint: str = "http://minio:9000"
     minio_root_user: str = "ragpilot"
     minio_root_password: str = "ragpilot123"
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     chat_model_name: str = "ragpilot-grounded-template"
     chat_model_api_base_url: str | None = None
     chat_model_api_key: str | None = None
-    chat_model_request_timeout_seconds: int = 60
+    chat_model_request_timeout_seconds: int = 180
     model_preview_review_window_hours: int = 24
     mcp_preview_review_window_hours: int = 24
     tool_preview_review_window_hours: int = 24

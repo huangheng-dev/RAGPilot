@@ -26,6 +26,7 @@ import {
 import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
 import { authenticatedApiRequest } from "@/lib/authenticated-api";
 import { useAuth } from "@/lib/auth/provider";
+import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
 import { buildAgentsHref } from "@/lib/console-route-builders";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
@@ -105,6 +106,7 @@ async function listRecentDocuments(knowledgeBaseId: string, limit = 5) {
 
 type AgentDefinition = {
   id: string;
+  tenant_id: string;
   name: string;
   slug: string;
   mode: "grounded_chat" | "document_intake" | "workflow_recovery";
@@ -141,18 +143,18 @@ function HomeSectionCard({
 }) {
   return (
     <ConsoleSurface>
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="text-base font-semibold text-slate-950">{title}</div>
+      <div className="flex items-center justify-between gap-3 px-6 pb-3 pt-6">
+        <Link className="group flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30" href={actionHref}>
+          <div className="truncate text-base font-semibold text-slate-950 transition group-hover:text-primary">{title}</div>
           <Badge className="border-slate-200 bg-slate-50 text-slate-700" variant="outline">
             {count}
           </Badge>
-        </div>
+        </Link>
         <Button asChild className="bg-white" size="sm" type="button" variant="outline">
           <Link href={actionHref}>{actionLabel}</Link>
         </Button>
       </div>
-      <div className={cn("p-6", contentClassName ?? "space-y-3")}>{children}</div>
+      <div className={cn("px-6 pb-6 pt-2", contentClassName ?? "space-y-3")}>{children}</div>
     </ConsoleSurface>
   );
 }
@@ -197,6 +199,8 @@ export default function HomePage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [homeWorkspaces, setHomeWorkspaces] = useState<Workspace[]>([]);
+  const [homeKnowledgeBases, setHomeKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState<string>("");
@@ -218,8 +222,7 @@ export default function HomePage() {
 
   const activeAgents = useMemo(
     () =>
-      tenantAgents
-        .filter((agent) => agent.status === "active")
+      [...tenantAgents]
         .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()),
     [tenantAgents]
   );
@@ -236,7 +239,7 @@ export default function HomePage() {
   useEffect(() => {
     function applyLocationState() {
       const searchParams = new URLSearchParams(window.location.search);
-      setSelectedTenantId(searchParams.get("tenant_id") ?? "");
+      setSelectedTenantId(searchParams.get("tenant_id") ?? readCurrentTenantId());
       setSelectedWorkspaceId(searchParams.get("workspace_id") ?? "");
       setSelectedKnowledgeBaseId(searchParams.get("knowledge_base_id") ?? "");
     }
@@ -268,6 +271,10 @@ export default function HomePage() {
     }
     window.history.replaceState({}, "", nextUrl);
   }, [selectedKnowledgeBaseId, selectedTenantId, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (selectedTenantId) writeCurrentTenantId(selectedTenantId);
+  }, [selectedTenantId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -399,51 +406,113 @@ export default function HomePage() {
   }, [selectedWorkspaceId]);
 
   useEffect(() => {
-    if (!selectedTenantId || !selectedWorkspaceId || !selectedKnowledgeBaseId) {
+    if (!session || tenants.length === 0) {
       setDocumentMetrics(EMPTY_DOCUMENT_METRICS);
       setConversationMetrics(EMPTY_CONVERSATION_METRICS);
       setRecentConversations([]);
       setRecentDocuments([]);
       setTenantAgents([]);
       setRecentAgentExecutions([]);
+      setHomeWorkspaces([]);
+      setHomeKnowledgeBases([]);
       return;
     }
 
     let isMounted = true;
 
-    async function refreshScopeMetrics() {
-      if (!session) {
-        return;
-      }
-
+    async function refreshHomeOverview() {
       try {
-        const [
-          nextDocumentMetrics,
-          nextConversationMetrics,
-          nextRecentConversations,
-          nextRecentDocuments,
-          nextTenantAgents,
-          nextRecentAgentExecutions
-        ] = await Promise.all([
-          loadDocumentMetrics(selectedKnowledgeBaseId),
-          loadConversationMetrics(selectedTenantId, selectedWorkspaceId),
-          listRecentConversations(selectedTenantId, selectedWorkspaceId),
-          listRecentDocuments(selectedKnowledgeBaseId),
-          listTenantAgents(selectedTenantId),
-          listAgentExecutions(selectedTenantId, undefined, 5)
+        const workspaceGroups = await Promise.all(
+          tenants.map(async (tenant) => ({
+            tenantId: tenant.id,
+            workspaces: normalizeArray(await listWorkspaces(tenant.id))
+          }))
+        );
+        const nextHomeWorkspaces = workspaceGroups.flatMap((group) => group.workspaces);
+        const knowledgeBaseGroups = await Promise.all(
+          nextHomeWorkspaces.map(async (workspace) =>
+            normalizeArray(await listKnowledgeBases(workspace.id))
+          )
+        );
+        const nextHomeKnowledgeBases = knowledgeBaseGroups.flat();
+        const [documentGroups, conversationGroups, agentGroups] = await Promise.all([
+          Promise.all(
+            nextHomeKnowledgeBases.map(async (knowledgeBase) => ({
+              documents: normalizeArray(await listRecentDocuments(knowledgeBase.id)),
+              knowledgeBaseId: knowledgeBase.id,
+              metrics: await loadDocumentMetrics(knowledgeBase.id)
+            }))
+          ),
+          Promise.all(
+            nextHomeWorkspaces.map(async (workspace) => ({
+              conversations: normalizeArray(
+                await listRecentConversations(workspace.tenant_id, workspace.id)
+              ),
+              metrics: await loadConversationMetrics(workspace.tenant_id, workspace.id)
+            }))
+          ),
+          Promise.all(
+            tenants.map(async (tenant) => ({
+              agents: normalizeArray(await listTenantAgents(tenant.id)),
+              executions: normalizeArray(await listAgentExecutions(tenant.id, undefined, 4))
+            }))
+          )
         ]);
 
         if (!isMounted) {
           return;
         }
 
+        const nextDocumentMetrics = documentGroups.reduce<DocumentMetrics>(
+          (totals, group) => ({
+            active_documents: totals.active_documents + group.metrics.active_documents,
+            completed_documents: totals.completed_documents + group.metrics.completed_documents,
+            failed_documents: totals.failed_documents + group.metrics.failed_documents,
+            total_documents: totals.total_documents + group.metrics.total_documents
+          }),
+          EMPTY_DOCUMENT_METRICS
+        );
+        const nextConversationMetrics = conversationGroups.reduce<ConversationMetrics>(
+          (totals, group) => {
+            const latestActivityAt = [totals.latest_activity_at, group.metrics.latest_activity_at]
+              .filter((value): value is string => Boolean(value))
+              .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
+            return {
+              active_conversations: totals.active_conversations + group.metrics.active_conversations,
+              latest_activity_at: latestActivityAt,
+              total_conversations: totals.total_conversations + group.metrics.total_conversations,
+              total_messages: totals.total_messages + group.metrics.total_messages
+            };
+          },
+          EMPTY_CONVERSATION_METRICS
+        );
+        const nextRecentConversations = conversationGroups
+          .flatMap((group) => group.conversations)
+          .sort(
+            (left, right) =>
+              new Date(right.latest_activity_at ?? right.updated_at).getTime() -
+              new Date(left.latest_activity_at ?? left.updated_at).getTime()
+          )
+          .slice(0, 4);
+        const nextRecentDocuments = documentGroups
+          .flatMap((group) => group.documents)
+          .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+          .slice(0, 4);
+
+        setHomeWorkspaces(nextHomeWorkspaces);
+        setHomeKnowledgeBases(nextHomeKnowledgeBases);
         setDocumentMetrics(nextDocumentMetrics);
         setConversationMetrics(nextConversationMetrics);
-        setRecentConversations(normalizeArray(nextRecentConversations));
-        setRecentDocuments(normalizeArray(nextRecentDocuments));
-        setTenantAgents(normalizeArray(nextTenantAgents));
-        setRecentAgentExecutions(normalizeArray(nextRecentAgentExecutions));
-      } catch (error) {
+        setRecentConversations(nextRecentConversations);
+        setRecentDocuments(nextRecentDocuments);
+        setTenantAgents(agentGroups.flatMap((group) => group.agents));
+        setRecentAgentExecutions(
+          agentGroups
+            .flatMap((group) => group.executions)
+            .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+            .slice(0, 4)
+        );
+      } catch {
         if (!isMounted) {
           return;
         }
@@ -454,39 +523,52 @@ export default function HomePage() {
         setRecentDocuments([]);
         setTenantAgents([]);
         setRecentAgentExecutions([]);
+        setHomeWorkspaces([]);
+        setHomeKnowledgeBases([]);
       }
     }
 
-    void refreshScopeMetrics();
+    void refreshHomeOverview();
 
     return () => {
       isMounted = false;
     };
-  }, [selectedKnowledgeBaseId, selectedTenantId, selectedWorkspaceId, session]);
+  }, [session, tenants]);
 
   if (!isReady || !session) {
     return null;
   }
 
+  const latestConversation = recentConversations[0] ?? null;
+  const latestDocument = recentDocuments[0] ?? null;
+  const latestDocumentKnowledgeBase = latestDocument
+    ? homeKnowledgeBases.find((knowledgeBase) => knowledgeBase.id === latestDocument.knowledge_base_id) ?? null
+    : null;
+  const latestDocumentWorkspace = latestDocumentKnowledgeBase
+    ? homeWorkspaces.find((workspace) => workspace.id === latestDocumentKnowledgeBase.workspace_id) ?? null
+    : null;
   const chatHref = buildHomeWorkspaceHref({
     view: "chat",
-    tenantId: selectedTenantId || null,
-    workspaceId: selectedWorkspaceId || null,
-    knowledgeBaseId: selectedKnowledgeBaseId || null
+    tenantId: (latestConversation?.tenant_id ?? selectedTenantId) || null,
+    workspaceId: (latestConversation?.workspace_id ?? selectedWorkspaceId) || null,
+    knowledgeBaseId: (latestConversation?.knowledge_base_id ?? selectedKnowledgeBaseId) || null
   });
   const documentsHref = buildHomeWorkspaceHref({
     view: "documents",
-    tenantId: selectedTenantId || null,
-    workspaceId: selectedWorkspaceId || null,
-    knowledgeBaseId: selectedKnowledgeBaseId || null
+    tenantId: (latestDocument?.tenant_id ?? selectedTenantId) || null,
+    workspaceId: (latestDocumentWorkspace?.id ?? selectedWorkspaceId) || null,
+    knowledgeBaseId: (latestDocument?.knowledge_base_id ?? selectedKnowledgeBaseId) || null
   });
   const agentsHref = buildAgentsHref({
-    tenantId: selectedTenantId || null,
-    status: "active"
+    tenantId: (activeAgents[0]?.tenant_id ?? selectedTenantId) || null,
+    status: "all"
   });
   const latestActivityLabel = conversationMetrics.latest_activity_at
     ? formatTimestamp(conversationMetrics.latest_activity_at)
     : t("home.core.noActivity");
+  const welcomeTitle = t("home.welcome.title", {
+    name: session.displayName?.trim() || t("home.welcome.fallbackName")
+  });
 
   const hasActiveAgents = activeAgents.length > 0;
 
@@ -494,8 +576,12 @@ export default function HomePage() {
     <ConsoleShell activeHref="/">
       <PageTitleSync title={t("home.title")} />
       <ConsolePage>
-        <ConsoleToolbar className="justify-end">
-          <ConsoleToolbarGroup className="w-full justify-end">
+        <ConsoleToolbar>
+          <div className="min-w-0 flex-1">
+            <div className="text-[22px] font-semibold tracking-tight text-slate-950 sm:text-[26px]">{welcomeTitle}</div>
+            <div className="mt-1 text-sm leading-6 text-slate-500">{t("home.welcome.description")}</div>
+          </div>
+          <ConsoleToolbarGroup className="w-full justify-start lg:w-auto lg:justify-end">
             <Button asChild size="sm" type="button">
               <Link href={chatHref}>{t("home.commandCenter.retrieval.primaryChat")}</Link>
             </Button>
@@ -508,24 +594,29 @@ export default function HomePage() {
           </ConsoleToolbarGroup>
         </ConsoleToolbar>
 
-        <div className="grid gap-5 xl:grid-cols-3">
+        <div className="grid gap-6">
           <HomeSectionCard
+            contentClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
             actionHref={chatHref}
             actionLabel={t("home.overview.viewMore")}
             count={conversationMetrics.total_conversations}
             title={t("home.overview.chats")}
           >
             {recentConversations.length === 0 ? (
-              <ConsoleEmptyState>{latestActivityLabel}</ConsoleEmptyState>
+              <div className="sm:col-span-2 xl:col-span-4">
+                <Link className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30" href={chatHref}>
+                  <ConsoleEmptyState>{latestActivityLabel}</ConsoleEmptyState>
+                </Link>
+              </div>
             ) : (
               recentConversations.map((conversation) => (
                 <HomeListItem
                   badges={<span>{t("home.overview.messageCount", { count: String(conversation.message_count) })}</span>}
                   href={buildHomeWorkspaceHref({
                     view: "chat",
-                    tenantId: selectedTenantId || null,
-                    workspaceId: selectedWorkspaceId || null,
-                    knowledgeBaseId: selectedKnowledgeBaseId || null,
+                    tenantId: conversation.tenant_id,
+                    workspaceId: conversation.workspace_id,
+                    knowledgeBaseId: conversation.knowledge_base_id,
                     conversationId: conversation.id
                   })}
                   key={conversation.id}
@@ -536,13 +627,18 @@ export default function HomePage() {
             )}
           </HomeSectionCard>
           <HomeSectionCard
+            contentClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
             actionHref={documentsHref}
             actionLabel={t("home.overview.viewMore")}
             count={documentMetrics.total_documents}
             title={t("home.overview.documents")}
           >
             {recentDocuments.length === 0 ? (
-              <ConsoleEmptyState>{t("home.overview.emptyDocuments")}</ConsoleEmptyState>
+              <div className="sm:col-span-2 xl:col-span-4">
+                <Link className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30" href={documentsHref}>
+                  <ConsoleEmptyState>{t("home.overview.emptyDocuments")}</ConsoleEmptyState>
+                </Link>
+              </div>
             ) : (
               recentDocuments.map((document) => (
                 <HomeListItem
@@ -558,9 +654,11 @@ export default function HomePage() {
                   }
                   href={buildHomeWorkspaceHref({
                     view: "documents",
-                    tenantId: selectedTenantId || null,
-                    workspaceId: selectedWorkspaceId || null,
-                    knowledgeBaseId: selectedKnowledgeBaseId || null,
+                    tenantId: document.tenant_id,
+                    workspaceId:
+                      homeKnowledgeBases.find((knowledgeBase) => knowledgeBase.id === document.knowledge_base_id)
+                        ?.workspace_id ?? null,
+                    knowledgeBaseId: document.knowledge_base_id,
                     documentId: document.id
                   })}
                   key={document.id}
@@ -571,19 +669,24 @@ export default function HomePage() {
             )}
           </HomeSectionCard>
           <HomeSectionCard
+            contentClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
             actionHref={agentsHref}
             actionLabel={t("home.overview.viewMore")}
             count={recentAgentExecutions.length > 0 ? recentAgentExecutions.length : activeAgents.length}
             title={t("home.overview.agents")}
           >
             {recentAgentExecutions.length === 0 && activeAgents.length === 0 ? (
-              <ConsoleEmptyState>
-                {hasActiveAgents
-                  ? t("home.commandCenter.agents.readyDetail", {
-                      name: activeAgents[0]?.name ?? t("home.overview.agents")
-                    })
-                  : t("home.overview.emptyAgents")}
-              </ConsoleEmptyState>
+              <div className="sm:col-span-2 xl:col-span-4">
+                <Link className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30" href={agentsHref}>
+                  <ConsoleEmptyState>
+                    {hasActiveAgents
+                      ? t("home.commandCenter.agents.readyDetail", {
+                          name: activeAgents[0]?.name ?? t("home.overview.agents")
+                        })
+                      : t("home.overview.emptyAgents")}
+                  </ConsoleEmptyState>
+                </Link>
+              </div>
             ) : recentAgentExecutions.length > 0 ? (
               recentAgentExecutions.map((agentExecution) => {
                 const evidenceSummary = readAgentExecutionEvidenceSummary(agentExecution.result_payload_json);
@@ -633,7 +736,7 @@ export default function HomePage() {
               );
             })
             ) : (
-              activeAgents.slice(0, 5).map((agent) => (
+              activeAgents.slice(0, 4).map((agent) => (
                 <HomeListItem
                   badges={
                     <>

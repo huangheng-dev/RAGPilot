@@ -22,6 +22,17 @@ class WebPageImportRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=240)
 
 
+class DocumentPermanentDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmation_title: str = Field(min_length=1, max_length=240)
+
+
+class DocumentPermanentDeleteResponse(BaseModel):
+    document_id: UUID
+    permanently_deleted_at: datetime
+
+
 class DocumentResponse(BaseModel):
     id: UUID
     tenant_id: UUID

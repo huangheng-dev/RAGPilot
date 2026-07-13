@@ -10,10 +10,13 @@ from ragpilot_api.contracts.http.tool_runtime_contracts import ToolInvocationRes
 from ragpilot_api.infrastructure.database.models import AgentDefinition, ToolRegistration
 from ragpilot_api.infrastructure.database.repositories.conversation_repository import ConversationRepository
 from ragpilot_api.infrastructure.database.repositories.document_repository import DocumentRepository
+from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository import McpConnectorRepository
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
 from ragpilot_api.infrastructure.database.repositories.workflow_repository import WorkflowRepository
 from ragpilot_api.presentation.http.request_actor import RequestActor
 from ragpilot_api.shared.settings import Settings
+from ragpilot_api.infrastructure.mcp.client import McpProtocolError, McpStreamableHttpClient
+from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import resolve_mcp_connector_environment_secret
 
 
 class ToolRuntimeService:
@@ -24,12 +27,14 @@ class ToolRuntimeService:
         document_repository: DocumentRepository,
         workflow_repository: WorkflowRepository,
         settings: Settings | None = None,
+        mcp_connector_repository: McpConnectorRepository | None = None,
     ) -> None:
         self.tool_registration_repository = tool_registration_repository
         self.conversation_repository = conversation_repository
         self.document_repository = document_repository
         self.workflow_repository = workflow_repository
         self.settings = settings
+        self.mcp_connector_repository = mcp_connector_repository
 
     async def execute_bound_tools(
         self,
@@ -139,6 +144,15 @@ class ToolRuntimeService:
             )
 
         connector_reference = getattr(tool_registration, "connector_reference", None)
+        if connector_reference and self.mcp_connector_repository is not None:
+            return await self._execute_mcp_tool(
+                tool_registration=tool_registration,
+                connector_reference=connector_reference,
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                knowledge_base_id=knowledge_base_id,
+                execution_input=execution_input,
+            )
         return build_tool_trace(
             tool_registration,
             invocation_status="unavailable",
@@ -156,6 +170,145 @@ class ToolRuntimeService:
                 "connector_attached": False,
                 "connector_reference": connector_reference,
             },
+        )
+
+    async def _execute_mcp_tool(
+        self,
+        *,
+        tool_registration: ToolRegistration,
+        connector_reference: str,
+        tenant_id: UUID,
+        workspace_id: UUID | None,
+        knowledge_base_id: UUID | None,
+        execution_input: str | None,
+    ) -> ToolInvocationResponse:
+        connector = await self.mcp_connector_repository.get_mcp_connector_by_slug(
+            connector_slug=connector_reference,
+        )
+        if connector is None or not connector.is_enabled or not connector.base_url:
+            return build_tool_trace(
+                tool_registration,
+                invocation_status="unavailable",
+                governance_issue="mcp_integration_pending",
+                summary="The configured MCP connector is missing, disabled, or has no runtime URL.",
+                response_metadata={"connector_reference": connector_reference, "connector_attached": False},
+            )
+
+        client = McpStreamableHttpClient(
+            base_url=connector.base_url,
+            bearer_token=resolve_mcp_connector_environment_secret(connector.credential_key_hint),
+            timeout_seconds=float(self._resolve_request_timeout_seconds()),
+        )
+        try:
+            await client.initialize()
+            tools = await client.list_tools()
+            available_names = {
+                str(tool.get("name"))
+                for tool in tools
+                if isinstance(tool.get("name"), str)
+            }
+            explicit_tool_name = next(
+                (
+                    capability.split(":", 1)[1].strip()
+                    for capability in list(tool_registration.capabilities_json or [])
+                    if isinstance(capability, str)
+                    and capability.startswith("mcp_tool:")
+                    and capability.split(":", 1)[1].strip()
+                ),
+                None,
+            )
+            requested_name = explicit_tool_name or tool_registration.slug
+            if requested_name not in available_names:
+                return build_tool_trace(
+                    tool_registration,
+                    invocation_status="unavailable",
+                    governance_issue="mcp_tool_missing",
+                    summary=f"MCP connector does not advertise the requested tool '{requested_name}'.",
+                    response_metadata={
+                        "connector_reference": connector_reference,
+                        "connector_attached": True,
+                        "available_tools": sorted(available_names),
+                    },
+                )
+            selected_tool = next(tool for tool in tools if tool.get("name") == requested_name)
+            input_schema = selected_tool.get("inputSchema") if isinstance(selected_tool.get("inputSchema"), dict) else {}
+            schema_properties = input_schema.get("properties") if isinstance(input_schema.get("properties"), dict) else {}
+            required_arguments = {
+                value
+                for value in (input_schema.get("required") if isinstance(input_schema.get("required"), list) else [])
+                if isinstance(value, str)
+            }
+            available_arguments = {
+                "input": execution_input,
+                "tenant_id": str(tenant_id),
+                "workspace_id": str(workspace_id) if workspace_id else None,
+                "knowledge_base_id": str(knowledge_base_id) if knowledge_base_id else None,
+            }
+            arguments = (
+                {key: value for key, value in available_arguments.items() if key in schema_properties}
+                if schema_properties
+                else {"input": execution_input}
+            )
+            missing_required_arguments = sorted(
+                key for key in required_arguments if key not in arguments or arguments[key] is None
+            )
+            if missing_required_arguments:
+                return build_tool_trace(
+                    tool_registration,
+                    invocation_status="blocked",
+                    governance_issue="mcp_arguments_missing",
+                    summary="MCP tool invocation is missing required arguments.",
+                    request_metadata={
+                        "connector_reference": connector_reference,
+                        "tool_name": requested_name,
+                        "missing_required_arguments": missing_required_arguments,
+                    },
+                )
+
+            max_attempts = self._resolve_max_attempts()
+            result = None
+            last_error: Exception | None = None
+            for attempt_count in range(1, max_attempts + 1):
+                try:
+                    result = await client.call_tool(name=requested_name, arguments=arguments)
+                    break
+                except (httpx.HTTPError, McpProtocolError) as error:
+                    last_error = error
+                    if attempt_count >= max_attempts:
+                        raise
+            if result is None:
+                raise McpProtocolError(str(last_error or "MCP tool invocation returned no result."))
+        except (httpx.HTTPError, McpProtocolError) as error:
+            return build_tool_trace(
+                tool_registration,
+                invocation_status="failed",
+                governance_issue="runtime_failure",
+                summary="MCP tool invocation failed.",
+                response_metadata={"connector_reference": connector_reference, "connector_attached": True},
+                error_message=str(error),
+            )
+
+        session_id = client.session_id
+        try:
+            await client.close()
+        except httpx.HTTPError:
+            pass
+        is_error = bool(result.get("isError"))
+        return build_tool_trace(
+            tool_registration,
+            invocation_status="failed" if is_error else "completed",
+            summary="MCP tool returned an error result." if is_error else "MCP tool invocation completed successfully.",
+            capability_results={"mcp_result": result},
+            response_metadata={
+                "connector_reference": connector_reference,
+                "connector_attached": True,
+                "mcp_session_id": session_id,
+                "tool_name": requested_name,
+                "tool_name_source": "capability_mapping" if explicit_tool_name else "registration_slug",
+                "argument_keys": sorted(arguments),
+                "attempt_count": attempt_count,
+            },
+            error_message="MCP tool reported isError=true." if is_error else None,
         )
 
     async def _execute_native_tool(

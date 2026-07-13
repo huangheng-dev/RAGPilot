@@ -23,6 +23,7 @@ const en = {
       signIn: "Sign In",
       signOut: "Sign Out",
       rolePrefix: "Role:",
+      currentTenant: "Current tenant",
       memberships: "Memberships",
       noMemberships: "No tenant memberships yet."
     },
@@ -35,7 +36,7 @@ const en = {
       editable: "Editable",
       readOnly: "Read-only"
     },
-    title: "Agents | RAGPilot",
+    title: "Agents",
     header: {
       eyebrow: "Agent Studio",
       title: "Agent design workspace",
@@ -56,6 +57,7 @@ const en = {
       createFailed: "Creating the agent draft failed.",
       duplicated: "{name} duplicated into a new draft.",
       deleted: "{name} removed from the agent workspace.",
+      bulkDeleted: "Deleted {count} agents.",
       deleteFailed: "Deleting the agent draft failed.",
       saved: "{name} saved.",
       activated: "{name} promoted to active runtime.",
@@ -68,6 +70,8 @@ const en = {
       executionQueued: "Agent execution queued.",
       executionCompleted: "Agent execution completed.",
       executionFailed: "Agent execution failed.",
+      executionCancelled: "Agent execution cancelled.",
+      executionCancelFailed: "Agent execution could not be cancelled.",
       executionBlocked: "Only active, runtime-ready agents can be executed.",
       executionHistoryFailed: "Agent execution history failed to load.",
       validationFailed: "Agent name and slug are required.",
@@ -81,7 +85,7 @@ const en = {
       launching: "Launching...",
       execute: "Execute Agent",
       executing: "Executing...",
-      newDraft: "New Draft",
+      newDraft: "New Agent",
       duplicate: "Duplicate",
       saveDraft: "Save Draft",
       activate: "Activate",
@@ -94,7 +98,8 @@ const en = {
       openAdmin: "Open Admin"
     },
     confirm: {
-      delete: "Delete {name}? This removes the persisted agent definition for the current tenant."
+      delete: "Delete {name}? This removes the persisted agent definition for the current tenant.",
+      bulkDelete: "Delete the {count} selected agents? This action cannot be undone."
     },
     metrics: {
       totalDrafts: "Total drafts",
@@ -243,6 +248,8 @@ const en = {
       }
     },
     filters: {
+      scopeTitle: "Agent scope",
+      filterTitle: "Agent filters",
       tenantScope: "Select tenant scope",
       status: "Definition status",
       mode: "Execution mode",
@@ -258,7 +265,7 @@ const en = {
       allModelEndpoints: "All runtime models",
       allModelProviders: "All model providers",
       allToolRegistrations: "All registered tools",
-      searchPlaceholder: "Search by name, slug, scope, or instructions"
+      searchPlaceholder: "Search agents"
     },
     governance: {
       title: "Governance issue lanes",
@@ -273,10 +280,21 @@ const en = {
       empty: "No agent drafts exist yet. Create one to define an agent configuration.",
       noObjective: "Add a business objective so this draft has a clear operating purpose.",
       toolCount: "{count} tools",
-      lastUpdated: "Updated {value}"
+      lastUpdated: "Updated {value}",
+      selectedCount: "{count} selected",
+      clearSelection: "Clear selection",
+      deleteSelected: "Delete selected",
+      selectAgent: "Select {name}",
+      selectPage: "Select agents on this page",
+      agent: "Agent",
+      status: "Status",
+      mode: "Execution mode",
+      scope: "Knowledge scope",
+      updated: "Updated"
     },
     editor: {
       title: "Selected agent draft",
+      detailTitle: "Agent details",
       description: "Define configuration, execution scope, and control policy before enabling runtime delivery.",
       empty: "Select or create an agent draft to edit its configuration.",
       newAgentName: "New Agent Draft",
@@ -466,7 +484,7 @@ const en = {
         failedDetail: "The latest handoff into {surface} failed. Reopen the recorded route or return to the governed definition before retrying.",
         cancelledDetail: "The latest handoff into {surface} was cancelled. Review the route context before launching again.",
         openDefinitions: "Open definition",
-        openSettings: "Open settings",
+        openSettings: "Open governance details",
         openAdmin: "Open admin",
         fields: {
           status: "Run status",
@@ -497,11 +515,29 @@ const en = {
         cancelled: "Cancelled"
       }
     },
+    mcpMapping: {
+      open: "Configure MCP mapping",
+      title: "MCP tool mapping",
+      description: "Discover a connector's remote tools and map one to a governed tool registration.",
+      registration: "Tool registration",
+      connector: "MCP connector",
+      remoteTool: "Remote tool",
+      remoteToolPlaceholder: "Discover and select a tool",
+      discover: "Discover remote tools",
+      discovering: "Discovering...",
+      discoveryFailed: "Remote tool discovery failed.",
+      save: "Save mapping",
+      saveFailed: "MCP tool mapping could not be saved."
+    },
     executions: {
       title: "Execution tasks",
       description: "Turn the selected agent definition into an actual execution task with recorded status, generated summary, and follow-up actions.",
       count: "{count} execution tasks",
       refresh: "Refresh executions",
+      retry: "Retry execution",
+      retrying: "Retrying...",
+      cancel: "Cancel execution",
+      cancelling: "Cancelling...",
       latestTitle: "Latest execution",
       latestTimestamp: "Last executed at {value}",
       noLatest: "No execution task has been recorded yet.",
@@ -747,7 +783,12 @@ const en = {
       retryEnabled: "Retry enabled",
       readOnly: "Read-only retries"
     },
-    title: "Operations | RAGPilot",
+    title: "Operations",
+    navigation: {
+      overview: "Overview",
+      queue: "Task queue",
+      detail: "Run details"
+    },
     header: {
       eyebrow: "Execution Control",
       title: "Operations console",
@@ -805,6 +846,7 @@ const en = {
     scope: {
       title: "Execution scope",
       description: "Operations works at tenant level while staying connected to the current agent and workspace inventory.",
+      currentTenant: "Current tenant",
       notAvailable: "Not available",
       recoveryAgent: "Recovery agent",
       selectRecoveryAgent: "Select recovery agent",
@@ -829,6 +871,9 @@ const en = {
       retries: "Retries",
       completed: "Completed",
       pending: "Pending"
+    },
+    statusSummary: {
+      title: "Run status summary"
     },
     directory: {
       title: "Workflow directory",
@@ -1041,7 +1086,29 @@ const en = {
     }
   },
   settings: {
-    title: "Settings | RAGPilot",
+    title: "System settings",
+    navigation: {
+      profile: "Profile",
+      sessions: "Sessions",
+      security: "Security"
+    },
+    security: {
+      title: "Security",
+      description: "Update the current account password and keep account access secure.",
+      accountStatus: "Account status",
+      verified: "Verified",
+      signedOut: "Signed out",
+      activeSessions: "Active sessions",
+      recentFailedSignIns: "Recent failed sign-ins",
+      credentials: "Sign-in credentials",
+      passwordManaged: "Your authentication mode supports password changes. Rotate it periodically and avoid password reuse.",
+      externallyManaged: "This account is managed by an external or passwordless identity provider.",
+      currentSignIn: "Current sign-in",
+      role: "Role",
+      lastSignedIn: "Last signed in",
+      sessionExpires: "Session expires",
+      manageSessions: "Manage all sessions"
+    },
     header: {
       eyebrow: "Operator Settings",
       title: "Session and platform settings",
@@ -1049,8 +1116,8 @@ const en = {
         "Keep local operator access, governance entry points, and repository links in one place without inventing settings that do not exist yet."
     },
     sections: {
-      sessionTitle: "Current session",
-      sessionDescription: "This local session controls access to protected RAGPilot routes in the browser.",
+      sessionTitle: "Profile",
+      sessionDescription: "Manage the current account's basic information, contact details, and organization memberships.",
       roleTitle: "Experience and access",
       roleDescription: "Adjust language, appearance, and pending access posture for this local operator environment.",
       accessTitle: "Access activity",
@@ -1065,7 +1132,7 @@ const en = {
       role: "Role",
       roleManaged: "Role is managed by the member directory and current access policy.",
       directoryLinked: "Linked to persisted member directory",
-      memberships: "Tenant memberships",
+      memberships: "Organizations",
       noMemberships: "No persisted tenant memberships are linked to this session yet.",
       password: "Password",
       passwordHint: "Rotate the sign-in password for this member without leaving the current session.",
@@ -1115,7 +1182,7 @@ const en = {
       runtimeHealthFailed: "Runtime health could not be loaded."
     },
     actions: {
-      saveProfile: "Save Session",
+      saveProfile: "Save profile",
       savingProfile: "Saving...",
       changePassword: "Change Password",
       refreshSession: "Refresh Session",
@@ -1168,14 +1235,16 @@ const en = {
       loginModeInvitationActivation: "Invitation activation"
     },
     sessions: {
-      title: "Active sessions",
-      description: "Review the bearer sessions currently still valid for this signed-in member.",
+      title: "Session management",
+      description: "Review the current account's sign-in status and recent security activity, and manage active device sessions.",
       current: "Current",
       other: "Other session",
       startedAt: "Started",
       expiresAt: "Expires",
       deviceLabel: "Device",
       ipAddress: "IP",
+      loading: "Loading active sessions...",
+      loadMore: "Load more",
       empty: "No active backend sessions are visible for this member right now.",
       summary: {
         total: "Active sessions",
@@ -1198,7 +1267,7 @@ const en = {
       currentPassword: "Current password",
       currentPasswordPlaceholder: "Enter current password",
       newPassword: "New password",
-      newPasswordPlaceholder: "Enter new password",
+      newPasswordPlaceholder: "Enter a new password of at least 8 characters",
       confirmPassword: "Confirm password",
       confirmPasswordPlaceholder: "Re-enter new password",
       cancel: "Cancel",
@@ -1730,6 +1799,11 @@ const en = {
   },
   home: {
     title: "Home | RAGPilot",
+    welcome: {
+      title: "Welcome back, {name}",
+      fallbackName: "operator",
+      description: "Resume your grounded chat, document operations, and agent work from here."
+    },
     entry: {
       eyebrow: "Internal access",
       title: "RAGPilot internal entry",
@@ -2183,7 +2257,7 @@ const en = {
       fullAccess: "Full access",
       readOnly: "Read-only governance"
     },
-    title: "Admin | RAGPilot",
+    title: "Admin",
     header: {
       eyebrow: "Governance command",
       title: "Platform administration",
@@ -2261,7 +2335,9 @@ const en = {
       draftOnly: "Draft only",
       returnToValidation: "Return to validation",
       refreshDirectory: "Refresh directory",
-      refreshingDirectory: "Refreshing..."
+      refreshingDirectory: "Refreshing...",
+      resourceFilters: "Resource filters",
+      memberFilters: "Member filters"
     },
     actions: {
       edit: "Edit",
@@ -2318,15 +2394,38 @@ const en = {
     },
     sections: {
       title: "Governance architecture",
-      description: "Keep platform administration separated into overview, resource directory, member-access control, and security-review lanes.",
-      overview: "Overview",
+      description: "Separate platform administration into admin overview, resource management, members and access, and AI runtime configuration.",
+      overview: "Admin overview",
       overviewDescription: "Cross-tenant governance signals, watchlists, and platform chat activity.",
-      directory: "Directory",
+      directory: "Resource management",
       directoryDescription: "Tenant inventory, knowledge governance, and agent scope review.",
-      access: "Access",
+      access: "Members & access",
       accessDescription: "Member directory, invitation lifecycle, and recent access auditing.",
+      runtime: "AI runtime configuration",
+      runtimeDescription: "Models, tools, MCP connectors, and retrieval profiles.",
       security: "Security",
       securityDescription: "Invitation hygiene, dormant-account review, and sensitive governance events."
+    },
+    runtimeResources: {
+      title: "AI runtime configuration",
+      description: "Configure, test, enable, and audit the resources used by governed agents and retrieval.",
+      refresh: "Refresh", create: "New resource", search: "Search by name, slug, or resource ID",
+      enabled: "Enabled", disabled: "Disabled", default: "Default", edit: "Edit", test: "Test", testConnection: "Test connection", moreActions: "More actions",
+      enable: "Enable", disable: "Disable", makeDefault: "Make default", empty: "No resources match this view.",
+      createTitle: "Create runtime resource", editTitle: "Edit runtime resource", cancel: "Cancel", save: "Save", saving: "Saving...",
+      saved: "Runtime resource saved.", loading: "Loading current resources...", loadFailed: "Runtime resources could not be loaded.", saveFailed: "Runtime resource could not be saved.",
+      selectTenant: "Select one tenant before testing a tool.",
+      previewComplete: "Runtime test completed.", actionComplete: "Governance action completed.", actionFailed: "Governance action failed.",
+      disableTitle: "Disable runtime resource", disableDescription: "Disable {name}? {count} linked objects may be affected, and new requests will no longer use this resource.", confirmDisable: "Disable resource",
+      deleteTitle: "Delete runtime resource", deleteDescription: "Delete {name}? Bound resources may reject this action.", delete: "Delete", deleteFailed: "Runtime resource could not be deleted.",
+      kinds: { model_endpoint: "Model services", tool_registration: "Tools", mcp_connector: "MCP connectors", retrieval_profile: "Retrieval profiles" },
+      fields: {
+        name: "Name", slug: "Slug", provider: "Provider", modelName: "Model name", baseUrl: "Base URL",
+        credentialMode: "Credential mode", credentialKey: "Credential environment key", capabilities: "Capabilities (comma separated)",
+        transport: "Transport", surface: "Surface", endpointUrl: "Endpoint URL", connectorReference: "Connector reference",
+        connectorType: "Connector type", authMode: "Authentication mode", retrievalMode: "Retrieval mode", notes: "Notes / description",
+        approval: "Requires administrator approval", top_k: "Top K", vector_weight: "Vector weight", lexical_weight: "Lexical weight", hybrid_overlap_bonus: "Overlap bonus"
+      }
     },
     overviewLanes: {
       title: "Control-plane lanes",
@@ -2716,7 +2815,7 @@ const en = {
       description: "Track model and tool governance pressure alongside agent delivery readiness so runtime control stays visible inside admin.",
       signals: "Governance signals",
       quickActions: "Governance actions",
-      quickActionsDescription: "Jump directly into the active agent scope or shared settings surface to resolve model, tool, and scope issues.",
+      quickActionsDescription: "Jump directly into the active agent scope or runtime-resource manager to resolve model, tool, and scope issues.",
       issueActions: "Issue filters",
       activeAgentsWithoutScope: "Active agents without scope",
       missingModelBindings: "Missing model bindings",
@@ -2738,7 +2837,7 @@ const en = {
       providerPreviewEmpty: "No recent preview has been recorded for this provider lane.",
       openProviderModels: "Open provider models",
       openAttentionAgents: "Open attention agents",
-      openSettings: "Open settings",
+      openSettings: "Open runtime resource",
       openActiveAgents: "Open active agents",
       openDefaultFallbackKnowledgeBases: "Open default-fallback knowledge bases",
       openDisabledRetrievalAssignments: "Open disabled retrieval assignments",
@@ -2811,7 +2910,7 @@ const en = {
         restoreConnectorRuntime: "Restore connector runtime",
         reviewToolBoundary: "Review tool boundary",
         completeMcpIntegration: "Complete MCP integration",
-        openSettings: "Open settings",
+        openSettings: "Open governance details",
         openAgents: "Open agents",
         applyFailed: "Runtime governance action failed."
       }
@@ -3058,7 +3157,7 @@ const en = {
       displayName: "Display name",
       displayNamePlaceholder: "Workspace Operator",
       email: "Email",
-      emailPlaceholder: "operator@ragpilot.local",
+      emailPlaceholder: "Enter your email address",
       password: "Password",
       passwordPlaceholder: "Enter your password",
       invitationToken: "Invitation code",
@@ -3347,10 +3446,14 @@ const en = {
       loadingConversations: "Workspace ready. Loading conversations...",
       initializationFailed: "Workspace initialization failed.",
       documentIndexedReady: "Document indexed and ready for grounded chat.",
+      permanentlyDeletingDocument: "Permanently deleting document...",
+      documentPermanentlyDeleted: "Document permanently deleted.",
+      documentPermanentDeleteFailed: "Permanent document deletion failed.",
       documentWorkflowOpenedInOperations: "Document workflow needs recovery. Operations is now focused on the affected run.",
       documentWorkflowMonitoring: "Document workflow remains in {status}. Operations is now focused on the active run.",
       workflowFinishedWithStatus: "Document workflow finished with status: {status}.",
       uploadFailed: "Document upload failed.",
+      someUploadFilesRejected: "Some files were not added because their format is unsupported or they exceed 25 MB.",
       switchingContext: "Switching workspace context...",
       contextSwitchFailed: "Workspace context switch failed.",
       creatingTenant: "Creating tenant...",
@@ -3387,6 +3490,7 @@ const en = {
       creatingConversation: "Creating a new conversation...",
       conversationCreated: "Conversation {title} created.",
       conversationCreationFailed: "Conversation creation failed.",
+      conversationsLoadMoreFailed: "More conversations could not be loaded.",
       deletingConversation: "Deleting conversation...",
       conversationDeleted: "Deleted {title}.",
       conversationDeletionFailed: "Conversation deletion failed.",
@@ -3615,7 +3719,15 @@ const en = {
     confirm: {
       deleteConversation: "Delete {title}? This removes its persisted messages and citations.",
       deleteSelectedDocument: "Soft delete the selected document from this knowledge base?",
-      deleteSelectedDocuments: "Soft delete {count} selected documents from this knowledge base?"
+      deleteDocument: "Delete {title} from this knowledge base? The document can be restored later.",
+      reindexDocument: "Rebuild the search index for {title}?",
+      restoreDocument: "Restore {title} to the active document list?",
+      permanentDeleteDocument: "Permanently delete {title} and its stored file, versions, chunks, and vectors? This cannot be undone.",
+      permanentDeleteLabel: "Enter the document title to confirm",
+      permanentDeleteHint: "The title must match exactly. Documents referenced by answer citations cannot be permanently deleted.",
+      deleteSelectedDocuments: "Soft delete {count} selected documents from this knowledge base?",
+      reindexSelectedDocuments: "Rebuild the search index for {count} selected documents?",
+      restoreSelectedDocuments: "Restore {count} selected documents to the active document list?"
     },
     pageHeader: {
       eyebrow: "Operator workspace",
@@ -3651,10 +3763,29 @@ const en = {
       noMatchingConversations: "No conversations match the current search.",
       noConversations: "No persisted conversations yet.",
       newConversation: "New Conversation",
+      addDocument: "Add document",
+      uploadTarget: "Upload to",
+      knowledgeScope: "Knowledge scope",
+      chooseKnowledgeScope: "Choose knowledge scope",
+      chooseKnowledgeScopeDescription: "Switch the current workspace and knowledge base. This selector does not create or edit resources.",
+      workspaceLabel: "Workspace",
+      knowledgeBaseLabel: "Knowledge base",
+      knowledgeBaseHint: "The document list, upload target, and retrieval scope follow the selected knowledge base.",
+      done: "Done",
+      documentFilters: "Document filters",
+      dropFiles: "Choose multiple files or drop them here",
+      uploadFile: "Upload file",
+      uploadSelectedFiles: "Upload {count} files",
+      removeFile: "Remove file",
+      webUrl: "Web page URL",
+      uploadingFile: "Uploading...",
+      uploadProgress: "Upload progress: {progress}%",
       renameTitle: "Rename Title",
       deletingConversation: "Deleting...",
       deleteConversation: "Delete Conversation",
+      conversationActions: "Conversation actions",
       conversations: "conversations",
+      loadingMoreConversations: "Loading more conversations...",
       active: "active",
       messages: "messages",
       conversationTitlePlaceholder: "Enter a conversation title",
@@ -3674,6 +3805,30 @@ const en = {
       hideControls: "Hide Controls",
       contextControls: "Context Controls",
       refreshWorkspace: "Refresh Workspace"
+      ,documentSearch: "Search documents"
+      ,webImportTitlePlaceholder: "Document title (optional)"
+      ,importPage: "Import page"
+      ,filters: {
+        all: "All",
+        allStatuses: "All statuses",
+        allSources: "All sources",
+        allLifecycles: "All lifecycles",
+        completed: "Completed",
+        running: "Running",
+        failed: "Failed",
+        pending: "Pending",
+        file: "File",
+        web: "Web page",
+        other: "Other",
+        active: "Active",
+        deleted: "Deleted",
+        updatedDesc: "Recently updated",
+        createdDesc: "Newest created",
+        createdAsc: "Oldest created",
+        titleAsc: "Title A-Z",
+        titleDesc: "Title Z-A",
+        statusPriority: "Status priority"
+      }
     },
     sharedAgentContext: {
       aligned: "Surface aligned",
@@ -3720,8 +3875,6 @@ const en = {
       startConversationToPersist: "Start the conversation to persist activity",
       conversationStream: "Conversation Stream",
       groundedResponseConsole: "Grounded response console",
-      syncingHistory: "Syncing history",
-      loadedCount: "{count} loaded",
       attentionTitle: "Chat context needs attention.",
       refreshWorkspace: "Refresh workspace",
       openContextControls: "Open context controls",
@@ -3740,6 +3893,9 @@ const en = {
       noIndexedDocumentsWarning:
         "No indexed documents are available in this knowledge base yet. Upload content first so grounded answers have retrieval context.",
       citations: "Citations",
+      citationCount: "{count} citations",
+      runtimeDetails: "Runtime details",
+      reviewContext: "Review context",
       sourcesCount: "{count} sources",
       sourceRank: "Source #{rank}",
       score: "score {score}",
@@ -3769,6 +3925,21 @@ const en = {
       feedbackResolvedMetric: "Resolved follow-up",
       feedbackHelpful: "Mark helpful",
       feedbackReview: "Needs review",
+      answerDetails: "Answer details",
+      openDiagnostics: "Diagnostics",
+      diagnosticsTitle: "Chat diagnostics and review",
+      closeDiagnostics: "Close diagnostics",
+      copyAnswer: "Copy answer",
+      answerCopied: "Copied",
+      closeAnswerDetails: "Close answer details",
+      detailRetrievalEngine: "Retrieval engine",
+      detailModel: "Model",
+      detailProvider: "Provider",
+      detailEndpoint: "Model endpoint",
+      detailRuntimeSource: "Runtime source",
+      detailApiBase: "API base URL",
+      noRuntimeDetails: "No runtime details were recorded for this answer.",
+      noCitations: "No citations were recorded for this answer.",
       feedbackSubmitting: "Saving...",
       feedbackSubmittedHelpful: "Helpful",
       feedbackSubmittedReview: "Flagged",
@@ -3841,6 +4012,9 @@ const en = {
         hold: "Hold"
       },
       startOrSelectConversation: "Start or select a conversation to begin grounded chat...",
+      welcomeTitle: "What would you like to know?",
+      welcomeDescription: "Ask against the current knowledge base. A conversation will be created when you send the first message.",
+      welcomePlaceholder: "Ask a question...",
       uploadContentBeforeAsk: "Upload indexed content before asking a grounded question...",
       askGroundedQuestion: "Ask a grounded question about the indexed content...",
       scopeLimitedTo: "Scope is limited to {scope}.",
@@ -3874,7 +4048,11 @@ const en = {
     },
     documentsView: {
       documents: "Documents",
+      documentDetails: "Document details",
+      closeDocumentDetails: "Close document details",
+      closeWorkflowDetails: "Close workflow details",
       documentsDescription: "Indexed assets in the active knowledge base.",
+      addDocument: "Add document",
       flowStateEmpty: "Empty registry",
       flowStateRecovery: "Recovery lane",
       flowStateMonitoring: "Monitoring lane",
@@ -3924,6 +4102,7 @@ const en = {
       retryHelp:
         "Retry failed ingestion after confirming the source document still exists and the failure cause has been addressed.",
       relatedWorkflow: "Related Workflow",
+      backToDocument: "Back to document details",
       noDocumentActivity: "No activity recorded for the selected document.",
       noRelatedWorkflowRuns: "No workflow runs recorded yet for the selected document.",
       relatedWorkflowRuns: "Related Workflow Runs"
@@ -4112,7 +4291,6 @@ const en = {
       titleDesc: "Title Z-A",
       statusPriority: "Status priority",
       selectedCount: "{count} selected",
-      unselectPage: "Unselect page",
       selectPage: "Select page",
       clearSelection: "Clear selection",
       reindexSelected: "Reindex selected",
@@ -4122,20 +4300,16 @@ const en = {
       openWorkflowSupervision: "Workflow supervision",
       selectAllAria: "Select all documents on page",
       document: "Document",
-      ingestion: "Ingestion",
-      indexing: "Indexing",
-      version: "Version",
-      latestWorkflow: "Latest Workflow",
+      ingestion: "Document ingestion",
+      indexing: "Document indexing",
+      latestProcessing: "Latest processing",
       source: "Source",
       updated: "Updated",
       deletedBadge: "Deleted",
       parserPending: "parser pending",
-      chunksTokens: "{chunkCount} chunks · {tokenCount} tokens",
       noVersionYet: "No version yet",
       workflowFallback: "workflow",
-      inspectRun: "Inspect run",
       noWorkflowRecorded: "No workflow recorded",
-      sourceUnavailable: "n/a",
       noDocumentsMatch: "No documents match the current filters."
     },
     selectedDocument: {
@@ -4150,6 +4324,8 @@ const en = {
       reindex: "Reindex",
       restore: "Restore",
       delete: "Delete",
+      permanentDelete: "Permanently delete",
+      openChat: "Open chat",
       parser: "Parser",
       pending: "pending",
       version: "Version",
@@ -4162,6 +4338,17 @@ const en = {
       documentIndexing: "Document Indexing",
       currentVersionTokens: "Current Version Tokens",
       contentType: "Content Type",
+      contentTypes: {
+        pdf: "PDF document",
+        word: "Word document",
+        spreadsheet: "Spreadsheet",
+        presentation: "Presentation",
+        image: "Image",
+        web: "Web page",
+        json: "JSON data",
+        text: "Text file",
+        other: "Other file",
+      },
       unknown: "unknown",
       versionState: "Version State",
       latestAttempt: "Latest Attempt",

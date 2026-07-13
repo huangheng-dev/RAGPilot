@@ -191,6 +191,10 @@ class AgentExecution(Base, TimestampMixin):
     launched_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    temporal_workflow_id: Mapped[str | None] = mapped_column(String(240), unique=True)
+    retry_of_execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id"))
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ModelEndpoint(Base, TimestampMixin):

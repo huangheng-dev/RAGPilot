@@ -23,7 +23,7 @@ type WorkspaceSourceContext =
   | { surface: "agents" }
   | { surface: "workspace" }
   | { surface: "operations"; lane: "overview" | "failed" | "retries" | "pressure" }
-  | { surface: "admin"; section: "overview" | "directory" | "access" | "security" };
+  | { surface: "admin"; section: "overview" | "directory" | "access" | "runtime" | "security" };
 
 export type AgentExecutionFollowUpAction = {
   id: string;

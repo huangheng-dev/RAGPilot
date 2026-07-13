@@ -113,3 +113,192 @@ textarea {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+@layer components {
+  .console-split-layout {
+    display: flex;
+    min-height: calc(100dvh - 152px);
+    min-width: 0;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .console-split-sidebar {
+    max-height: 20rem;
+    min-width: 0;
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+
+  .console-split-content {
+    min-height: 60dvh;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .console-split-content-padding {
+    padding: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .console-split-content-padding {
+      padding: 1.25rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .console-split-layout {
+      display: grid;
+      height: calc(100dvh - 128px);
+      min-height: 0;
+      grid-template-columns: 292px minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .console-split-sidebar {
+      max-height: none;
+      min-height: 0;
+      overflow-y: auto;
+      border-right: 1px solid rgb(226 232 240);
+      border-bottom: 0;
+    }
+
+    .console-split-content {
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
+
+  .dark .console-split-sidebar {
+    border-color: rgb(30 41 59);
+  }
+
+  .form-dialog-content {
+    color: rgb(51 65 85);
+    font-size: 0.875rem;
+    line-height: 1.5rem;
+  }
+
+  .form-dialog-content > * {
+    width: 100%;
+  }
+
+  .form-dialog-content [data-ui="card"] {
+    border-color: rgb(226 232 240);
+    border-radius: 0.75rem;
+    background: rgb(255 255 255);
+    box-shadow: none;
+  }
+
+  .form-dialog-content [data-ui="card-header"] {
+    gap: 0.375rem;
+    padding: 1rem 1rem 0.875rem;
+  }
+
+  .form-dialog-content [data-ui="card-title"] {
+    color: rgb(15 23 42);
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    letter-spacing: 0;
+  }
+
+  .form-dialog-content [data-ui="card-description"] {
+    color: rgb(100 116 139);
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+
+  .form-dialog-content [data-ui="card-content"] {
+    padding: 1rem;
+  }
+
+  .form-dialog-content [data-ui="card-header"] + [data-ui="card-content"] {
+    border-top: 1px solid rgb(241 245 249);
+  }
+
+  .form-dialog-content .rounded-md {
+    border-radius: 0.75rem;
+  }
+
+  .form-dialog-content input,
+  .form-dialog-content textarea,
+  .form-dialog-content [role="combobox"] {
+    border-radius: 0.75rem;
+  }
+
+  [data-ui="form-dialog-footer"] button {
+    border-radius: 0.75rem;
+  }
+
+  .form-dialog-content p {
+    color: rgb(71 85 105);
+  }
+
+  .dark .form-dialog-content {
+    color: rgb(203 213 225);
+  }
+
+  .dark .form-dialog-content [data-ui="card"] {
+    border-color: rgb(30 41 59);
+    background: rgb(2 6 23);
+  }
+
+  .dark .form-dialog-content [data-ui="card-title"] {
+    color: rgb(248 250 252);
+  }
+
+  .dark .form-dialog-content [data-ui="card-description"],
+  .dark .form-dialog-content p {
+    color: rgb(148 163 184);
+  }
+
+  .dark .form-dialog-content [data-ui="card-header"] + [data-ui="card-content"] {
+    border-top-color: rgb(30 41 59);
+  }
+
+  .conversation-list-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .conversation-list-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .conversation-list-scrollbar:hover,
+  .conversation-list-scrollbar:focus-within {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+
+  .conversation-list-scrollbar:hover::-webkit-scrollbar,
+  .conversation-list-scrollbar:focus-within::-webkit-scrollbar {
+    width: 0.5rem;
+  }
+
+  .conversation-list-scrollbar:hover::-webkit-scrollbar-track,
+  .conversation-list-scrollbar:focus-within::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .conversation-list-scrollbar:hover::-webkit-scrollbar-thumb,
+  .conversation-list-scrollbar:focus-within::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: rgb(203 213 225);
+    background-clip: padding-box;
+  }
+
+  .dark .conversation-list-scrollbar:hover,
+  .dark .conversation-list-scrollbar:focus-within {
+    scrollbar-color: rgb(71 85 105) transparent;
+  }
+
+  .dark .conversation-list-scrollbar:hover::-webkit-scrollbar-thumb,
+  .dark .conversation-list-scrollbar:focus-within::-webkit-scrollbar-thumb {
+    background: rgb(71 85 105);
+    background-clip: padding-box;
+  }
+}

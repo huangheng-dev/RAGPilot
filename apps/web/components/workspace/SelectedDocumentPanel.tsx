@@ -16,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DialogFormActions, DialogFormField, DialogFormGrid, DialogFormLayout, FormDialog } from "@/components/ui/form-dialog";
+import { Input } from "@/components/ui/input";
 import { WorkspaceExecutionPacket } from "@/components/workspace/WorkspaceExecutionPacket";
 import { WorkspaceRecommendedAgentsPanel } from "@/components/workspace/WorkspaceRecommendedAgentsPanel";
 import { useI18n } from "@/lib/i18n/provider";
@@ -93,6 +95,7 @@ type SelectedDocumentPanelProps = {
   isActivatingRecommendation?: boolean;
   isRunningDocumentAction: boolean;
   onDeleteDocument: () => void | Promise<void>;
+  onPermanentlyDeleteDocument: (confirmationTitle: string) => void | Promise<void>;
   onOpenChatView?: () => void;
   onOpenFailedDocumentsQueue?: () => void;
   onOpenWorkflowView?: () => void;
@@ -104,6 +107,8 @@ type SelectedDocumentPanelProps = {
   recommendedAgents?: WorkspaceAgentRecommendation[];
   selectedDocumentVersionId?: string | null;
   showExtendedMetadata?: boolean;
+  embeddedInDialog?: boolean;
+  hideLifecycleActions?: boolean;
   onActivateRecommendedAgent?: (recommendation: WorkspaceAgentRecommendation) => void | Promise<void>;
   title?: string;
 };
@@ -125,6 +130,7 @@ export function SelectedDocumentPanel({
   isActivatingRecommendation = false,
   isRunningDocumentAction,
   onDeleteDocument,
+  onPermanentlyDeleteDocument,
   onOpenChatView,
   onOpenFailedDocumentsQueue,
   onOpenWorkflowView,
@@ -136,11 +142,16 @@ export function SelectedDocumentPanel({
   recommendedAgents = [],
   selectedDocumentVersionId = null,
   showExtendedMetadata = false,
+  embeddedInDialog = false,
+  hideLifecycleActions = false,
   onActivateRecommendedAgent,
   title,
 }: SelectedDocumentPanelProps) {
   const { t } = useI18n();
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isLifecycleConfirmOpen, setIsLifecycleConfirmOpen] = useState(false);
+  const [isPermanentDeleteOpen, setIsPermanentDeleteOpen] = useState(false);
+  const [permanentDeleteTitle, setPermanentDeleteTitle] = useState("");
   const latestWorkflowRun = relatedWorkflowRuns[0] ?? null;
   const topRecommendation = recommendedAgents[0] ?? null;
   const chunks = Array.isArray(detail?.chunks) ? detail.chunks : [];
@@ -424,7 +435,7 @@ export function SelectedDocumentPanel({
         }
 
         return (
-          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div className="font-medium text-amber-900">{t("workspace.selectedDocument.operatorNextStep")}</div>
             <div className="mt-1 text-amber-800">
               {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.operatorNextStepDescription")}
@@ -435,7 +446,7 @@ export function SelectedDocumentPanel({
 
       if (latestWorkflowStage === "monitoring") {
         return (
-          <div className="mb-3 rounded-md border border-sky-200 bg-sky-50/70 px-3 py-3 text-xs text-slate-700">
+          <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/70 p-4 text-sm text-slate-700">
             <div className="font-medium text-slate-950">{t("workspace.selectedDocument.intakeFollowUpTitle")}</div>
             <div className="mt-1 text-slate-600">
               {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.intakeFollowUpDescription")}
@@ -446,7 +457,7 @@ export function SelectedDocumentPanel({
 
       if (latestWorkflowStage === "ready") {
         return (
-          <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 py-3 text-xs text-slate-700">
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-slate-700">
             <div className="font-medium text-slate-950">{t("workspace.selectedDocument.readyFollowUpTitle")}</div>
             <div className="mt-1 text-slate-600">
               {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.readyFollowUpDescription")}
@@ -457,7 +468,7 @@ export function SelectedDocumentPanel({
 
       if (latestWorkflowStage === "cancelled") {
         return (
-          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-700">
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-700">
             <div className="font-medium text-slate-950">{t("workspace.selectedDocument.operatorNextStep")}</div>
             <div className="mt-1 text-slate-600">
               {latestWorkflowRun.follow_up_reason ?? t("workspace.selectedDocument.operatorNextStepDescription")}
@@ -473,7 +484,7 @@ export function SelectedDocumentPanel({
       }
 
       return (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <div className="font-medium text-amber-900">{t("workspace.selectedDocument.operatorNextStep")}</div>
           <div className="mt-1 text-amber-800">{t("workspace.selectedDocument.operatorNextStepDescription")}</div>
         </div>
@@ -482,7 +493,7 @@ export function SelectedDocumentPanel({
 
     if (isDocumentReady && (onOpenChatView || onOpenWorkflowView)) {
       return (
-        <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 py-3 text-xs text-slate-700">
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-slate-700">
           <div className="font-medium text-slate-950">{t("workspace.selectedDocument.readyFollowUpTitle")}</div>
           <div className="mt-1 text-slate-600">{t("workspace.selectedDocument.readyFollowUpDescription")}</div>
         </div>
@@ -491,7 +502,7 @@ export function SelectedDocumentPanel({
 
     if (onOpenWorkflowView) {
       return (
-        <div className="mb-3 rounded-md border border-sky-200 bg-sky-50/70 px-3 py-3 text-xs text-slate-700">
+        <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/70 p-4 text-sm text-slate-700">
           <div className="font-medium text-slate-950">{t("workspace.selectedDocument.intakeFollowUpTitle")}</div>
           <div className="mt-1 text-slate-600">{t("workspace.selectedDocument.intakeFollowUpDescription")}</div>
         </div>
@@ -519,22 +530,23 @@ export function SelectedDocumentPanel({
   }
 
   return (
-    <Card className="border-slate-200 shadow-sm">
-      <CardHeader className="pb-3">
+    <Card className={cn("border-slate-200 shadow-sm", embeddedInDialog && "rounded-none border-0 shadow-none")}>
+      {!embeddedInDialog ? <CardHeader className="pb-3">
         <CardTitle>{title ?? t("workspace.selectedDocument.selectedDocument")}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm text-slate-700">
+      </CardHeader> : null}
+      <CardContent className={cn("space-y-3 text-sm text-slate-700", embeddedInDialog && "p-0")}>
         {detail ? (
-          <>
-            <div className="flex items-start justify-between gap-3">
+          <DialogFormLayout className="space-y-4">
+            <div className={cn("flex items-start justify-between gap-3", embeddedInDialog && "rounded-xl border border-slate-200 bg-white p-3")}>
               <div>
-                <div className="font-medium text-slate-900">{detail.document.title}</div>
+                {!embeddedInDialog ? <div className="font-medium text-slate-900">{detail.document.title}</div> : null}
                 <div className="mt-1 text-xs text-slate-500">{detail.asset_file_name ?? t("workspace.selectedDocument.noAssetMetadata")}</div>
               </div>
-              <div className="flex items-center gap-2">
+              {!hideLifecycleActions ? <div className="flex items-center gap-2">
                 <Button
+                  className="rounded-xl bg-white"
                   disabled={!canManageDocuments || isRunningDocumentAction}
-                  onClick={() => void (isDeletedDocument ? onRestoreDocument() : onReindexDocument())}
+                  onClick={() => setIsLifecycleConfirmOpen(true)}
                   size="sm"
                   type="button"
                   variant="outline"
@@ -543,7 +555,7 @@ export function SelectedDocumentPanel({
                 </Button>
                 {!isDeletedDocument ? (
                   <Button
-                    className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                    className="rounded-xl border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
                     disabled={!canManageDocuments || isRunningDocumentAction}
                     onClick={() => setIsDeleteConfirmOpen(true)}
                     size="sm"
@@ -552,19 +564,30 @@ export function SelectedDocumentPanel({
                   >
                     {t("workspace.selectedDocument.delete")}
                   </Button>
-                ) : null}
-              </div>
+                ) : (
+                  <Button
+                    className="rounded-xl border-rose-200 bg-white text-rose-700 hover:bg-rose-50 hover:text-rose-700"
+                    disabled={!canManageDocuments || isRunningDocumentAction}
+                    onClick={() => { setPermanentDeleteTitle(""); setIsPermanentDeleteOpen(true); }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {t("workspace.selectedDocument.permanentDelete")}
+                  </Button>
+                )}
+              </div> : null}
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-md bg-white px-2 py-2">
-                <div className="text-slate-500">{t("workspace.selectedDocument.parser")}</div>
-                <div className="mt-1 font-medium text-slate-900">{detail.parser_name ? formatParserLabel(detail.parser_name) : t("workspace.selectedDocument.pending")}</div>
+            <DialogFormGrid className="gap-3 text-xs">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.parser")}</div>
+                <div className="mt-2 text-sm font-semibold text-slate-950">{detail.parser_name ? formatParserLabel(detail.parser_name) : t("workspace.selectedDocument.pending")}</div>
               </div>
-              <div className="rounded-md bg-white px-2 py-2">
-                <div className="text-slate-500">{showExtendedMetadata ? t("workspace.selectedDocument.version") : t("workspace.selectedDocument.chunks")}</div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{showExtendedMetadata ? t("workspace.selectedDocument.version") : t("workspace.selectedDocument.chunks")}</div>
                 {showExtendedMetadata ? (
                   <>
-                    <div className="mt-1 font-medium text-slate-900">v{detail.version_number ?? t("workspace.selectedDocument.notAvailable")}</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-950">v{detail.version_number ?? t("workspace.selectedDocument.notAvailable")}</div>
                     {detail.version_ingestion_status && (
                       <div className="mt-2">
                         <Badge
@@ -582,68 +605,68 @@ export function SelectedDocumentPanel({
               </div>
               {showExtendedMetadata && (
                 <>
-                  <div className="rounded-md bg-white px-2 py-2">
-                    <div className="text-slate-500">{t("workspace.selectedDocument.chunkCount")}</div>
-                    <div className="mt-1 font-medium text-slate-900">{chunkCount}</div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.chunkCount")}</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-950">{chunkCount}</div>
                   </div>
-                  <div className="rounded-md bg-white px-2 py-2">
-                    <div className="text-slate-500">{t("workspace.selectedDocument.assetSize")}</div>
-                    <div className="mt-1 font-medium text-slate-900">{formatFileSize(detail.asset_file_size_bytes ?? null)}</div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.assetSize")}</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-950">{formatFileSize(detail.asset_file_size_bytes ?? null)}</div>
                   </div>
                 </>
               )}
-            </div>
+            </DialogFormGrid>
             {showExtendedMetadata && (
               <>
-                <div className="rounded-md bg-white px-3 py-3 text-xs text-slate-600">
-                  <div className="font-medium text-slate-900">{t("workspace.selectedDocument.processingHealth")}</div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.documentIngestion")}</div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-sm font-semibold text-slate-950">{t("workspace.selectedDocument.processingHealth")}</div>
+                  <DialogFormGrid className="mt-3 gap-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.documentIngestion")}</div>
                       <div className="mt-2">
                         <Badge className={cn("border text-[11px]", getStatusBadgeClass(detail.document.ingestion_status))} variant="outline">
                           {formatStatusLabel(detail.document.ingestion_status)}
                         </Badge>
                       </div>
                     </div>
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.documentIndexing")}</div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.documentIndexing")}</div>
                       <div className="mt-2">
                         <Badge className={cn("border text-[11px]", getStatusBadgeClass(detail.document.indexing_status))} variant="outline">
                           {formatStatusLabel(detail.document.indexing_status)}
                         </Badge>
                       </div>
                     </div>
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.currentVersionTokens")}</div>
-                      <div className="mt-1 font-medium text-slate-900">{formatNumber(tokenCountTotal)}</div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.currentVersionTokens")}</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-950">{formatNumber(tokenCountTotal)}</div>
                     </div>
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.contentType")}</div>
-                      <div className="mt-1 font-medium text-slate-900">{detail.asset_content_type ?? t("workspace.selectedDocument.unknown")}</div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.contentType")}</div>
+                      <div className="mt-2 break-all text-sm font-semibold text-slate-950">{detail.asset_content_type ?? t("workspace.selectedDocument.unknown")}</div>
                     </div>
-                  </div>
+                  </DialogFormGrid>
                 </div>
-                <div className="rounded-md bg-white px-3 py-3 text-xs text-slate-600">
-                  <div className="font-medium text-slate-900">{t("workspace.selectedDocument.versionState")}</div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.latestAttempt")}</div>
-                      <div className="mt-1 font-medium text-slate-900">v{detail.version_number ?? t("workspace.selectedDocument.notAvailable")}</div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="text-sm font-semibold text-slate-950">{t("workspace.selectedDocument.versionState")}</div>
+                  <DialogFormGrid className="mt-3 gap-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.latestAttempt")}</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-950">v{detail.version_number ?? t("workspace.selectedDocument.notAvailable")}</div>
                       <div className="mt-1 text-slate-500">{detail.parser_name ? formatParserLabel(detail.parser_name) : t("workspace.selectedDocument.parserPendingLower")}</div>
                     </div>
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-slate-500">{t("workspace.selectedDocument.latestCompleted")}</div>
-                      <div className="mt-1 font-medium text-slate-900">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{t("workspace.selectedDocument.latestCompleted")}</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-950">
                         {detail.latest_completed_version_number ? `v${detail.latest_completed_version_number}` : t("workspace.selectedDocument.noCompletedVersion")}
                       </div>
                       <div className="mt-1 text-slate-500">
                         {detail.latest_completed_parser_name ? formatParserLabel(detail.latest_completed_parser_name) : t("workspace.selectedDocument.awaitingSuccessfulIngestion")}
                       </div>
                     </div>
-                  </div>
+                  </DialogFormGrid>
                 </div>
-                <div className="rounded-md bg-white px-3 py-3 text-xs text-slate-600">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950">
                   <div className="mb-3">
                     <WorkspaceExecutionPacket
                       capabilityCount={topRecommendation?.capabilityCount ?? null}
@@ -672,7 +695,7 @@ export function SelectedDocumentPanel({
                   ) : null}
                   {renderNextStepPanel()}
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium text-slate-900">{t("workspace.selectedDocument.latestWorkflow")}</div>
+                    <div className="text-sm font-semibold text-slate-950">{t("workspace.selectedDocument.latestWorkflow")}</div>
                     {latestWorkflowRun ? (
                       <Badge className={cn("border text-[11px]", getStatusBadgeClass(latestWorkflowRun.workflow_status))} variant="outline">
                         {formatStatusLabel(latestWorkflowRun.workflow_status)}
@@ -685,18 +708,18 @@ export function SelectedDocumentPanel({
                       <div className="mt-1 break-all text-slate-500">{latestWorkflowRun.id}</div>
                       <div className="mt-2 text-slate-500">{formatTimestamp(latestWorkflowRun.created_at)}</div>
                       {latestWorkflowRun.error_message ? (
-                        <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+                        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
                           {formatOperatorErrorMessage(latestWorkflowRun.error_message)}
                         </div>
                       ) : null}
                       {latestWorkflowRun.follow_up_reason ? (
-                        <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
                           <div className="font-medium text-slate-900">{resolveLatestWorkflowFollowUpTitle()}</div>
                           <div className="mt-1 leading-6">{latestWorkflowRun.follow_up_reason}</div>
                         </div>
                       ) : null}
                       {latestWorkflowRun.operator_notes ? (
-                        <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
                           <div className="font-medium text-slate-900">{t("workspace.selectedDocument.operatorHandoff")}</div>
                           <div className="mt-1 whitespace-pre-wrap break-words leading-6">
                             {latestWorkflowRun.operator_notes}
@@ -713,14 +736,14 @@ export function SelectedDocumentPanel({
                     <div className="mt-2 text-slate-500">{t("workspace.selectedDocument.noWorkflowRuns")}</div>
                   )}
                 </div>
-                <div className="rounded-md bg-white px-3 py-3 text-xs text-slate-600">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium text-slate-900">{t("workspace.selectedDocument.recentVersions")}</div>
-                    <div className="text-slate-500">{recentVersions.length}</div>
+                    <div className="text-sm font-semibold text-slate-950">{t("workspace.selectedDocument.recentVersions")}</div>
+                    <div className="text-xs font-medium text-slate-500">{recentVersions.length}</div>
                   </div>
                   <div className="mt-3 space-y-2">
                     {recentVersions.map((version) => (
-                      <div key={version.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+                      <div key={version.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="font-medium text-slate-900">v{version.version_number}</div>
@@ -752,13 +775,13 @@ export function SelectedDocumentPanel({
                 </div>
               </>
             )}
-            <div className="space-y-2">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
               {chunks.slice(0, 3).map((chunk) => (
                 <div
                   key={chunk.id}
                   className={cn(
-                    "rounded-md border px-3 py-3",
-                    chunk.id === focusedChunkId ? "border-blue-200 bg-blue-50/70 shadow-sm" : "border-transparent bg-white"
+                    "rounded-xl border p-3",
+                    chunk.id === focusedChunkId ? "border-blue-200 bg-blue-50/70 shadow-sm" : "border-slate-200 bg-slate-50/70"
                   )}
                 >
                   <div className="mb-1 flex items-center justify-between gap-3">
@@ -782,12 +805,12 @@ export function SelectedDocumentPanel({
                 </div>
               ))}
               {chunks.length === 0 && (
-                <div className="rounded-md bg-white px-3 py-3 text-sm text-slate-500">
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-950">
                   {t("workspace.selectedDocument.chunksAppearAfterIngestion")}
                 </div>
               )}
             </div>
-          </>
+          </DialogFormLayout>
         ) : (
           <div className="text-sm text-slate-500">{emptyState}</div>
         )}
@@ -796,7 +819,7 @@ export function SelectedDocumentPanel({
           confirmLabel={t("workspace.selectedDocument.delete")}
           description={
             detail
-              ? t("workspace.confirm.deleteConversation", { title: detail.document.title })
+              ? t("workspace.confirm.deleteDocument", { title: detail.document.title })
               : t("workspace.confirm.deleteSelectedDocument")
           }
           isLoading={isRunningDocumentAction}
@@ -808,6 +831,30 @@ export function SelectedDocumentPanel({
           open={isDeleteConfirmOpen && Boolean(detail) && !isDeletedDocument}
           title={t("workspace.selectedDocument.delete")}
         />
+        <ConfirmDialog
+          cancelLabel={t("workspace.headerBar.cancel")}
+          confirmLabel={isDeletedDocument ? t("workspace.selectedDocument.restore") : t("workspace.selectedDocument.reindex")}
+          description={detail ? t(isDeletedDocument ? "workspace.confirm.restoreDocument" : "workspace.confirm.reindexDocument", { title: detail.document.title }) : ""}
+          isLoading={isRunningDocumentAction}
+          onCancel={() => setIsLifecycleConfirmOpen(false)}
+          onConfirm={async () => {
+            await (isDeletedDocument ? onRestoreDocument() : onReindexDocument());
+            setIsLifecycleConfirmOpen(false);
+          }}
+          open={isLifecycleConfirmOpen && Boolean(detail)}
+          title={isDeletedDocument ? t("workspace.selectedDocument.restore") : t("workspace.selectedDocument.reindex")}
+        />
+        <FormDialog
+          description={t("workspace.confirm.permanentDeleteDocument", { title: detail?.document.title ?? "" })}
+          footer={<DialogFormActions><Button onClick={() => setIsPermanentDeleteOpen(false)} type="button" variant="outline">{t("workspace.headerBar.cancel")}</Button><Button className="bg-rose-600 text-white hover:bg-rose-700" disabled={isRunningDocumentAction || permanentDeleteTitle !== detail?.document.title} onClick={async () => { await onPermanentlyDeleteDocument(permanentDeleteTitle); setIsPermanentDeleteOpen(false); }} type="button">{t("workspace.selectedDocument.permanentDelete")}</Button></DialogFormActions>}
+          onClose={() => setIsPermanentDeleteOpen(false)}
+          open={isPermanentDeleteOpen && Boolean(detail) && isDeletedDocument}
+          title={t("workspace.selectedDocument.permanentDelete")}
+        >
+          <DialogFormField hint={t("workspace.confirm.permanentDeleteHint")} label={t("workspace.confirm.permanentDeleteLabel")} showHint>
+            <Input autoFocus onChange={(event) => setPermanentDeleteTitle(event.target.value)} value={permanentDeleteTitle} />
+          </DialogFormField>
+        </FormDialog>
       </CardContent>
     </Card>
   );

@@ -83,6 +83,21 @@ class McpConnectorPreviewResponse(BaseModel):
     executed_at: datetime
 
 
+class McpRemoteToolResponse(BaseModel):
+    name: str
+    description: str | None = None
+    input_schema: dict[str, object] = Field(default_factory=dict)
+
+
+class McpRemoteToolCatalogResponse(BaseModel):
+    mcp_connector_id: UUID
+    connector_slug: str
+    protocol_version: str
+    server_info: dict[str, object] = Field(default_factory=dict)
+    tools: list[McpRemoteToolResponse] = Field(default_factory=list)
+    discovered_at: datetime
+
+
 class McpConnectorTypeGovernanceBreakdownResponse(BaseModel):
     connector_type: McpConnectorType
     total_connectors: int = 0

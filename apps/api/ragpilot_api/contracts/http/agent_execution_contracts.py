@@ -76,6 +76,10 @@ class AgentExecutionResponse(BaseModel):
     launched_by_user_id: UUID | None
     started_at: datetime | None
     completed_at: datetime | None
+    temporal_workflow_id: str | None = None
+    retry_of_execution_id: UUID | None = None
+    cancellation_requested_at: datetime | None = None
+    cancelled_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

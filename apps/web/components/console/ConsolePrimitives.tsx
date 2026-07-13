@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { AlertCircle } from "lucide-react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { AlertCircle, Inbox } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ export function ConsoleSurface({
   return (
     <section
       className={cn(
-        "rounded-[22px] border border-white/80 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.06)]",
+        "overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/92",
         className
       )}
     >
@@ -32,28 +32,30 @@ export function ConsolePage({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={cn("mx-auto flex w-full max-w-[1520px] flex-col gap-5", className)}>{children}</div>;
+  return <div className={cn("mx-auto flex w-full max-w-[1520px] flex-col gap-6", className)}>{children}</div>;
 }
 
 export function ConsoleSurfaceHeader({
   title,
   description,
   action,
+  actionPlacement = "side",
   className
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  actionPlacement?: "side" | "below";
   className?: string;
 }) {
   return (
-    <div className={cn("border-b border-slate-100 px-6 py-5", className)}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-lg font-semibold text-slate-950">{title}</div>
-          {description ? <div className="mt-1 text-sm text-slate-500">{description}</div> : null}
+    <div className={cn("px-6 pb-3 pt-6", className)} data-ui="console-surface-header">
+      <div className={cn("flex flex-col gap-3", actionPlacement === "side" && "sm:flex-row sm:items-start sm:justify-between")}>
+        <div className="min-w-0">
+          <div className="text-lg font-semibold text-slate-950 dark:text-slate-50">{title}</div>
+          {description ? <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</div> : null}
         </div>
-        {action}
+        {action ? <div className={actionPlacement === "below" ? "mt-2 w-full" : "shrink-0"}>{action}</div> : null}
       </div>
     </div>
   );
@@ -73,21 +75,21 @@ export function ConsolePageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <section className="rounded-[22px] border border-white/80 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.06)]">
+    <ConsoleSurface>
       <div className="px-6 py-5 sm:px-7 sm:py-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0 flex-1">
-            {eyebrow ? <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{eyebrow}</div> : null}
+            {eyebrow ? <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{eyebrow}</div> : null}
             <div className="mt-1 flex items-center gap-3">
               {icon ? <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">{icon}</div> : null}
-            <h1 className="text-[28px] font-semibold tracking-tight text-slate-950 sm:text-[34px]">{title}</h1>
+              <h1 className="text-[28px] font-semibold tracking-tight text-slate-950 sm:text-[34px] dark:text-slate-50">{title}</h1>
             </div>
             {description ? <div className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{description}</div> : null}
           </div>
           {actions ? <div className="flex w-full flex-wrap items-center gap-3 xl:w-auto xl:justify-end">{actions}</div> : null}
         </div>
       </div>
-    </section>
+    </ConsoleSurface>
   );
 }
 
@@ -126,7 +128,7 @@ export function ConsoleOutlineBadge({
   className?: string;
 }) {
   return (
-    <Badge className={cn("border-slate-200 bg-slate-50 text-slate-600", className)} variant="outline">
+    <Badge className={cn("border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300", className)} variant="outline">
       {children}
     </Badge>
   );
@@ -140,8 +142,8 @@ export function ConsoleToolbar({
   className?: string;
 }) {
   return (
-    <ConsoleSurface className={cn("px-5 py-4", className)}>
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">{children}</div>
+    <ConsoleSurface className={cn("px-5 py-4 sm:px-6 sm:py-5", className)}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">{children}</div>
     </ConsoleSurface>
   );
 }
@@ -153,7 +155,7 @@ export function ConsoleToolbarGroup({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={cn("flex flex-wrap items-center gap-3", className)}>{children}</div>;
+  return <div className={cn("flex min-w-0 flex-wrap items-center gap-3", className)}>{children}</div>;
 }
 
 export function ConsoleSegmentedBar({
@@ -164,9 +166,34 @@ export function ConsoleSegmentedBar({
   className?: string;
 }) {
   return (
-    <ConsoleSurface className={cn("px-2 py-2", className)}>
+    <ConsoleSurface className={cn("w-fit max-w-full px-2 py-2", className)}>
       <div className="flex flex-wrap gap-2">{children}</div>
     </ConsoleSurface>
+  );
+}
+
+export function ConsoleSegmentButton({
+  active,
+  children,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  active: boolean;
+}) {
+  return (
+    <button
+      className={cn(
+        "inline-flex h-10 items-center justify-center rounded-2xl px-4 text-sm font-semibold transition",
+        active
+          ? "bg-slate-950 text-white shadow-sm hover:bg-slate-900 dark:bg-slate-50 dark:text-slate-950 dark:hover:bg-white"
+          : "bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-50",
+        className
+      )}
+      type="button"
+      {...props}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -198,7 +225,7 @@ export function ConsoleMetricCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
-          <div className="mt-3 text-[32px] font-semibold tracking-tight text-slate-950">{value}</div>
+          <div className="mt-3 text-[32px] font-semibold tracking-tight text-slate-950 dark:text-slate-50">{value}</div>
           {detail ? <div className="mt-2 text-sm leading-6 text-slate-500">{detail}</div> : null}
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
@@ -209,19 +236,24 @@ export function ConsoleMetricCard({
 
 export function ConsoleEmptyState({
   children,
-  className
+  className,
+  icon
 }: {
   children: ReactNode;
   className?: string;
+  icon?: ReactNode;
 }) {
   return (
     <div
       className={cn(
-        "rounded-[18px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-sm leading-6 text-slate-500",
+        "flex min-h-28 flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm leading-6 text-slate-500 dark:text-slate-400",
         className
       )}
     >
-      {children}
+      <div className="flex h-12 w-12 items-center justify-center text-slate-400">
+        {icon ?? <Inbox className="h-9 w-9 stroke-[1.5]" />}
+      </div>
+      <div className="max-w-xl">{children}</div>
     </div>
   );
 }

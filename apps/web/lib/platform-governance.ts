@@ -346,6 +346,21 @@ export type PlatformMcpConnector = {
   updated_at: string;
 };
 
+export type McpRemoteTool = {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+};
+
+export type McpRemoteToolCatalog = {
+  mcp_connector_id: string;
+  connector_slug: string;
+  protocol_version: string;
+  server_info: Record<string, unknown>;
+  tools: McpRemoteTool[];
+  discovered_at: string;
+};
+
 export type McpConnectorTypeGovernanceBreakdown = {
   connector_type: McpConnectorType;
   total_connectors: number;
@@ -436,7 +451,15 @@ export type ModelEndpointPayload = Omit<
 
 export type ToolRegistrationPayload = Omit<
   PlatformToolRegistration,
-  "id" | "bound_agent_count" | "created_at" | "updated_at"
+  | "id"
+  | "bound_agent_count"
+  | "recent_preview_completed_events"
+  | "recent_preview_blocked_events"
+  | "recent_preview_failed_events"
+  | "last_preview_status"
+  | "last_preview_at"
+  | "created_at"
+  | "updated_at"
 >;
 
 export type RetrievalProfilePayload = Omit<
@@ -836,6 +859,12 @@ export async function previewMcpConnector(mcpConnectorId: string) {
   return await apiRequest<McpConnectorPreviewResponse>(`/mcp-connectors/${mcpConnectorId}/preview`, {
     method: "POST"
   });
+}
+
+export async function listMcpConnectorTools(mcpConnectorId: string) {
+  return await apiRequest<McpRemoteToolCatalog>(
+    `/mcp-connectors/${mcpConnectorId}/tools`,
+  );
 }
 
 export async function applyMcpConnectorGovernanceAction(

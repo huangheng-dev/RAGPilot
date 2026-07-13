@@ -12,6 +12,8 @@ from ragpilot_api.contracts.http.document_contracts import (
     DocumentDeleteResponse,
     DocumentDetailResponse,
     DocumentMetricsResponse,
+    DocumentPermanentDeleteRequest,
+    DocumentPermanentDeleteResponse,
     DocumentResponse,
     DocumentRestoreResponse,
     DocumentUploadResponse,
@@ -249,6 +251,29 @@ async def restore_document(
             document_id=document_id,
             knowledge_base_id=knowledge_base_id,
         )
+    except ResourceNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@router.post("/{document_id}/permanent-delete", response_model=DocumentPermanentDeleteResponse)
+async def permanently_delete_document(
+    document_id: UUID,
+    request: DocumentPermanentDeleteRequest,
+    knowledge_base_id: UUID = Query(...),
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> DocumentPermanentDeleteResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "manage_documents", RolePermissionRepository(session))
+    await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
+    try:
+        return await build_document_service(session).permanently_delete_document(
+            document_id=document_id,
+            knowledge_base_id=knowledge_base_id,
+            confirmation_title=request.confirmation_title,
+        )
+    except ResourceConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 

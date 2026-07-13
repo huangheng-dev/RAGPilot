@@ -11,6 +11,8 @@ from ragpilot_api.contracts.http.mcp_connector_contracts import (
     McpConnectorCreateRequest,
     McpConnectorGovernanceSummaryResponse,
     McpConnectorPreviewResponse,
+    McpRemoteToolCatalogResponse,
+    McpRemoteToolResponse,
     McpConnectorResponse,
     McpConnectorTypeGovernanceBreakdownResponse,
     McpConnectorUpdateRequest,
@@ -19,6 +21,7 @@ from ragpilot_api.infrastructure.database.models import McpConnector
 from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository import McpConnectorRepository
 from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_repository import RuntimeGovernanceEventRepository
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
+from ragpilot_api.infrastructure.mcp.client import McpProtocolError, McpStreamableHttpClient
 from ragpilot_api.shared.settings import Settings, get_settings
 
 
@@ -317,9 +320,31 @@ class McpConnectorRegistryService:
                     error_message="Set the credential environment-variable hint before previewing this connector.",
                 )
 
+        request_headers = {
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        }
+        credential = resolve_mcp_connector_environment_secret(mcp_connector.credential_key_hint)
+        if credential:
+            request_headers["Authorization"] = f"Bearer {credential}"
+        initialize_payload = {
+            "jsonrpc": "2.0",
+            "id": "ragpilot-preview",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "RagPilot", "version": "0.1.0"},
+            },
+        }
+
         try:
             async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
-                response = await client.get(mcp_connector.base_url or "")
+                response = await client.post(
+                    mcp_connector.base_url or "",
+                    headers=request_headers,
+                    json=initialize_payload,
+                )
         except httpx.HTTPError as error:
             return build_mcp_connector_preview_response(
                 mcp_connector,
@@ -329,18 +354,108 @@ class McpConnectorRegistryService:
                 error_message=str(error),
             )
 
+        response_payload: dict[str, object] = {}
+        try:
+            parsed_payload = response.json()
+            if isinstance(parsed_payload, dict):
+                response_payload = parsed_payload
+        except ValueError:
+            response_payload = {}
+
+        result_payload = response_payload.get("result")
+        protocol_result = result_payload if isinstance(result_payload, dict) else {}
+        protocol_version = protocol_result.get("protocolVersion")
+        server_info = protocol_result.get("serverInfo")
+        capabilities = protocol_result.get("capabilities")
+        protocol_ready = (
+            response.is_success
+            and response_payload.get("jsonrpc") == "2.0"
+            and isinstance(protocol_version, str)
+            and isinstance(server_info, dict)
+        )
+        discovered_tools = []
+        protocol_error: str | None = None
+        if protocol_ready:
+            try:
+                runtime_client = McpStreamableHttpClient(
+                    base_url=mcp_connector.base_url or "",
+                    bearer_token=credential,
+                    timeout_seconds=5.0,
+                )
+                await runtime_client.initialize()
+                discovered_tools = await runtime_client.list_tools()
+            except (httpx.HTTPError, McpProtocolError) as error:
+                protocol_ready = False
+                protocol_error = str(error)
+
         return build_mcp_connector_preview_response(
             mcp_connector,
-            preview_status="completed",
+            preview_status="completed" if protocol_ready else "failed",
             summary=(
-                f"MCP connector endpoint responded with HTTP {response.status_code}. "
-                "The remote host is reachable for future runtime bridge work."
+                f"MCP initialize completed using protocol {protocol_version}."
+                if protocol_ready
+                else f"Endpoint responded with HTTP {response.status_code}, but did not return a valid MCP initialize result."
             ),
             request_metadata=request_metadata,
             response_metadata={
                 "status_code": response.status_code,
                 "content_type": response.headers.get("content-type"),
+                "protocol_version": protocol_version,
+                "server_info": server_info,
+                "capabilities": capabilities,
+                "mcp_session_id": response.headers.get("mcp-session-id"),
+                "discovered_tool_count": len(discovered_tools),
+                "discovered_tools": [
+                    {
+                        "name": tool.get("name"),
+                        "description": tool.get("description"),
+                    }
+                    for tool in discovered_tools[:20]
+                ],
             },
+            error_message=None if protocol_ready else (protocol_error or "MCP protocol handshake validation failed."),
+        )
+
+    async def list_remote_tools(self, *, mcp_connector_id: UUID) -> McpRemoteToolCatalogResponse:
+        connector = await self.mcp_connector_repository.get_mcp_connector(mcp_connector_id=mcp_connector_id)
+        if connector is None:
+            raise ResourceNotFoundError("MCP connector not found.")
+        if not connector.is_enabled or not connector.base_url:
+            raise ResourceConflictError("MCP connector must be enabled and configured before discovering tools.")
+        if connector.connector_type != "streamable_http":
+            raise ResourceConflictError("Remote tool discovery currently requires streamable HTTP transport.")
+
+        client = McpStreamableHttpClient(
+            base_url=connector.base_url,
+            bearer_token=resolve_mcp_connector_environment_secret(connector.credential_key_hint),
+            timeout_seconds=10.0,
+        )
+        try:
+            initialization = await client.initialize()
+            tools = await client.list_tools()
+        except (httpx.HTTPError, McpProtocolError) as error:
+            raise ResourceConflictError(f"MCP remote tool discovery failed: {error}") from error
+        finally:
+            try:
+                await client.close()
+            except httpx.HTTPError:
+                pass
+
+        return McpRemoteToolCatalogResponse(
+            mcp_connector_id=connector.id,
+            connector_slug=connector.slug,
+            protocol_version=initialization.protocol_version,
+            server_info=initialization.server_info,
+            tools=[
+                McpRemoteToolResponse(
+                    name=str(tool.get("name")),
+                    description=tool.get("description") if isinstance(tool.get("description"), str) else None,
+                    input_schema=tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {},
+                )
+                for tool in tools
+                if isinstance(tool.get("name"), str) and str(tool.get("name")).strip()
+            ],
+            discovered_at=datetime.now(timezone.utc),
         )
 
     async def _build_tool_reference_counts(self) -> dict[str, dict[str, int]]:

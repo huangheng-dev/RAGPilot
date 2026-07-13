@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ReactElement,
   type ReactNode,
   useCallback,
   useEffect,
@@ -9,20 +13,19 @@ import {
   useRef,
   useState,
 } from "react";
-import { RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { ArrowRight, Bot, Boxes, Building2, Library, RefreshCw, Search, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { AgentExecutionFollowUpActions } from "@/components/agents/AgentExecutionFollowUpActions";
+import { RuntimeResourcesPanel } from "@/components/admin/RuntimeResourcesPanel";
 import { AgentRunButtonLink } from "@/components/agents/AgentRunButtonLink";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { ConsoleActionPacketCard } from "@/components/console/ConsoleActionPacketCard";
 import { ConsoleRuntimeTaskPacket } from "@/components/console/ConsoleRuntimeTaskPacket";
 import {
   ConsolePage,
-  ConsoleSegmentedBar,
   ConsoleSurface,
   ConsoleSurfaceHeader,
   ConsoleToolbar,
-  ConsoleToolbarGroup,
 } from "@/components/console/ConsolePrimitives";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
 import { RuntimeBindingSummaryCard } from "@/components/runtime/RuntimeBindingSummaryCard";
@@ -34,7 +37,6 @@ import {
 import { ToolRuntimeTraceActions } from "@/components/runtime/ToolRuntimeTraceActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   DialogFormActions,
   DialogFormField,
@@ -367,7 +369,7 @@ type AdminManagementPanel =
   | "user-edit"
   | null;
 
-type AdminSection = "overview" | "directory" | "access" | "security";
+type AdminSection = "overview" | "directory" | "access" | "runtime" | "security";
 
 const WORKSPACE_LIFECYCLE_FILTER_VALUES = [
   "all",
@@ -540,40 +542,70 @@ function formatAuthenticationModeLabel(
 function AdminManagementDialog({
   children,
   description,
+  eyebrow,
   onClose,
   title,
 }: {
   children: ReactNode;
   description: string;
+  eyebrow: string;
   onClose: () => void;
   title: string;
 }) {
+  let dialogContent = children;
+  let dialogFooter: ReactNode = null;
+  const rootChildren = Children.toArray(children);
+  const rootLayout = rootChildren.length === 1 ? rootChildren[0] : null;
+
+  if (isValidElement(rootLayout) && rootLayout.type === DialogFormLayout) {
+    const layoutElement = rootLayout as ReactElement<{ children?: ReactNode }>;
+    const layoutChildren = Children.toArray(layoutElement.props.children);
+    const footerCandidate = layoutChildren.at(-1);
+    if (isValidElement(footerCandidate) && footerCandidate.type === DialogFormActions) {
+      dialogFooter = footerCandidate;
+      dialogContent = cloneElement(
+        layoutElement,
+        undefined,
+        layoutChildren.slice(0, -1),
+      );
+    }
+  }
+
   return (
     <FormDialog
       description={description}
+      eyebrow={eyebrow}
+      focusContainerOnOpen
+      footer={dialogFooter}
       onClose={onClose}
       open
-      size="lg"
+      presentation="side"
+      size="xl"
       title={title}
+      titleClassName="text-base"
     >
-      {children}
+      {dialogContent}
     </FormDialog>
   );
 }
 
 function AdminManagementField({
   children,
+  className,
   hint,
   label,
 }: {
   children: ReactNode;
+  className?: string;
   hint?: string;
   label: string;
 }) {
   return (
-    <DialogFormField hint={hint} label={label}>
-      {children}
-    </DialogFormField>
+    <div className={className}>
+      <DialogFormField hint={hint} label={label}>
+        {children}
+      </DialogFormField>
+    </div>
   );
 }
 
@@ -590,7 +622,7 @@ function readAllowedFilterValue(
 }
 
 function readAllowedAdminSection(value: string | null): AdminSection {
-  if (value === "directory" || value === "access" || value === "security") {
+  if (value === "directory" || value === "access" || value === "runtime" || value === "security") {
     return value;
   }
 
@@ -1611,6 +1643,15 @@ export default function AdminConsolePage() {
       const requestedKnowledgeBaseId =
         searchParams.get("knowledge_base_id")?.trim() ?? "";
       const requestedUserId = searchParams.get("user_id")?.trim() ?? "";
+      const requestedRuntimeResource =
+        searchParams.get("runtime_resource")?.trim() ?? "";
+      const requestedRuntimeTarget =
+        searchParams.get("model_endpoint_id")?.trim() ||
+        searchParams.get("tool_registration_id")?.trim() ||
+        searchParams.get("retrieval_profile_id")?.trim() ||
+        searchParams.get("mcp_connector_id")?.trim() ||
+        searchParams.get("mcp_connector_slug")?.trim() ||
+        "";
       setAdminSection(
         requestedManagementPanel === "workspace-edit" && requestedWorkspaceId
           ? "directory"
@@ -1653,6 +1694,14 @@ export default function AdminConsolePage() {
           AUDIT_EVENT_FILTER_VALUES,
         ),
       );
+      setRuntimeGovernanceQueueResourceFilter(
+        ["model_endpoint", "tool_registration", "retrieval_profile", "mcp_connector"].includes(
+          requestedRuntimeResource,
+        )
+          ? requestedRuntimeResource
+          : "all",
+      );
+      setRuntimeGovernanceSearchQuery(requestedRuntimeTarget);
       setPendingWorkspaceFocusId(
         requestedManagementPanel === "workspace-edit" && requestedWorkspaceId
           ? requestedWorkspaceId
@@ -2047,55 +2096,6 @@ export default function AdminConsolePage() {
       isCancelled = true;
     };
   }, [lastRefreshedAt, session?.userId]);
-
-  const refreshRuntimeGovernanceQueue = useCallback(async () => {
-    const [worklist, events] = await Promise.all([
-      loadRuntimeGovernanceWorklist({
-        limit: 8,
-        category:
-          runtimeGovernanceQueueCategoryFilter !== "all"
-            ? (runtimeGovernanceQueueCategoryFilter as RuntimeGovernanceWorklist["items"][number]["category"])
-            : undefined,
-        severity:
-          runtimeGovernanceQueueSeverityFilter !== "all"
-            ? (runtimeGovernanceQueueSeverityFilter as "review" | "attention")
-            : undefined,
-        resource_type:
-          runtimeGovernanceQueueResourceFilter !== "all"
-            ? (runtimeGovernanceQueueResourceFilter as
-                "model_endpoint" | "tool_registration" | "mcp_connector")
-            : undefined,
-        query: runtimeGovernanceSearchQuery.trim() || undefined,
-      }),
-      listRuntimeGovernanceEvents({
-        limit: 8,
-        resource_type:
-          runtimeGovernanceQueueResourceFilter !== "all"
-            ? (runtimeGovernanceQueueResourceFilter as
-                "model_endpoint" | "tool_registration" | "mcp_connector")
-            : undefined,
-        action_type:
-          runtimeGovernanceActionFilter !== "all"
-            ? runtimeGovernanceActionFilter
-            : undefined,
-        actor_role:
-          runtimeGovernanceActorRoleFilter !== "all"
-            ? (runtimeGovernanceActorRoleFilter as
-                "super_admin" | "operator" | "reviewer")
-            : undefined,
-        query: runtimeGovernanceSearchQuery.trim() || undefined,
-      }),
-    ]);
-    setRuntimeGovernanceWorklist(worklist);
-    setRuntimeGovernanceEvents(events);
-  }, [
-    runtimeGovernanceActionFilter,
-    runtimeGovernanceActorRoleFilter,
-    runtimeGovernanceQueueCategoryFilter,
-    runtimeGovernanceQueueResourceFilter,
-    runtimeGovernanceQueueSeverityFilter,
-    runtimeGovernanceSearchQuery,
-  ]);
 
   const handleApplyRuntimeGovernanceQueueAction = useCallback(
     async (item: RuntimeGovernanceWorklist["items"][number]) => {
@@ -3156,37 +3156,6 @@ export default function AdminConsolePage() {
     runtimeGovernanceSearchQuery,
     runtimeGovernanceActionFilter,
     runtimeGovernanceActorRoleFilter,
-  ]);
-
-  useEffect(() => {
-    if (errorMessage) {
-      return;
-    }
-
-    if (isLoading) {
-      setStatusMessage(t("admin.status.refreshing"));
-      return;
-    }
-
-    if (tenants.length === 0) {
-      setStatusMessage(t("admin.status.noTenants"));
-      return;
-    }
-
-    setStatusMessage(
-      t("admin.status.loaded", {
-        tenantCount: String(tenants.length),
-        workspaceCount: String(workspaces.length),
-        knowledgeBaseCount: String(knowledgeBases.length),
-      }),
-    );
-  }, [
-    errorMessage,
-    isLoading,
-    knowledgeBases.length,
-    t,
-    tenants.length,
-    workspaces.length,
   ]);
 
   const filteredTenantGroups = useMemo(() => {
@@ -4591,12 +4560,16 @@ export default function AdminConsolePage() {
   const metrics = useMemo(
     () => [
       {
+        icon: Building2,
+        iconClassName: "bg-blue-50 text-blue-600",
         label: t("admin.metrics.managedTenants"),
         value: filteredTenantGroups.length,
         hint: t("admin.metrics.managedTenantsHint"),
         href: buildAdminHref({ section: "overview" }),
       },
       {
+        icon: Boxes,
+        iconClassName: "bg-cyan-50 text-cyan-600",
         label: t("admin.metrics.activeWorkspaces"),
         value: filteredWorkspaces.filter((workspace) => !workspace.is_archived)
           .length,
@@ -4609,6 +4582,8 @@ export default function AdminConsolePage() {
         }),
       },
       {
+        icon: Library,
+        iconClassName: "bg-violet-50 text-violet-600",
         label: t("admin.metrics.publishedKnowledgeBases"),
         value: filteredKnowledgeBases.filter(
           (knowledgeBase) => knowledgeBase.publication_status === "published",
@@ -4622,6 +4597,8 @@ export default function AdminConsolePage() {
         }),
       },
       {
+        icon: Bot,
+        iconClassName: "bg-emerald-50 text-emerald-600",
         label: t("admin.metrics.activeAgents"),
         value: filteredAgents.filter((agent) => agent.status === "active")
           .length,
@@ -4632,6 +4609,8 @@ export default function AdminConsolePage() {
         }),
       },
       {
+        icon: ShieldAlert,
+        iconClassName: "bg-amber-50 text-amber-600",
         label: t("admin.metrics.pendingControls"),
         value: adminWatchItems.filter((item) => item.status !== "healthy")
           .length,
@@ -5027,6 +5006,11 @@ export default function AdminConsolePage() {
       description: t("admin.sections.accessDescription"),
     },
     {
+      key: "runtime" as const,
+      label: t("admin.sections.runtime"),
+      description: t("admin.sections.runtimeDescription"),
+    },
+    {
       key: "security" as const,
       label: t("admin.sections.security"),
       description: t("admin.sections.securityDescription"),
@@ -5038,8 +5022,12 @@ export default function AdminConsolePage() {
   const showOverviewSection = adminSection === "overview";
   const showDirectorySection = adminSection === "directory";
   const showAccessSection = adminSection === "access";
+  const showRuntimeSection = adminSection === "runtime";
   const showSecuritySection =
     showAdvancedAdminSections && adminSection === "security";
+  const currentAdminSection =
+    visibleAdminSections.find((section) => section.key === adminSection) ??
+    visibleAdminSections[0];
 
   function buildWorkspaceContextHref(
     workspace: Workspace,
@@ -5856,29 +5844,73 @@ export default function AdminConsolePage() {
     <ConsoleShell activeHref="/admin">
       <PageTitleSync title={t("admin.title")} />
       <ConsolePage className="gap-6">
-        <ConsoleToolbar>
-          <ConsoleToolbarGroup>
-            <Select
-              disabled={isLoading || tenants.length === 0}
-              onValueChange={setSelectedTenantId}
-              value={selectedTenantId}
-            >
-              <SelectTrigger className="min-w-[240px] rounded-xl border-slate-200 bg-white">
-                <SelectValue placeholder={t("admin.filters.tenantScope")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  {t("admin.filters.allTenants")}
-                </SelectItem>
-                {tenants.map((tenant) => (
-                  <SelectItem key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </SelectItem>
+        <div className="console-split-layout rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)]">
+          <aside className="console-split-sidebar bg-slate-50/70 dark:bg-slate-950/70">
+            <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.8fr)] sm:items-center lg:grid-cols-1 lg:items-stretch">
+              <div className="text-lg font-semibold text-slate-950 dark:text-slate-50">
+                {t("admin.title")}
+              </div>
+              <Select
+                disabled={isLoading || tenants.length === 0}
+                onValueChange={setSelectedTenantId}
+                value={selectedTenantId}
+              >
+                <SelectTrigger className="w-full bg-white">
+                  <SelectValue placeholder={t("admin.filters.tenantScope")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("admin.filters.allTenants")}</SelectItem>
+                  {tenants.map((tenant) => (
+                    <SelectItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-3 border-t border-slate-200 p-4">
+              <div className="grid grid-cols-2 gap-1 lg:grid-cols-1">
+                {visibleAdminSections.map((section) => (
+                  <button
+                    className={`w-full rounded-xl px-3 py-2.5 text-left text-sm ${adminSection === section.key ? "bg-blue-50 font-medium text-blue-700" : "text-slate-600 hover:bg-white"}`}
+                    key={section.key}
+                    onClick={() => setAdminSection(section.key)}
+                    type="button"
+                  >
+                    {section.label}
+                  </button>
                 ))}
-              </SelectContent>
-            </Select>
-
-            <div className="relative min-w-[280px] flex-1">
+              </div>
+              {resumeWorkspaceHref ? (
+                <Button asChild className="w-full bg-white" variant="outline">
+                  <a href={resumeWorkspaceHref}>{t("admin.filters.returnToValidation")}</a>
+                </Button>
+              ) : null}
+            </div>
+          </aside>
+          <main className="console-split-content console-split-content-padding">
+        {!showRuntimeSection && currentAdminSection ? (
+          <ConsoleSurfaceHeader
+            className="px-0 pb-4 pt-0"
+            description={currentAdminSection.description}
+            title={currentAdminSection.label}
+          />
+        ) : null}
+        {!showOverviewSection && !showRuntimeSection ? (
+        <ConsoleToolbar className="rounded-xl border-slate-200 bg-slate-50/70 px-4 py-4 shadow-none">
+          <div
+            className={cn(
+              "grid w-full gap-3 lg:grid-cols-2",
+              showDirectorySection ? "2xl:grid-cols-5" : "2xl:grid-cols-4",
+            )}
+          >
+            <div className="flex items-center justify-between gap-3 lg:col-span-2 2xl:col-span-5">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                {showDirectorySection ? t("admin.filters.resourceFilters") : t("admin.filters.memberFilters")}
+              </div>
+            </div>
+            {!showOverviewSection ? (
+            <div className="relative min-w-0 lg:col-span-2 2xl:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 className="rounded-xl border-slate-200 bg-white pl-9"
@@ -5887,13 +5919,15 @@ export default function AdminConsolePage() {
                 value={searchQuery}
               />
             </div>
+            ) : null}
 
+            {showDirectorySection ? (
             <Select
               disabled={isLoading}
               onValueChange={setWorkspaceLifecycleFilter}
               value={workspaceLifecycleFilter}
             >
-              <SelectTrigger className="min-w-[220px] rounded-xl border-slate-200 bg-white">
+              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
                 <SelectValue
                   placeholder={t("admin.filters.workspaceLifecycle")}
                 />
@@ -5910,13 +5944,15 @@ export default function AdminConsolePage() {
                 </SelectItem>
               </SelectContent>
             </Select>
+            ) : null}
 
+            {showDirectorySection ? (
             <Select
               disabled={isLoading}
               onValueChange={setKnowledgeBasePublicationStatusFilter}
               value={knowledgeBasePublicationStatusFilter}
             >
-              <SelectTrigger className="min-w-[220px] rounded-xl border-slate-200 bg-white">
+              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
                 <SelectValue
                   placeholder={t("admin.filters.knowledgePublication")}
                 />
@@ -5933,21 +5969,15 @@ export default function AdminConsolePage() {
                 </SelectItem>
               </SelectContent>
             </Select>
-
-            {resumeWorkspaceHref ? (
-              <Button asChild className="rounded-xl" variant="outline">
-                <a href={resumeWorkspaceHref}>
-                  {t("admin.filters.returnToValidation")}
-                </a>
-              </Button>
             ) : null}
 
+            {showDirectorySection ? (
             <Select
               disabled={isLoading || retrievalProfiles.length === 0}
               onValueChange={setRetrievalProfileFilter}
               value={retrievalProfileFilter}
             >
-              <SelectTrigger className="min-w-[220px] rounded-xl border-slate-200 bg-white">
+              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
                 <SelectValue
                   placeholder={t("admin.filters.retrievalProfile")}
                 />
@@ -5972,141 +6002,79 @@ export default function AdminConsolePage() {
                 ))}
               </SelectContent>
             </Select>
+            ) : null}
 
-            <Button
-              className="rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              disabled={isLoading}
-              onClick={() => void refreshAdminDirectory(true)}
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", isLoading && "animate-spin")}
-              />
-              {isLoading
-                ? t("admin.filters.refreshingDirectory")
-                : t("admin.filters.refreshDirectory")}
-            </Button>
-          </ConsoleToolbarGroup>
-        </ConsoleToolbar>
-
-        <div className="space-y-6">
-          <ConsoleSegmentedBar>
-            {visibleAdminSections.map((section) => (
-              <Button
-                className={adminSection === section.key ? "" : "bg-white"}
-                key={section.key}
-                onClick={() => setAdminSection(section.key)}
-                type="button"
-                variant={adminSection === section.key ? "default" : "outline"}
+            {showAccessSection ? (
+              <Select
+                disabled={isLoading}
+                onValueChange={setMemberRelationshipFilter}
+                value={memberRelationshipFilter}
               >
-                {section.label}
-              </Button>
-            ))}
-          </ConsoleSegmentedBar>
+                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                  <SelectValue placeholder={t("admin.members.relationshipFilter")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("admin.members.allRelationships")}</SelectItem>
+                  <SelectItem value="active">{t("admin.members.activeMembership")}</SelectItem>
+                  <SelectItem value="invited">{t("admin.members.invitedMembership")}</SelectItem>
+                  <SelectItem value="suspended">{t("admin.members.suspendedMembership")}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : null}
 
+            {showAccessSection ? (
+              <Select
+                disabled={isLoading}
+                onValueChange={setMemberAccountFilter}
+                value={memberAccountFilter}
+              >
+                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                  <SelectValue placeholder={t("admin.members.accountFilter")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("admin.members.allAccounts")}</SelectItem>
+                  <SelectItem value="active">{t("admin.members.activeAccount")}</SelectItem>
+                  <SelectItem value="inactive">{t("admin.members.inactiveAccount")}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : null}
+
+          </div>
+        </ConsoleToolbar>
+        ) : null}
+          {showRuntimeSection ? <RuntimeResourcesPanel tenantId={selectedTenantId === "all" ? null : selectedTenantId} /> : null}
+
+        <div
+          className={cn(
+            "grid gap-6",
+            (showDirectorySection || showAccessSection) && "mt-6",
+          )}
+        >
           {showOverviewSection ? (
-            <ConsoleSurface className="p-3">
-              <div className="grid gap-3 xl:grid-cols-5">
+            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+              <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {metrics.map((metric) => (
-                  <Card
-                    className="rounded-[20px] border-slate-100 shadow-none"
+                  <Link
+                    className="group flex min-h-[144px] flex-col rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200 hover:bg-blue-50/40 dark:border-slate-800 dark:bg-slate-900/60"
+                    href={metric.href}
                     key={metric.label}
                   >
-                    <CardContent className="p-6">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="pt-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                         {metric.label}
                       </div>
-                      <div className="mt-4 text-[34px] font-semibold tracking-tight text-slate-950">
-                        {metric.value}
+                      <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", metric.iconClassName)}>
+                        <metric.icon className="h-4 w-4" />
                       </div>
-                      <div className="mt-4">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={metric.href}>
-                            {t("admin.metrics.openScope")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                    <div className="mt-3 flex items-end justify-between gap-3">
+                      <div className="text-[30px] font-semibold tracking-tight text-slate-950">{metric.value}</div>
+                      <ArrowRight className="mb-1 h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
+                    </div>
+                    <div className="mt-auto pt-3 text-xs leading-5 text-slate-500">{metric.hint}</div>
+                  </Link>
                 ))}
               </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showDirectorySection || showAccessSection ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <div className="flex flex-wrap gap-2">
-                    {showDirectorySection ? (
-                      <>
-                        <Button
-                          className="rounded-xl"
-                          disabled={!hasAdminWriteAccess}
-                          onClick={openCreateTenantPanel}
-                          type="button"
-                        >
-                          {t("admin.actions.createTenant")}
-                        </Button>
-                        <Button
-                          className="rounded-xl"
-                          disabled={
-                            !hasAdminWriteAccess || tenants.length === 0
-                          }
-                          onClick={openCreateWorkspacePanel}
-                          type="button"
-                          variant="outline"
-                        >
-                          {t("admin.actions.createWorkspace")}
-                        </Button>
-                        <Button
-                          className="rounded-xl"
-                          disabled={
-                            !hasAdminWriteAccess ||
-                            filteredWorkspaces.length === 0
-                          }
-                          onClick={openCreateKnowledgeBasePanel}
-                          type="button"
-                          variant="outline"
-                        >
-                          {t("admin.actions.createKnowledgeBase")}
-                        </Button>
-                      </>
-                    ) : null}
-                    {showAccessSection ? (
-                      <Button
-                        className="rounded-xl"
-                        disabled={!hasAdminWriteAccess}
-                        onClick={openCreateUserPanel}
-                        type="button"
-                      >
-                        {t("admin.actions.createMember")}
-                      </Button>
-                    ) : null}
-                    <Badge
-                      className={cn(
-                        "border",
-                        hasAdminWriteAccess
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-amber-200 bg-amber-50 text-amber-700",
-                      )}
-                      variant="outline"
-                    >
-                      {hasAdminWriteAccess
-                        ? t("admin.access.fullAccess")
-                        : t("admin.access.readOnly")}
-                    </Badge>
-                  </div>
-                }
-                title={t("admin.resourceActions.title")}
-              />
             </ConsoleSurface>
           ) : null}
 
@@ -6148,25 +6116,41 @@ export default function AdminConsolePage() {
           ) : null}
 
           {adminSection === "directory" ? (
-            <ConsoleSurface>
+            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
               <ConsoleSurfaceHeader
                 action={
-                  <Badge
-                    className="border-slate-200 bg-slate-50 text-slate-600"
-                    variant="outline"
-                  >
-                    {t("admin.directory.results", {
-                      count: String(searchedWorkspaces.length),
-                    })}
-                  </Badge>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      className="rounded-xl"
+                      disabled={!hasAdminWriteAccess}
+                      onClick={openCreateTenantPanel}
+                      size="sm"
+                      type="button"
+                    >
+                      {t("admin.actions.createTenant")}
+                    </Button>
+                    <Button
+                      className="rounded-xl bg-white"
+                      disabled={!hasAdminWriteAccess || tenants.length === 0}
+                      onClick={openCreateWorkspacePanel}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("admin.actions.createWorkspace")}
+                    </Button>
+                  </div>
                 }
+                className="px-0 pb-3 pt-0"
+                description={t("admin.directory.description")}
                 title={t("admin.directory.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="pb-2 pt-2">
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.directory.tenant")}
                       </TableHead>
                       <TableHead>{t("admin.directory.workspace")}</TableHead>
@@ -6178,8 +6162,8 @@ export default function AdminConsolePage() {
                         {t("admin.directory.actionsColumn")}
                       </TableHead>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    </TableHeader>
+                    <TableBody>
                     {searchedWorkspaces.map((workspace) => {
                       const tenant = tenants.find(
                         (tenantItem) => tenantItem.id === workspace.tenant_id,
@@ -6195,7 +6179,7 @@ export default function AdminConsolePage() {
                           className="border-slate-100"
                           key={workspace.id}
                         >
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {tenant?.name ??
                                 t("admin.directory.unknownTenant")}
@@ -6230,7 +6214,7 @@ export default function AdminConsolePage() {
                           </TableCell>
                           <TableCell>{workspaceKnowledgeBaseCount}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
                               <Button
                                 className="bg-white"
                                 disabled={
@@ -6327,39 +6311,44 @@ export default function AdminConsolePage() {
                     {searchedWorkspaces.length === 0 && (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={5}
                         >
                           {t("admin.directory.noWorkspaces")}
                         </TableCell>
                       </TableRow>
                     )}
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
 
           {adminSection === "directory" ? (
-            <ConsoleSurface>
+            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
               <ConsoleSurfaceHeader
                 action={
-                  <Badge
-                    className="border-slate-200 bg-slate-50 text-slate-600"
-                    variant="outline"
+                  <Button
+                    className="rounded-xl"
+                    disabled={!hasAdminWriteAccess || filteredWorkspaces.length === 0}
+                    onClick={openCreateKnowledgeBasePanel}
+                    size="sm"
+                    type="button"
                   >
-                    {t("admin.directory.results", {
-                      count: String(searchedKnowledgeBases.length),
-                    })}
-                  </Badge>
+                    {t("admin.actions.createKnowledgeBase")}
+                  </Button>
                 }
+                className="px-0 pb-3 pt-0"
+                description={t("admin.governance.description")}
                 title={t("admin.governance.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="pb-2 pt-2">
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.governance.knowledgeBase")}
                       </TableHead>
                       <TableHead>{t("admin.governance.workspace")}</TableHead>
@@ -6372,8 +6361,8 @@ export default function AdminConsolePage() {
                         {t("admin.governance.actionsColumn")}
                       </TableHead>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                    </TableHeader>
+                    <TableBody>
                     {searchedKnowledgeBases.map((knowledgeBase) => {
                       const workspace = workspaces.find(
                         (workspaceItem) =>
@@ -6409,7 +6398,7 @@ export default function AdminConsolePage() {
                           className="border-slate-100"
                           key={knowledgeBase.id}
                         >
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {knowledgeBase.name}
                             </div>
@@ -6478,7 +6467,7 @@ export default function AdminConsolePage() {
                               t("admin.governance.unknownTenant")}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
                               <Button
                                 className="bg-white"
                                 disabled={
@@ -6583,7 +6572,7 @@ export default function AdminConsolePage() {
                     {searchedKnowledgeBases.length === 0 && (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={6}
                         >
                           {t("admin.governance.noKnowledgeBases")}
@@ -6592,6 +6581,7 @@ export default function AdminConsolePage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
@@ -6611,11 +6601,12 @@ export default function AdminConsolePage() {
                 }
                 title={t("admin.agents.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="px-6 pb-6 pt-2">
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.agents.agent")}
                       </TableHead>
                       <TableHead>{t("admin.agents.tenant")}</TableHead>
@@ -6636,7 +6627,7 @@ export default function AdminConsolePage() {
 
                       return (
                         <TableRow className="border-slate-100" key={agent.id}>
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {agent.name}
                             </div>
@@ -6671,7 +6662,7 @@ export default function AdminConsolePage() {
                           </TableCell>
                           <TableCell>{agent.tools.length}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
                               <Button
                                 asChild
                                 className="bg-white"
@@ -6715,7 +6706,7 @@ export default function AdminConsolePage() {
                     {searchedAgents.length === 0 && (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={7}
                         >
                           {t("admin.agents.noAgents")}
@@ -6724,80 +6715,36 @@ export default function AdminConsolePage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
 
           {adminSection === "access" ||
           (showAdvancedAdminSections && adminSection === "security") ? (
-            <ConsoleSurface>
+            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
               <ConsoleSurfaceHeader
                 action={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select
-                      disabled={isLoading}
-                      onValueChange={setMemberRelationshipFilter}
-                      value={memberRelationshipFilter}
-                    >
-                      <SelectTrigger className="min-w-[190px] rounded-xl border-slate-200 bg-white">
-                        <SelectValue
-                          placeholder={t("admin.members.relationshipFilter")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.members.allRelationships")}
-                        </SelectItem>
-                        <SelectItem value="active">
-                          {t("admin.members.activeMembership")}
-                        </SelectItem>
-                        <SelectItem value="invited">
-                          {t("admin.members.invitedMembership")}
-                        </SelectItem>
-                        <SelectItem value="suspended">
-                          {t("admin.members.suspendedMembership")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      disabled={isLoading}
-                      onValueChange={setMemberAccountFilter}
-                      value={memberAccountFilter}
-                    >
-                      <SelectTrigger className="min-w-[170px] rounded-xl border-slate-200 bg-white">
-                        <SelectValue
-                          placeholder={t("admin.members.accountFilter")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.members.allAccounts")}
-                        </SelectItem>
-                        <SelectItem value="active">
-                          {t("admin.members.activeAccount")}
-                        </SelectItem>
-                        <SelectItem value="inactive">
-                          {t("admin.members.inactiveAccount")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Badge
-                      className="border-slate-200 bg-slate-50 text-slate-600"
-                      variant="outline"
-                    >
-                      {t("admin.directory.results", {
-                        count: String(searchedUsers.length),
-                      })}
-                    </Badge>
-                  </div>
+                  <Button
+                    className="rounded-xl"
+                    disabled={!hasAdminWriteAccess}
+                    onClick={openCreateUserPanel}
+                    size="sm"
+                    type="button"
+                  >
+                    {t("admin.actions.createMember")}
+                  </Button>
                 }
+                className="px-0 pb-4 pt-0"
+                description={t("admin.members.description")}
                 title={t("admin.members.title")}
               />
-              <div className="overflow-x-auto px-6 py-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-100">
-                      <TableHead className="px-0">
+              <div className="pb-2 pt-3">
+                <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-100 bg-slate-50">
+                      <TableHead>
                         {t("admin.members.member")}
                       </TableHead>
                       <TableHead>{t("admin.members.memberships")}</TableHead>
@@ -6829,7 +6776,7 @@ export default function AdminConsolePage() {
 
                       return (
                         <TableRow className="border-slate-100" key={user.id}>
-                          <TableCell className="px-0">
+                          <TableCell>
                             <div className="font-medium text-slate-900">
                               {user.display_name}
                             </div>
@@ -6958,7 +6905,7 @@ export default function AdminConsolePage() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
                               <Button
                                 className="bg-white"
                                 disabled={!hasAdminWriteAccess || isLoading}
@@ -7148,42 +7095,36 @@ export default function AdminConsolePage() {
                     {searchedUsers.length === 0 ? (
                       <TableRow className="border-slate-100">
                         <TableCell
-                          className="px-0 py-8 text-slate-500"
+                          className="py-10 text-center text-slate-500"
                           colSpan={4}
                         >
                           {t("admin.members.noMembers")}
                         </TableCell>
                       </TableRow>
                     ) : null}
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </ConsoleSurface>
           ) : null}
         </div>
 
-        <div className="space-y-6">
-          <ConsoleSurface>
-            <ConsoleSurfaceHeader
-              description={t("settings.governance.description")}
-              title={t("settings.governance.title")}
-            />
-            <div className="px-6 py-5">
+        <div className="mt-6 grid gap-6">
+          {showOverviewSection ? <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
               <RuntimePostureCard
-                actionHref={buildSettingsHref()}
-                actionLabel={t("shell.userMenu.settings")}
+                className="border-0 bg-transparent p-0"
                 description={t("settings.governance.description")}
                 errorMessage={runtimeHealthErrorMessage}
                 isLoading={isLoadingRuntimeHealth}
                 runtimeHealth={runtimeHealth}
                 title={t("settings.governance.title")}
               />
-            </div>
-          </ConsoleSurface>
+          </ConsoleSurface> : null}
 
           {adminSection === "access" ||
           (showAdvancedAdminSections && adminSection === "security") ? (
-            <ConsoleSurface>
+            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
               <ConsoleSurfaceHeader
                 action={
                   <Select
@@ -7240,10 +7181,11 @@ export default function AdminConsolePage() {
                     </SelectContent>
                   </Select>
                 }
+                className="px-0 pb-3 pt-0"
                 description={t("admin.audit.description")}
                 title={t("admin.audit.title")}
               />
-              <div className="space-y-3 px-6 py-5">
+              <div className="grid gap-3 pt-3 lg:grid-cols-2">
                 {auditEvents.length > 0 ? (
                   auditEvents.map((event) => (
                     <div
@@ -7315,7 +7257,7 @@ export default function AdminConsolePage() {
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500">
+                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500 lg:col-span-2">
                     {t("admin.audit.empty")}
                   </div>
                 )}
@@ -7813,12 +7755,13 @@ export default function AdminConsolePage() {
             </ConsoleSurface>
           ) : null}
 
-          {adminSection === "overview" ? (
-            <ConsoleSurface>
+          {showRuntimeSection ? (
+            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
               <ConsoleSurfaceHeader
+                actionPlacement="below"
                 action={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative min-w-[240px] flex-1 max-w-[360px]">
+                  <div className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:grid-cols-2 2xl:grid-cols-5">
+                    <div className="relative min-w-0 lg:col-span-2 2xl:col-span-5">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <Input
                         className="bg-white pl-9"
@@ -7835,7 +7778,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceQueueCategoryFilter}
                       value={runtimeGovernanceQueueCategoryFilter}
                     >
-                      <SelectTrigger className="h-9 w-[220px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.category")}
                         />
@@ -7875,7 +7818,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceQueueSeverityFilter}
                       value={runtimeGovernanceQueueSeverityFilter}
                     >
-                      <SelectTrigger className="h-9 w-[150px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.severity")}
                         />
@@ -7896,7 +7839,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceQueueResourceFilter}
                       value={runtimeGovernanceQueueResourceFilter}
                     >
-                      <SelectTrigger className="h-9 w-[190px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.resource")}
                         />
@@ -7920,7 +7863,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceActionFilter}
                       value={runtimeGovernanceActionFilter}
                     >
-                      <SelectTrigger className="h-9 w-[180px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.action")}
                         />
@@ -7950,7 +7893,7 @@ export default function AdminConsolePage() {
                       onValueChange={setRuntimeGovernanceActorRoleFilter}
                       value={runtimeGovernanceActorRoleFilter}
                     >
-                      <SelectTrigger className="h-9 w-[160px]">
+                      <SelectTrigger className="h-10 w-full">
                         <SelectValue
                           placeholder={t("admin.runtimeQueue.filters.actor")}
                         />
@@ -7970,23 +7913,14 @@ export default function AdminConsolePage() {
                         </SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button
-                      className="bg-white"
-                      onClick={() => void refreshRuntimeGovernanceQueue()}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      {t("admin.runtimeQueue.refresh")}
-                    </Button>
                   </div>
                 }
+                className="px-0 pb-4 pt-0"
                 description={t("admin.runtimeQueue.description")}
                 title={t("admin.runtimeQueue.title")}
               />
-              <div className="space-y-4 p-6">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div className="space-y-6 pt-2">
+                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                   <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                       {t("admin.runtimeQueue.metrics.total")}
@@ -8041,7 +7975,7 @@ export default function AdminConsolePage() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div className="grid gap-4 2xl:grid-cols-2">
                   <div className="space-y-3">
                     <div className="text-sm font-semibold text-slate-950">
                       {t("admin.runtimeQueue.worklistTitle")}
@@ -8386,7 +8320,7 @@ export default function AdminConsolePage() {
             </ConsoleSurface>
           ) : null}
 
-          <ConsoleSurface>
+          {showAdvancedAdminSections ? <ConsoleSurface>
             <ConsoleSurfaceHeader
               description={t("admin.scopePanel.description")}
               title={t("admin.scopePanel.title")}
@@ -8584,7 +8518,7 @@ export default function AdminConsolePage() {
                 </div>
               </div>
             </div>
-          </ConsoleSurface>
+          </ConsoleSurface> : null}
 
           {showAdvancedAdminSections && adminSection === "overview" ? (
             <ConsoleSurface>
@@ -11272,17 +11206,18 @@ export default function AdminConsolePage() {
         {managementPanel === "tenant-create" ? (
           <AdminManagementDialog
             description={t("workspace.sidebar.modal.tenantCreateDescription")}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("workspace.sidebar.modal.tenantCreateTitle")}
           >
             <DialogFormLayout>
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField
+                  className="xl:col-span-2"
                   hint={t("workspace.sidebar.modal.tenantSlugHint")}
                   label={t("workspace.sidebar.modal.tenantName")}
                 >
                   <Input
-                    autoFocus
                     onChange={(event) => {
                       const nextName = event.target.value;
                       setCreateTenantName(nextName);
@@ -11312,7 +11247,7 @@ export default function AdminConsolePage() {
                 </AdminManagementField>
               </DialogFormGrid>
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -11341,14 +11276,14 @@ export default function AdminConsolePage() {
         {managementPanel === "user-create" ? (
           <AdminManagementDialog
             description={t("admin.members.createDescription")}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("admin.members.createTitle")}
           >
             <DialogFormLayout>
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField label={t("admin.members.displayName")}>
                   <Input
-                    autoFocus
                     onChange={(event) =>
                       setCreateUserDisplayName(event.target.value)
                     }
@@ -11357,7 +11292,7 @@ export default function AdminConsolePage() {
                   />
                 </AdminManagementField>
 
-                <AdminManagementField label={t("admin.members.email")}>
+                <AdminManagementField className="xl:col-span-2" label={t("admin.members.email")}>
                   <Input
                     onChange={(event) => setCreateUserEmail(event.target.value)}
                     placeholder={t("admin.members.emailPlaceholder")}
@@ -11448,7 +11383,7 @@ export default function AdminConsolePage() {
                 </AdminManagementField>
               </DialogFormGrid>
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -11477,14 +11412,14 @@ export default function AdminConsolePage() {
         {managementPanel === "user-edit" ? (
           <AdminManagementDialog
             description={t("admin.members.editDescription")}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("admin.members.editTitle")}
           >
             <DialogFormLayout>
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField label={t("admin.members.displayName")}>
                   <Input
-                    autoFocus
                     onChange={(event) =>
                       setEditUserDisplayName(event.target.value)
                     }
@@ -11493,7 +11428,7 @@ export default function AdminConsolePage() {
                   />
                 </AdminManagementField>
 
-                <AdminManagementField label={t("admin.members.email")}>
+                <AdminManagementField className="xl:col-span-2" label={t("admin.members.email")}>
                   <Input
                     onChange={(event) => setEditUserEmail(event.target.value)}
                     placeholder={t("admin.members.emailPlaceholder")}
@@ -12262,6 +12197,7 @@ export default function AdminConsolePage() {
                       label={t("admin.members.passwordResetNewPassword")}
                     >
                       <Input
+                        autoComplete="new-password"
                         onChange={(event) =>
                           setEditUserResetPassword(event.target.value)
                         }
@@ -12276,6 +12212,7 @@ export default function AdminConsolePage() {
                       label={t("admin.members.passwordResetConfirmPassword")}
                     >
                       <Input
+                        autoComplete="new-password"
                         onChange={(event) =>
                           setEditUserResetPasswordConfirm(event.target.value)
                         }
@@ -12320,7 +12257,7 @@ export default function AdminConsolePage() {
                 </div>
               ) : null}
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -12351,6 +12288,7 @@ export default function AdminConsolePage() {
             description={t(
               "workspace.sidebar.modal.workspaceCreateDescription",
             )}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("workspace.sidebar.modal.workspaceCreateTitle")}
           >
@@ -12377,12 +12315,12 @@ export default function AdminConsolePage() {
                 </Select>
               </AdminManagementField>
 
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField
+                  className="xl:col-span-2"
                   label={t("workspace.sidebar.modal.workspaceName")}
                 >
                   <Input
-                    autoFocus
                     onChange={(event) => {
                       const nextName = event.target.value;
                       setCreateWorkspaceName(nextName);
@@ -12429,7 +12367,7 @@ export default function AdminConsolePage() {
                 />
               </AdminManagementField>
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -12459,6 +12397,7 @@ export default function AdminConsolePage() {
         {managementPanel === "workspace-edit" ? (
           <AdminManagementDialog
             description={t("workspace.sidebar.modal.workspaceEditDescription")}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("workspace.sidebar.modal.workspaceEditTitle")}
           >
@@ -12485,12 +12424,12 @@ export default function AdminConsolePage() {
                 </Select>
               </AdminManagementField>
 
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField
+                  className="xl:col-span-2"
                   label={t("workspace.sidebar.modal.workspaceName")}
                 >
                   <Input
-                    autoFocus
                     onChange={(event) =>
                       setEditWorkspaceName(event.target.value)
                     }
@@ -12533,7 +12472,7 @@ export default function AdminConsolePage() {
                 />
               </AdminManagementField>
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -12565,6 +12504,7 @@ export default function AdminConsolePage() {
             description={t(
               "workspace.sidebar.modal.knowledgeBaseCreateDescription",
             )}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("workspace.sidebar.modal.knowledgeBaseCreateTitle")}
           >
@@ -12594,12 +12534,12 @@ export default function AdminConsolePage() {
                 </Select>
               </AdminManagementField>
 
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField
+                  className="xl:col-span-2"
                   label={t("workspace.sidebar.modal.knowledgeBaseName")}
                 >
                   <Input
-                    autoFocus
                     onChange={(event) => {
                       const nextName = event.target.value;
                       setCreateKnowledgeBaseName(nextName);
@@ -12689,7 +12629,7 @@ export default function AdminConsolePage() {
                 </Select>
               </AdminManagementField>
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -12721,6 +12661,7 @@ export default function AdminConsolePage() {
             description={t(
               "workspace.sidebar.modal.knowledgeBaseEditDescription",
             )}
+            eyebrow={t("admin.title")}
             onClose={() => setManagementPanel(null)}
             title={t("workspace.sidebar.modal.knowledgeBaseEditTitle")}
           >
@@ -12747,12 +12688,12 @@ export default function AdminConsolePage() {
                 </Select>
               </AdminManagementField>
 
-              <DialogFormGrid>
+              <DialogFormGrid className="xl:grid-cols-3">
                 <AdminManagementField
+                  className="xl:col-span-2"
                   label={t("workspace.sidebar.modal.knowledgeBaseName")}
                 >
                   <Input
-                    autoFocus
                     onChange={(event) =>
                       setEditKnowledgeBaseName(event.target.value)
                     }
@@ -12836,7 +12777,7 @@ export default function AdminConsolePage() {
                 </Select>
               </AdminManagementField>
 
-              <DialogFormActions className="border-t border-slate-200 pt-4">
+              <DialogFormActions>
                 <Button
                   onClick={() => setManagementPanel(null)}
                   type="button"
@@ -12862,6 +12803,8 @@ export default function AdminConsolePage() {
             </DialogFormLayout>
           </AdminManagementDialog>
         ) : null}
+          </main>
+        </div>
       </ConsolePage>
     </ConsoleShell>
   );

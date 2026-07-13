@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ragpilot_api.application.errors import ResourceConflictError
-from ragpilot_api.infrastructure.database.models import Conversation, Message, MessageCitation
+from ragpilot_api.infrastructure.database.models import Conversation, Message, MessageCitation, MessageFeedbackEntry
 
 
 class ConversationRepository:
@@ -168,6 +168,12 @@ class ConversationRepository:
             )
         )
 
+        await self.session.execute(
+            delete(MessageFeedbackEntry).where(
+                MessageFeedbackEntry.tenant_id == tenant_id,
+                MessageFeedbackEntry.message_id.in_(message_ids),
+            )
+        )
         await self.session.execute(
             delete(MessageCitation).where(
                 MessageCitation.tenant_id == tenant_id,

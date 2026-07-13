@@ -35,6 +35,7 @@ from ragpilot_api.infrastructure.database.repositories.workflow_repository impor
 from ragpilot_api.infrastructure.database.repositories.workspace_repository import WorkspaceRepository
 from ragpilot_api.presentation.http.request_actor import RequestActor
 from ragpilot_api.shared.settings import Settings
+from ragpilot_api.infrastructure.workflows.temporal_client import TemporalWorkflowClient
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,7 @@ class AgentExecutionService:
         settings: Settings | None = None,
         model_gateway: ModelGateway | None = None,
         tool_runtime_service: ToolRuntimeService | None = None,
+        temporal_workflow_client: TemporalWorkflowClient | None = None,
     ) -> None:
         self.agent_repository = agent_repository
         self.agent_execution_repository = agent_execution_repository
@@ -107,6 +109,7 @@ class AgentExecutionService:
         self.settings = settings
         self.model_gateway = model_gateway or (ModelGateway(settings) if settings is not None else None)
         self.tool_runtime_service = tool_runtime_service
+        self.temporal_workflow_client = temporal_workflow_client
         self.agent_runtime_engine_name = normalize_agent_runtime_engine_name(
             getattr(settings, "agent_runtime_engine", "native") if settings is not None else "native"
         )
@@ -125,6 +128,7 @@ class AgentExecutionService:
         request: AgentExecutionCreateRequest,
         *,
         actor: RequestActor,
+        existing_execution_id: UUID | None = None,
     ) -> AgentExecutionResponse:
         agent_definition = await self.agent_repository.get_agent_definition(
             agent_definition_id=request.agent_definition_id,
@@ -151,20 +155,30 @@ class AgentExecutionService:
             if self.tool_runtime_service is not None
             else None
         )
-        agent_execution = await self.agent_execution_repository.create_agent_execution(
-            tenant_id=request.tenant_id,
-            agent_definition_id=request.agent_definition_id,
-            workspace_id=resolved_scope.workspace_id,
-            knowledge_base_id=resolved_scope.knowledge_base_id,
-            execution_mode=agent_definition.agent_mode,
-            execution_status="queued",
-            trigger_source=request.trigger_source,
-            knowledge_base_scope=agent_definition.knowledge_base_scope,
-            model_endpoint_id=agent_definition.model_endpoint_id,
-            tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
-            execution_input=request.execution_input.strip() if request.execution_input else None,
-            launched_by_user_id=actor.user_id,
-        )
+        if existing_execution_id is not None:
+            agent_execution = await self.agent_execution_repository.get_agent_execution(
+                agent_execution_id=existing_execution_id,
+                tenant_id=request.tenant_id,
+            )
+            if agent_execution is None:
+                raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
+            if agent_execution.execution_status == "cancelled":
+                return build_agent_execution_response(agent_execution)
+        else:
+            agent_execution = await self.agent_execution_repository.create_agent_execution(
+                tenant_id=request.tenant_id,
+                agent_definition_id=request.agent_definition_id,
+                workspace_id=resolved_scope.workspace_id,
+                knowledge_base_id=resolved_scope.knowledge_base_id,
+                execution_mode=agent_definition.agent_mode,
+                execution_status="queued",
+                trigger_source=request.trigger_source,
+                knowledge_base_scope=agent_definition.knowledge_base_scope,
+                model_endpoint_id=agent_definition.model_endpoint_id,
+                tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
+                execution_input=request.execution_input.strip() if request.execution_input else None,
+                launched_by_user_id=actor.user_id,
+            )
 
         agent_execution = await self.agent_execution_repository.mark_agent_execution_running(
             agent_execution=agent_execution
@@ -250,6 +264,80 @@ class AgentExecutionService:
             )
 
         return build_agent_execution_response(agent_execution)
+
+    async def queue_agent_execution(
+        self,
+        request: AgentExecutionCreateRequest,
+        *,
+        actor: RequestActor,
+        retry_of_execution_id: UUID | None = None,
+    ) -> AgentExecutionResponse:
+        if self.temporal_workflow_client is None:
+            raise RuntimeError("Agent execution Temporal client is not configured.")
+        agent_definition = await self.agent_repository.get_agent_definition(
+            agent_definition_id=request.agent_definition_id,
+            tenant_id=request.tenant_id,
+        )
+        if agent_definition is None:
+            raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
+        resolved_scope = await self._resolve_agent_scope(agent_definition)
+        execution = await self.agent_execution_repository.create_agent_execution(
+            tenant_id=request.tenant_id,
+            agent_definition_id=request.agent_definition_id,
+            workspace_id=resolved_scope.workspace_id,
+            knowledge_base_id=resolved_scope.knowledge_base_id,
+            execution_mode=agent_definition.agent_mode,
+            execution_status="queued",
+            trigger_source=request.trigger_source,
+            knowledge_base_scope=agent_definition.knowledge_base_scope,
+            model_endpoint_id=agent_definition.model_endpoint_id,
+            tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
+            execution_input=request.execution_input.strip() if request.execution_input else None,
+            launched_by_user_id=actor.user_id,
+            retry_of_execution_id=retry_of_execution_id,
+        )
+        workflow_id = await self.temporal_workflow_client.start_agent_execution_workflow(
+            agent_execution_id=str(execution.id), tenant_id=str(request.tenant_id),
+            actor_user_id=str(actor.user_id) if actor.user_id else None, actor_role=actor.role or "member",
+        )
+        execution = await self.agent_execution_repository.attach_temporal_workflow(
+            agent_execution=execution, temporal_workflow_id=workflow_id,
+        )
+        return build_agent_execution_response(execution)
+
+    async def cancel_agent_execution(self, *, execution_id: UUID, tenant_id: UUID) -> AgentExecutionResponse:
+        execution = await self.agent_execution_repository.get_agent_execution(
+            agent_execution_id=execution_id, tenant_id=tenant_id,
+        )
+        if execution is None:
+            raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
+        if execution.execution_status not in {"queued", "running"}:
+            return build_agent_execution_response(execution)
+        await self.agent_execution_repository.request_agent_execution_cancellation(agent_execution=execution)
+        if execution.temporal_workflow_id and self.temporal_workflow_client is not None:
+            await self.temporal_workflow_client.cancel_workflow(
+                temporal_workflow_id=execution.temporal_workflow_id,
+                reason="Agent execution cancelled by an operator.",
+            )
+        execution = await self.agent_execution_repository.cancel_agent_execution(agent_execution=execution)
+        return build_agent_execution_response(execution)
+
+    async def retry_agent_execution(
+        self, *, execution_id: UUID, tenant_id: UUID, actor: RequestActor,
+    ) -> AgentExecutionResponse:
+        execution = await self.agent_execution_repository.get_agent_execution(
+            agent_execution_id=execution_id, tenant_id=tenant_id,
+        )
+        if execution is None:
+            raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
+        if execution.execution_status not in {"failed", "cancelled"}:
+            raise RuntimeError("Only failed or cancelled agent executions can be retried.")
+        return await self.queue_agent_execution(
+            AgentExecutionCreateRequest(
+                tenant_id=tenant_id, agent_definition_id=execution.agent_definition_id,
+                execution_input=execution.execution_input, trigger_source=execution.trigger_source,
+            ), actor=actor, retry_of_execution_id=execution.id,
+        )
 
     def _build_mode_recommended_action_specs(
         self,
@@ -874,6 +962,10 @@ def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExec
         launched_by_user_id=agent_execution.launched_by_user_id,
         started_at=agent_execution.started_at,
         completed_at=agent_execution.completed_at,
+        temporal_workflow_id=getattr(agent_execution, "temporal_workflow_id", None),
+        retry_of_execution_id=getattr(agent_execution, "retry_of_execution_id", None),
+        cancellation_requested_at=getattr(agent_execution, "cancellation_requested_at", None),
+        cancelled_at=getattr(agent_execution, "cancelled_at", None),
         created_at=agent_execution.created_at,
         updated_at=agent_execution.updated_at,
     )

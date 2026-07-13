@@ -15,10 +15,11 @@ import { WorkspaceWorkflowsView } from "@/components/workspace/WorkspaceWorkflow
 import { createAgentExecution, readAgentExecutionEvidenceSummary } from "@/lib/agent-executions";
 import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
 import type { AgentRunRecordInput } from "@/lib/agent-runs";
-import { authenticatedApiRequest, authenticatedApiRequestWithHeaders, authenticatedFetch } from "@/lib/authenticated-api";
+import { authenticatedApiRequest, authenticatedApiRequestWithHeaders, authenticatedFetch, authenticatedUpload } from "@/lib/authenticated-api";
 import { formatOperatorErrorMessage } from "@/lib/api-errors";
 import { hasDirectoryCapability } from "@/lib/auth/access";
 import { useAuth } from "@/lib/auth/provider";
+import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
 import { useI18n } from "@/lib/i18n/provider";
 import { useStatusNotifications } from "@/lib/notifications/use-status-notifications";
 import {
@@ -111,10 +112,14 @@ import type {
 const DEMO_TENANT_SLUG = "ragpilot-demo";
 const DEMO_WORKSPACE_SLUG = "ragpilot-operations";
 const DEMO_KNOWLEDGE_BASE_SLUG = "ragpilot-handbook";
-const DOCUMENT_PAGE_SIZE = 5;
+const DEFAULT_WORKSPACE_SLUG = "customer-operations";
+const DEFAULT_KNOWLEDGE_BASE_SLUG = "customer-service";
+const DOCUMENT_PAGE_SIZE = 10;
 const WORKFLOW_PAGE_SIZE = 6;
-const CONVERSATION_PAGE_SIZE = 100;
+const CONVERSATION_PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 250;
+const MAX_DOCUMENT_UPLOAD_BYTES = 25 * 1024 * 1024;
+const SUPPORTED_DOCUMENT_EXTENSIONS = [".txt", ".md", ".markdown", ".html", ".htm", ".csv", ".json", ".pdf", ".docx", ".xlsx"];
 const RETRIEVAL_VALIDATION_TOP_K = 5;
 
 function resolveOperatorErrorMessage(error: unknown, fallbackMessage: string) {
@@ -469,8 +474,9 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
 
   async function ensureBootstrapResources(preferredSelection?: WorkspaceSelection): Promise<{ resources: BootstrapState; catalog: WorkspaceCatalog }> {
   let tenants = await listTenants();
+  const preferredTenantId = preferredSelection?.tenantId || readCurrentTenantId();
   let tenant =
-    (preferredSelection?.tenantId ? tenants.find((item) => item.id === preferredSelection.tenantId) : null) ??
+    (preferredTenantId ? tenants.find((item) => item.id === preferredTenantId) : null) ??
     tenants.find((item) => item.slug === DEMO_TENANT_SLUG);
   if (!tenant) {
     tenant = await apiRequest<Tenant>("/tenants", {
@@ -486,6 +492,7 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
   let workspaces = await listWorkspaces(tenant.id);
   let workspace =
     (preferredSelection?.workspaceId ? workspaces.find((item) => item.id === preferredSelection.workspaceId) : null) ??
+    workspaces.find((item) => item.slug === DEFAULT_WORKSPACE_SLUG) ??
     workspaces.find((item) => item.slug === DEMO_WORKSPACE_SLUG) ??
     workspaces[0];
   if (!workspace) {
@@ -506,6 +513,7 @@ async function loadRelatedWorkflowRunItems(tenantId: string, documentId: string,
     (preferredSelection?.knowledgeBaseId
       ? knowledgeBases.find((item) => item.id === preferredSelection.knowledgeBaseId)
       : null) ??
+    knowledgeBases.find((item) => item.slug === DEFAULT_KNOWLEDGE_BASE_SLUG) ??
     knowledgeBases.find((item) => item.slug === DEMO_KNOWLEDGE_BASE_SLUG) ??
     knowledgeBases[0];
   if (!knowledgeBase) {
@@ -671,6 +679,8 @@ export default function WorkspaceConsolePage({
     knowledgeBases: []
   });
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [hasMoreConversations, setHasMoreConversations] = useState(false);
+  const [isLoadingMoreConversations, setIsLoadingMoreConversations] = useState(false);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [retrievalValidationSummary, setRetrievalValidationSummary] = useState<RetrievalValidationSummary | null>(null);
   const [conversationDraftTitle, setConversationDraftTitle] = useState("");
@@ -724,7 +734,8 @@ export default function WorkspaceConsolePage({
   const [question, setQuestion] = useState("");
   const [conversationSearchQuery, setConversationSearchQuery] = useState(initialWorkspaceLocationState.conversationQuery);
   const [isConversationEditorOpen, setIsConversationEditorOpen] = useState(false);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const uploadFile = uploadFiles[0] ?? null;
   const [webImportUrl, setWebImportUrl] = useState("");
   const [webImportTitle, setWebImportTitle] = useState("");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -733,10 +744,10 @@ export default function WorkspaceConsolePage({
   const [activeRetrievalEvaluationId, setActiveRetrievalEvaluationId] = useState<string | null>(null);
   const [activeRetrievalFollowUpQuery, setActiveRetrievalFollowUpQuery] = useState<string | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [isUpdatingConversationTitle, setIsUpdatingConversationTitle] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isRunningDocumentAction, setIsRunningDocumentAction] = useState(false);
   const [isCancellingWorkflow, setIsCancellingWorkflow] = useState(false);
   const [isRetryingWorkflow, setIsRetryingWorkflow] = useState(false);
@@ -805,7 +816,6 @@ export default function WorkspaceConsolePage({
     isSwitchingContext ||
     isUpdatingContext ||
     isRunningContextLifecycleAction ||
-    isCreatingConversation ||
     isDeletingConversation ||
     isUpdatingConversationTitle;
 
@@ -2409,10 +2419,12 @@ export default function WorkspaceConsolePage({
       sourceAdminSection,
       sourceOperationsLane,
       handoffIntent,
-      conversationId: selectedConversationId,
-      conversationQuery: conversationSearchQuery,
-      documentId: selectedDocumentId,
-      workflowRunId: selectedWorkflowRunId,
+      conversationId: workspaceView === "chat" ? selectedConversationId : null,
+      conversationQuery:
+        workspaceView === "chat" ? conversationSearchQuery : null,
+      documentId: workspaceView === "documents" ? selectedDocumentId : null,
+      workflowRunId:
+        workspaceView === "workflows" ? selectedWorkflowRunId : null,
       documentQuery,
       documentSource: documentSourceFilter,
       documentLifecycle: documentLifecycleFilter,
@@ -2681,7 +2693,7 @@ export default function WorkspaceConsolePage({
     setSelectedDocumentId((currentId) =>
       currentId && operations.documentItems.some((item) => item.id === currentId)
         ? currentId
-        : operations.documentItems[0]?.id ?? null
+        : null
     );
     setSelectedWorkflowRunId((currentId) =>
       currentId && operations.workflowItems.some((item) => item.id === currentId)
@@ -2724,7 +2736,7 @@ export default function WorkspaceConsolePage({
     setWorkflowPage(options?.preferredWorkflowPage ?? 1);
     setMessages([]);
     setConversationSearchQuery(options?.preferredConversationQuery ?? "");
-    setUploadFile(null);
+    setUploadFiles([]);
 
     const conversationSearchParams = new URLSearchParams({
       tenant_id: resources.tenant.id,
@@ -2742,11 +2754,12 @@ export default function WorkspaceConsolePage({
     ]);
 
     setConversations(conversationItems);
+    setHasMoreConversations(conversationItems.length === CONVERSATION_PAGE_SIZE);
     setConversationMetrics(nextConversationMetrics);
     const nextConversationId =
       options?.preferredConversationId && conversationItems.some((item) => item.id === options.preferredConversationId)
         ? options.preferredConversationId
-        : conversationItems[0]?.id ?? null;
+        : null;
 
     setSelectedConversationId(nextConversationId);
 
@@ -3284,7 +3297,7 @@ export default function WorkspaceConsolePage({
 
   useEffect(() => {
     setSelectedDocumentId((currentId) =>
-      currentId && documents.some((item) => item.id === currentId) ? currentId : documents[0]?.id ?? null
+      currentId && documents.some((item) => item.id === currentId) ? currentId : null
     );
     setSelectedDocumentIds((currentIds) => currentIds.filter((documentId) => documents.some((item) => item.id === documentId)));
   }, [documents]);
@@ -3408,6 +3421,7 @@ export default function WorkspaceConsolePage({
         }
 
         setCatalog(bootstrapCatalog);
+        writeCurrentTenantId(resources.tenant.id);
         setStatusMessage(t("workspace.status.loadingConversations"));
         await hydrateWorkspace(resources, {
           preferredConversationId: initialLocationState.conversationId,
@@ -3449,7 +3463,10 @@ export default function WorkspaceConsolePage({
       }
 
       try {
-        if (initialLocationState.documentId) {
+        if (
+          initialWorkspaceView === "documents" &&
+          initialLocationState.documentId
+        ) {
           hasAppliedInitialTargetRef.current = true;
           await handleSelectDocument(initialLocationState.documentId);
           if (!cancelled) {
@@ -3458,7 +3475,10 @@ export default function WorkspaceConsolePage({
           return;
         }
 
-        if (initialLocationState.workflowRunId) {
+        if (
+          initialWorkspaceView === "workflows" &&
+          initialLocationState.workflowRunId
+        ) {
           hasAppliedInitialTargetRef.current = true;
           await handleSelectWorkflowRun(initialLocationState.workflowRunId);
           if (!cancelled) {
@@ -3728,16 +3748,42 @@ export default function WorkspaceConsolePage({
       loadConversationMetrics(bootstrap.tenant.id, bootstrap.workspace.id),
     ]);
     setConversations(conversationItems);
+    setHasMoreConversations(conversationItems.length === CONVERSATION_PAGE_SIZE);
     setConversationMetrics(nextConversationMetrics);
 
     const nextConversationId =
-      (preferredConversationId && conversationItems.some((item) => item.id === preferredConversationId)
+      preferredConversationId && conversationItems.some((item) => item.id === preferredConversationId)
         ? preferredConversationId
-        : (selectedConversationId && conversationItems.some((item) => item.id === selectedConversationId)
-            ? selectedConversationId
-            : conversationItems[0]?.id ?? null));
+        : selectedConversationId && conversationItems.some((item) => item.id === selectedConversationId)
+          ? selectedConversationId
+          : null;
 
     setSelectedConversationId(nextConversationId);
+  }
+
+  async function loadMoreConversations() {
+    if (!bootstrap || isLoadingMoreConversations || !hasMoreConversations) return;
+    try {
+      setIsLoadingMoreConversations(true);
+      const searchParams = new URLSearchParams({
+        tenant_id: bootstrap.tenant.id,
+        workspace_id: bootstrap.workspace.id,
+        limit: String(CONVERSATION_PAGE_SIZE),
+        offset: String(conversations.length),
+      });
+      const normalizedConversationQuery = debouncedConversationSearchQuery.trim();
+      if (normalizedConversationQuery) searchParams.set("query", normalizedConversationQuery);
+      const nextItems = await apiRequest<Conversation[]>(`/chat/conversations?${searchParams.toString()}`);
+      setConversations((currentItems) => {
+        const combined = [...currentItems, ...nextItems];
+        return combined.filter((item, index) => combined.findIndex((candidate) => candidate.id === item.id) === index);
+      });
+      setHasMoreConversations(nextItems.length === CONVERSATION_PAGE_SIZE);
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.conversationsLoadMoreFailed")));
+    } finally {
+      setIsLoadingMoreConversations(false);
+    }
   }
 
   useEffect(() => {
@@ -3753,12 +3799,17 @@ export default function WorkspaceConsolePage({
     setSelectedConversationId(conversationId);
   }
 
-  function openConversationEditor() {
-    if (!selectedConversation) {
+  function openConversationEditor(conversationId?: string) {
+    const targetConversationId = conversationId ?? selectedConversationId;
+    const targetConversation = conversations.find(
+      (conversation) => conversation.id === targetConversationId,
+    );
+    if (!targetConversation) {
       return;
     }
 
-    setConversationDraftTitle(selectedConversation.title);
+    setSelectedConversationId(targetConversation.id);
+    setConversationDraftTitle(targetConversation.title);
     setIsConversationEditorOpen(true);
   }
 
@@ -3803,54 +3854,22 @@ export default function WorkspaceConsolePage({
     }
   }
 
-  async function handleCreateConversation() {
-    if (!bootstrap || isCreatingConversation) {
-      return;
-    }
-
-    try {
-      setIsCreatingConversation(true);
-      setErrorMessage(null);
-      setStatusMessage(t("workspace.status.creatingConversation"));
-
-      const createdConversation = await apiRequest<Conversation>("/chat/conversations", {
-        method: "POST",
-        body: JSON.stringify({
-          tenant_id: bootstrap.tenant.id,
-          workspace_id: bootstrap.workspace.id,
-          knowledge_base_id: bootstrap.knowledgeBase.id,
-          title: t("workspace.status.conversationDraftTitle", {
-            timestamp: new Intl.DateTimeFormat(language === "zh-CN" ? "zh-CN" : "en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit"
-          }).format(new Date())
-          })
-        })
-      });
-
-      await refreshConversations(createdConversation.id);
-      setMessages([]);
-      setQuestion("");
-      setIsConversationEditorOpen(false);
-      setConversationDraftTitle(createdConversation.title);
-      setStatusMessage(t("workspace.status.conversationCreated", { title: createdConversation.title }));
-    } catch (error) {
-      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.conversationCreationFailed")));
-      setStatusMessage(t("workspace.status.conversationCreationFailed"));
-    } finally {
-      setIsCreatingConversation(false);
-    }
+  function handleCreateConversation() {
+    setSelectedConversationId(null);
+    setMessages([]);
+    setQuestion("");
+    setIsConversationEditorOpen(false);
+    setConversationDraftTitle("");
+    setErrorMessage(null);
   }
 
-  async function handleDeleteConversation() {
-    if (!bootstrap || !selectedConversationId || isDeletingConversation) {
+  async function handleDeleteConversation(conversationId: string) {
+    if (!bootstrap || !conversationId || isDeletingConversation) {
       return;
     }
 
     const conversationTitle =
-      selectedConversation?.title ??
+      conversations.find((conversation) => conversation.id === conversationId)?.title ??
       t("workspace.headerBar.startConversationPlaceholder");
 
     try {
@@ -3859,16 +3878,19 @@ export default function WorkspaceConsolePage({
       setStatusMessage(t("workspace.status.deletingConversation"));
 
       await apiRequest<void>(
-        `/chat/conversations/${selectedConversationId}?tenant_id=${bootstrap.tenant.id}`,
+        `/chat/conversations/${conversationId}?tenant_id=${bootstrap.tenant.id}`,
         {
           method: "DELETE",
         }
       );
 
-      setMessages([]);
-      setQuestion("");
-      setIsConversationEditorOpen(false);
-      setConversationDraftTitle("");
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null);
+        setMessages([]);
+        setQuestion("");
+        setIsConversationEditorOpen(false);
+        setConversationDraftTitle("");
+      }
       await refreshConversations();
       setStatusMessage(t("workspace.status.conversationDeleted", { title: conversationTitle }));
     } catch (error) {
@@ -3923,10 +3945,29 @@ export default function WorkspaceConsolePage({
       return;
     }
 
+    const submittedQuestion = question.trim();
+    const optimisticMessageId = `pending-${crypto.randomUUID()}`;
+    const optimisticMessage: Message = {
+      id: optimisticMessageId,
+      tenant_id: bootstrap.tenant.id,
+      conversation_id: selectedConversationId ?? "",
+      role: "user",
+      content: submittedQuestion,
+      model_name: null,
+      usage_json: {},
+      created_at: new Date().toISOString(),
+      citations: [],
+      feedback_entries: [],
+    };
+
     try {
       setIsSending(true);
       setErrorMessage(null);
       setStatusMessage(t("workspace.status.generatingGroundedReply"));
+      setQuestion("");
+      setMessages((currentMessages) =>
+        selectedConversationId ? [...currentMessages, optimisticMessage] : [optimisticMessage]
+      );
 
       const response = await apiRequest<ChatAskResponse>("/chat/messages", {
         method: "POST",
@@ -3936,17 +3977,18 @@ export default function WorkspaceConsolePage({
           knowledge_base_id: bootstrap.knowledgeBase.id,
           agent_definition_id: activeAgentContext?.id ?? null,
           conversation_id: selectedConversationId,
-          question: question.trim(),
+          question: submittedQuestion,
           top_k: 3
         })
       });
 
-      setQuestion("");
-      await refreshConversations(response.conversation.id);
-      await refreshOperations();
       setMessages((currentMessages) =>
         response.conversation.id === selectedConversationId
-          ? [...currentMessages, response.user_message, response.assistant_message]
+          ? [
+              ...currentMessages.filter((message) => message.id !== optimisticMessageId),
+              response.user_message,
+              response.assistant_message,
+            ]
           : [response.user_message, response.assistant_message]
       );
       setStatusMessage(
@@ -3954,7 +3996,15 @@ export default function WorkspaceConsolePage({
           ? t("workspace.status.groundedAnswerReadyWithAgent", { name: activeAgentContext.name })
           : t("workspace.status.groundedAnswerReady")
       );
+      void Promise.allSettled([
+        refreshConversations(response.conversation.id),
+        refreshOperations(),
+      ]);
     } catch (error) {
+      setMessages((currentMessages) =>
+        currentMessages.filter((message) => message.id !== optimisticMessageId)
+      );
+      setQuestion(submittedQuestion);
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.questionFailed")));
       setStatusMessage(t("workspace.status.questionFailed"));
     } finally {
@@ -4018,35 +4068,40 @@ export default function WorkspaceConsolePage({
   }
 
   async function handleUploadDocument() {
-    if (!bootstrap || !canManageDocuments || !uploadFile || isUploading || isSwitchingContext || isUpdatingContext || isRunningContextLifecycleAction) {
+    if (!bootstrap || !canManageDocuments || uploadFiles.length === 0 || isUploading || isSwitchingContext || isUpdatingContext || isRunningContextLifecycleAction) {
       return;
     }
 
     try {
       setIsUploading(true);
+      setUploadProgress(0);
       setErrorMessage(null);
       setStatusMessage(t("workspace.status.uploadingAndStartingIngestion"));
 
-      const formData = new FormData();
-      formData.append("tenant_id", bootstrap.tenant.id);
-      formData.append("knowledge_base_id", bootstrap.knowledgeBase.id);
-      formData.append("title", uploadFile.name.replace(/\.[^.]+$/, ""));
-      formData.append("file", uploadFile);
-
-      const uploadResponse = await apiRequest<{
-        workflow_run_id: string;
-      }>("/documents/upload", {
-        method: "POST",
-        body: formData
-      });
-
-      await handleImportedDocumentWorkflow(uploadResponse.workflow_run_id);
-      setUploadFile(null);
+      const workflowRunIds: string[] = [];
+      for (const [index, file] of uploadFiles.entries()) {
+        const formData = new FormData();
+        formData.append("tenant_id", bootstrap.tenant.id);
+        formData.append("knowledge_base_id", bootstrap.knowledgeBase.id);
+        formData.append("title", file.name.replace(/\.[^.]+$/, ""));
+        formData.append("file", file);
+        const uploadResponse = await authenticatedUpload<{ workflow_run_id: string }>(
+          "/documents/upload",
+          formData,
+          (progress) => setUploadProgress(Math.round(((index + progress / 100) / uploadFiles.length) * 100)),
+        );
+        workflowRunIds.push(uploadResponse.workflow_run_id);
+      }
+      for (const workflowRunId of workflowRunIds) {
+        await handleImportedDocumentWorkflow(workflowRunId);
+      }
+      setUploadFiles([]);
     } catch (error) {
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.uploadFailed")));
       setStatusMessage(t("workspace.status.uploadFailed"));
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -4145,8 +4200,25 @@ export default function WorkspaceConsolePage({
     );
   }
 
+  function selectUploadFiles(files: File[]) {
+    const validFiles = files.filter((file) => {
+      const fileName = file.name.toLowerCase();
+      return SUPPORTED_DOCUMENT_EXTENSIONS.some((extension) => fileName.endsWith(extension)) && file.size <= MAX_DOCUMENT_UPLOAD_BYTES;
+    });
+    if (validFiles.length !== files.length) {
+      setErrorMessage(t("workspace.status.someUploadFilesRejected"));
+    } else {
+      setErrorMessage(null);
+    }
+    setUploadFiles((currentFiles) => {
+      const combined = [...currentFiles, ...validFiles];
+      return combined.filter((file, index) => combined.findIndex((candidate) => candidate.name === file.name && candidate.size === file.size) === index);
+    });
+  }
+
   function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
-    setUploadFile(event.target.files?.[0] ?? null);
+    selectUploadFiles(Array.from(event.target.files ?? []));
+    event.target.value = "";
   }
 
   async function handleSelectDocument(
@@ -5209,6 +5281,30 @@ export default function WorkspaceConsolePage({
     });
   }
 
+  async function handlePermanentlyDeleteDocument(confirmationTitle: string) {
+    if (!bootstrap || !selectedDocumentId || isRunningDocumentAction) return;
+    try {
+      setIsRunningDocumentAction(true);
+      setErrorMessage(null);
+      setStatusMessage(t("workspace.status.permanentlyDeletingDocument"));
+      await apiRequest(`/documents/${selectedDocumentId}/permanent-delete?knowledge_base_id=${bootstrap.knowledgeBase.id}`, {
+        method: "POST",
+        body: JSON.stringify({ confirmation_title: confirmationTitle }),
+      });
+      setSelectedDocumentId(null);
+      setSelectedDocumentDetail(null);
+      setSelectedDocumentIds((ids) => ids.filter((id) => id !== selectedDocumentId));
+      await refreshOperations();
+      setStatusMessage(t("workspace.status.documentPermanentlyDeleted"));
+    } catch (error) {
+      setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.documentPermanentDeleteFailed")));
+      setStatusMessage(t("workspace.status.documentPermanentDeleteFailed"));
+      throw error;
+    } finally {
+      setIsRunningDocumentAction(false);
+    }
+  }
+
   async function handleBulkReindexDocuments() {
     if (selectedDocumentIds.length === 0) {
       return;
@@ -5486,29 +5582,66 @@ export default function WorkspaceConsolePage({
           }}
         />
 
-        <section className="flex min-h-[calc(100vh-190px)] flex-col overflow-hidden rounded-[24px] border border-white/80 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/90">
+        <section className={`min-w-0 rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_52px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/92 ${workspaceView === "chat" || workspaceView === "documents" ? "console-split-layout" : "min-h-[calc(100dvh-152px)] xl:h-[calc(100dvh-128px)] xl:min-h-0 xl:overflow-hidden"}`}>
           <WorkspaceHeaderBar
             conversationDraftTitle={conversationDraftTitle}
             conversationSearchQuery={conversationSearchQuery}
             conversations={conversations}
-            errorMessage={errorMessage}
+            currentWorkspaceName={bootstrap?.workspace.name ?? "--"}
+            currentKnowledgeBaseName={bootstrap?.knowledgeBase.name ?? "--"}
+            currentWorkspaceId={bootstrap?.workspace.id ?? ""}
+            currentKnowledgeBaseId={bootstrap?.knowledgeBase.id ?? ""}
+            availableWorkspaces={catalog.workspaces}
+            availableKnowledgeBases={catalog.knowledgeBases}
+            hasMoreConversations={hasMoreConversations}
+            isLoadingMoreConversations={isLoadingMoreConversations}
+            documentLifecycleFilter={documentLifecycleFilter}
+            documentQuery={documentQuery}
+            documentSourceFilter={documentSourceFilter}
+            documentSortOrder={documentSortOrder}
+            documentStatusFilter={documentStatusFilter}
             isBusy={isWorkspaceBusy}
             isConversationEditing={isConversationEditorOpen}
             isDeletingConversation={isDeletingConversation}
+            isUploading={isUploading}
+            uploadProgress={uploadProgress}
             isUpdatingConversation={isUpdatingConversationTitle}
             onCancelConversationEditing={handleCancelConversationEditing}
             onConversationDraftTitleChange={setConversationDraftTitle}
             onConversationSearchQueryChange={setConversationSearchQuery}
             onDeleteConversation={handleDeleteConversation}
+            onFileSelection={handleFileSelection}
+            onImportWebPage={handleImportWebPage}
+            onLoadMoreConversations={loadMoreConversations}
+            onSwitchKnowledgeScope={switchWorkspaceContext}
+            onDocumentLifecycleFilterChange={(value) => {
+              setDocumentLifecycleFilter(value);
+              setDocumentPage(1);
+            }}
+            onDocumentQueryChange={setDocumentQuery}
+            onDocumentSourceFilterChange={(value) => {
+              setDocumentSourceFilter(value);
+              setDocumentPage(1);
+            }}
+            onDocumentSortOrderChange={setDocumentSortOrder}
+            onDocumentStatusFilterChange={(value) => {
+              setDocumentStatusFilter(value);
+              setDocumentPage(1);
+            }}
             onOpenConversationEditor={openConversationEditor}
-            onRefreshWorkspace={handleRefreshWorkspace}
             onSelectConversation={handleSelectConversation}
             onStartNewConversation={handleCreateConversation}
             onSubmitConversationTitle={handleSaveConversationTitle}
-            onToggleConsoleControls={() => setShowConsoleControls((currentValue) => !currentValue)}
+            onUploadDocument={handleUploadDocument}
+            onUploadFileSelected={selectUploadFiles}
+            onRemoveUploadFile={(index) => setUploadFiles((files) => files.filter((_, fileIndex) => fileIndex !== index))}
+            onWebImportTitleChange={setWebImportTitle}
+            onWebImportUrlChange={setWebImportUrl}
             selectedConversationId={selectedConversationId}
-            showConsoleControls={showConsoleControls}
             workspaceView={workspaceView}
+            uploadFiles={uploadFiles}
+            webImportTitle={webImportTitle}
+            webImportUrl={webImportUrl}
           />
 
           {workspaceView === "chat" ? (
@@ -5546,6 +5679,7 @@ export default function WorkspaceConsolePage({
               messages={messages}
               activeRetrievalFollowUpQuery={activeRetrievalFollowUpQuery}
               onDeleteDocument={handleDeleteDocument}
+              onPermanentlyDeleteDocument={handlePermanentlyDeleteDocument}
               onCancelWorkflowRun={handleCancelWorkflowRun}
               onOpenFeedbackConversation={handleOpenFeedbackConversation}
               onInspectCitationDocument={handleInspectCitationDocument}
@@ -5588,10 +5722,6 @@ export default function WorkspaceConsolePage({
             documentPage={documentPage}
             documentPageCount={documentPageCount}
             documentLifecycleFilter={documentLifecycleFilter}
-            documentQuery={documentQuery}
-            documentSourceFilter={documentSourceFilter}
-            documentSortOrder={documentSortOrder}
-            documentStatusFilter={documentStatusFilter}
             documentTotalCount={documentTotalCount}
             documents={documents}
             focusedChunkId={focusedDocumentChunkId}
@@ -5609,15 +5739,10 @@ export default function WorkspaceConsolePage({
             onBulkRestoreDocuments={handleBulkRestoreDocuments}
             onClearDocumentSelection={clearDocumentSelection}
             onDeleteDocument={handleDeleteDocument}
-            onDocumentLifecycleFilterChange={setDocumentLifecycleFilter}
+            onPermanentlyDeleteDocument={handlePermanentlyDeleteDocument}
             onDocumentPageChange={setDocumentPage}
-            onDocumentQueryChange={setDocumentQuery}
-            onDocumentSourceFilterChange={setDocumentSourceFilter}
-            onDocumentSortOrderChange={setDocumentSortOrder}
-            onDocumentStatusFilterChange={setDocumentStatusFilter}
             onActivateRecommendedAgent={handleActivateRecommendedAgent}
             onOpenChatView={openChatView}
-            onOpenConsoleControls={() => setShowConsoleControls(true)}
             onOpenFailedDocumentsQueue={showFailedDocumentsQueue}
             onOpenWorkflowView={openWorkflowSupervision}
             onCancelWorkflowRun={handleCancelWorkflowRun}

@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,6 +94,16 @@ async def ask_question(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except ResourceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except httpx.ReadTimeout as error:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The configured chat model did not respond before the request timeout.",
+        ) from error
+    except httpx.RequestError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The configured chat model is currently unavailable.",
+        ) from error
 
 
 @router.get("/conversations", response_model=list[ConversationResponse], status_code=status.HTTP_200_OK)

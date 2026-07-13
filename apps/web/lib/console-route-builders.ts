@@ -55,7 +55,7 @@ export type OperationsConsoleTarget = {
 
 export type AdminConsoleTarget = {
   tenantId?: string | null;
-  section?: "overview" | "directory" | "access" | "security" | null;
+  section?: "overview" | "directory" | "access" | "runtime" | "security" | null;
   workspaceLifecycleFilter?: string | null;
   knowledgeBasePublicationStatusFilter?: string | null;
   retrievalProfileFilter?: string | null;
@@ -265,6 +265,7 @@ export function buildAdminHref(target: AdminConsoleTarget) {
 export function buildSettingsHref(target: SettingsRuntimeTarget = {}) {
   const searchParams = new URLSearchParams();
   if (target.runtimeResource) {
+    searchParams.set("section", "runtime");
     searchParams.set("runtime_resource", target.runtimeResource);
   }
   setSearchParam(searchParams, "model_endpoint_id", target.modelEndpointId ?? null);
@@ -277,7 +278,7 @@ export function buildSettingsHref(target: SettingsRuntimeTarget = {}) {
   setSearchParam(searchParams, "resume_workspace", target.resumeWorkspaceHref ?? null);
 
   return {
-    pathname: "/settings",
+    pathname: target.runtimeResource ? "/admin" : "/settings",
     query: Object.fromEntries(searchParams.entries())
   } satisfies UrlObject;
 }

@@ -14,6 +14,7 @@ from ragpilot_api.contracts.http.mcp_connector_contracts import (
     McpConnectorResponse,
     McpConnectorUpdateRequest,
     McpConnectorGovernanceSummaryResponse,
+    McpRemoteToolCatalogResponse,
 )
 from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository import McpConnectorRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
@@ -40,7 +41,6 @@ def build_mcp_connector_registry_service(session: AsyncSession) -> McpConnectorR
         ToolRegistrationRepository(session),
         RuntimeGovernanceEventRepository(session),
     )
-
 
 def build_runtime_governance_event_service(session: AsyncSession) -> RuntimeGovernanceEventService:
     return RuntimeGovernanceEventService(RuntimeGovernanceEventRepository(session))
@@ -262,3 +262,20 @@ async def delete_mcp_connector(
             "base_url": existing_mcp_connector.base_url,
         },
     )
+@router.get("/{mcp_connector_id}/tools", response_model=McpRemoteToolCatalogResponse)
+async def list_mcp_connector_tools(
+    mcp_connector_id: UUID,
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> McpRemoteToolCatalogResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "review_runtime_governance", RolePermissionRepository(session))
+    require_platform_wide_actor_scope(actor, detail="Platform MCP governance requires platform-wide access.")
+    try:
+        return await build_mcp_connector_registry_service(session).list_remote_tools(
+            mcp_connector_id=mcp_connector_id,
+        )
+    except ResourceNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ResourceConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

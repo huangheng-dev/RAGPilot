@@ -1,10 +1,14 @@
 .git
 .next
+**/.next
 node_modules
 **/node_modules
 dist
+**/dist
 coverage
+**/coverage
 .venv
+**/.venv
 **/__pycache__
 **/*.pyc
 .pytest_cache

@@ -72,6 +72,7 @@ async def test_ollama_provider_posts_native_chat_request(monkeypatch: pytest.Mon
     assert _MockAsyncClient.last_request["url"] == "http://127.0.0.1:11434/api/chat"
     assert _MockAsyncClient.last_request["json"]["model"] == "llama3.1"
     assert _MockAsyncClient.last_request["json"]["stream"] is False
+    assert _MockAsyncClient.last_request["json"]["think"] is False
     assert result.model_name == "llama3.1"
     assert result.content == "Temporal handles durable ingestion workflows."
     assert result.usage_json["provider"] == "ollama"
