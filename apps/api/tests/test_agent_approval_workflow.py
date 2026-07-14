@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from ragpilot_api.workflows.agent_execution import AgentExecutionWorkflow
 
 activity_calls = 0
 activity_mode = "approval"
+temporal_test_address = os.getenv("TEMPORAL_TEST_ADDRESS", "localhost:7234")
 
 
 @activity.defn(name="execute_agent_execution")
@@ -48,7 +50,7 @@ async def test_agent_workflow_durably_waits_and_resumes_after_approval() -> None
     global activity_mode
     activity_calls = 0
     activity_mode = "approval"
-    client = await Client.connect("localhost:7234")
+    client = await Client.connect(temporal_test_address)
     task_queue = f"agent-approval-{uuid4()}"
     async with Worker(
             client,
@@ -79,7 +81,7 @@ async def test_agent_workflow_rejection_finishes_without_reinvoking_tool() -> No
     global activity_mode
     activity_calls = 0
     activity_mode = "approval"
-    client = await Client.connect("localhost:7234")
+    client = await Client.connect(temporal_test_address)
     task_queue = f"agent-rejection-{uuid4()}"
     async with Worker(
             client,
@@ -106,7 +108,7 @@ async def test_agent_workflow_rejection_finishes_without_reinvoking_tool() -> No
 async def test_agent_workflow_first_decision_wins_when_signal_is_duplicated() -> None:
     global activity_calls, activity_mode
     activity_calls, activity_mode = 0, "approval"
-    client = await Client.connect("localhost:7234")
+    client = await Client.connect(temporal_test_address)
     task_queue = f"agent-duplicate-{uuid4()}"
     async with Worker(client, task_queue=task_queue, workflows=[AgentExecutionWorkflow],
                       activities=[fake_execute_agent_execution, fake_finalize_agent_approval]):
@@ -126,7 +128,7 @@ async def test_agent_workflow_first_decision_wins_when_signal_is_duplicated() ->
 async def test_agent_workflow_approval_timeout_closes_wait() -> None:
     global activity_calls, activity_mode
     activity_calls, activity_mode = 0, "timeout"
-    client = await Client.connect("localhost:7234")
+    client = await Client.connect(temporal_test_address)
     task_queue = f"agent-timeout-{uuid4()}"
     async with Worker(client, task_queue=task_queue, workflows=[AgentExecutionWorkflow],
                       activities=[fake_execute_agent_execution, fake_finalize_agent_approval]):
@@ -144,7 +146,7 @@ async def test_agent_workflow_approval_timeout_closes_wait() -> None:
 async def test_agent_workflow_retries_transient_activity_failure() -> None:
     global activity_calls, activity_mode
     activity_calls, activity_mode = 0, "retry"
-    client = await Client.connect("localhost:7234")
+    client = await Client.connect(temporal_test_address)
     task_queue = f"agent-retry-{uuid4()}"
     async with Worker(client, task_queue=task_queue, workflows=[AgentExecutionWorkflow],
                       activities=[fake_execute_agent_execution, fake_finalize_agent_approval]):

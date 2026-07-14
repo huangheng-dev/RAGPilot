@@ -54,8 +54,26 @@ jobs:
           python -m pip install -e './apps/api[retrieval-llamaindex,agent-langgraph]'
           python -m pip install pytest
 
+      - name: Start Temporal test dependency
+        run: |
+          docker compose -f infra/docker/compose.yaml up -d postgres temporal
+          for attempt in {1..60}; do
+            if (echo > /dev/tcp/127.0.0.1/7234) 2>/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f infra/docker/compose.yaml logs temporal
+          exit 1
+
       - name: Run API tests
+        env:
+          TEMPORAL_TEST_ADDRESS: localhost:7234
         run: python -m pytest apps/api/tests
+
+      - name: Stop Temporal test dependency
+        if: always()
+        run: docker compose -f infra/docker/compose.yaml down --volumes
 
       - name: Audit public release candidate files
         shell: pwsh
