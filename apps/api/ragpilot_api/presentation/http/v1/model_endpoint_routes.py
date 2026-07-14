@@ -6,6 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.application.model_registry.model_registry_service import ModelRegistryService
 from ragpilot_api.application.runtime_governance.runtime_governance_event_service import RuntimeGovernanceEventService
+from ragpilot_api.application.runtime_governance.runtime_health import classify_runtime_health
+from ragpilot_api.contracts.http.runtime_governance_event_contracts import RuntimeGovernanceEventResponse
+from ragpilot_api.contracts.http.runtime_credential_contracts import RuntimeCredentialRotateRequest, RuntimeCredentialRotationResponse
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.database.repositories.runtime_credential_repository import RuntimeCredentialRepository
 from ragpilot_api.contracts.http.model_endpoint_contracts import (
     ModelEndpointCreateRequest,
     ModelEndpointGovernanceActionRequest,
@@ -35,13 +40,27 @@ from ragpilot_api.shared.settings import get_settings
 router = APIRouter()
 
 
+def _model_health_detail(response) -> dict[str, object]:
+    health = classify_runtime_health(
+        status=str(read_response_field(response, "preview_status")),
+        summary=read_response_field(response, "summary"),
+        error_message=read_response_field(response, "error_message"),
+    )
+    return {"health_category": health.category, "retryable": health.retryable, "operator_action": health.operator_action}
+
+
 def build_model_registry_service(session: AsyncSession) -> ModelRegistryService:
     return ModelRegistryService(
         ModelEndpointRepository(session),
         AgentRepository(session),
         get_settings(),
         RuntimeGovernanceEventRepository(session),
+        RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
     )
+
+
+def build_runtime_credential_service(session: AsyncSession) -> RuntimeCredentialService:
+    return RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings())
 
 
 def build_runtime_governance_event_service(session: AsyncSession) -> RuntimeGovernanceEventService:
@@ -147,9 +166,39 @@ async def preview_model_endpoint(
             "preview_status": read_response_field(response, "preview_status"),
             "summary": read_response_field(response, "summary"),
             "error_message": read_response_field(response, "error_message"),
+            **_model_health_detail(response),
         },
     )
     return response
+
+
+@router.get("/{model_endpoint_id}/health-history", response_model=list[RuntimeGovernanceEventResponse])
+async def list_model_endpoint_health_history(
+    model_endpoint_id: UUID, limit: int = Query(default=20, ge=1, le=100),
+    actor: RequestActor = Depends(get_request_actor), session: AsyncSession = Depends(get_database_session),
+) -> list[RuntimeGovernanceEventResponse]:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "review_runtime_governance", RolePermissionRepository(session))
+    require_platform_wide_actor_scope(actor, detail="Platform model governance requires platform-wide access.")
+    return await build_runtime_governance_event_service(session).list_runtime_governance_events(
+        resource_type="model_endpoint", resource_id=model_endpoint_id, limit=limit,
+    )
+
+
+@router.post("/{model_endpoint_id}/credentials/rotate", response_model=RuntimeCredentialRotationResponse)
+async def rotate_model_endpoint_credential(
+    model_endpoint_id: UUID, request: RuntimeCredentialRotateRequest,
+    actor: RequestActor = Depends(get_request_actor), session: AsyncSession = Depends(get_database_session),
+) -> RuntimeCredentialRotationResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "manage_runtime_governance", RolePermissionRepository(session))
+    require_platform_wide_actor_scope(actor, detail="Platform model governance requires platform-wide access.")
+    if await ModelEndpointRepository(session).get_model_endpoint(model_endpoint_id=model_endpoint_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model endpoint not found.")
+    return await build_runtime_credential_service(session).rotate(
+        resource_type="model_endpoint", resource_id=model_endpoint_id,
+        secret=request.secret, actor_user_id=actor.user_id,
+    )
 
 
 @router.patch("/{model_endpoint_id}", response_model=ModelEndpointResponse)

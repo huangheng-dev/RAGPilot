@@ -11,3 +11,4 @@ resources:
   - api-service.yaml
   - web-service.yaml
   - ingress.yaml
+  - production-reliability.yaml

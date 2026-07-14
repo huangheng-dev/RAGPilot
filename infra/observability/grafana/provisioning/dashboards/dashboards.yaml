@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: RagPilot
+    folder: RagPilot
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

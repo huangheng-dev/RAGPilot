@@ -8,6 +8,28 @@ from ragpilot_api.application.model_gateway.runtime_binding_resolver import Runt
 
 
 @pytest.mark.anyio
+async def test_runtime_binding_resolver_decrypts_managed_credential() -> None:
+    endpoint_id = uuid4()
+    credential_service = SimpleNamespace(resolve=AsyncMock(return_value="managed-secret"))
+    endpoint = SimpleNamespace(
+        id=endpoint_id, name="Managed provider", provider_type="openai_compatible",
+        model_name="production-model", base_url="https://model.example/v1",
+        credential_mode="managed_encrypted", credential_key_hint=None,
+        capabilities_json=["chat"], is_enabled=True,
+    )
+    resolver = RuntimeBindingResolver(
+        model_endpoint_repository=SimpleNamespace(get_default_model_endpoint=AsyncMock(return_value=endpoint)),
+        settings=SimpleNamespace(chat_model_request_timeout_seconds=30),
+        runtime_credential_service=credential_service,
+    )
+
+    binding = await resolver.resolve_chat_runtime_binding(agent_definition=None)
+
+    assert binding.api_key == "managed-secret"
+    credential_service.resolve.assert_awaited_once_with(resource_type="model_endpoint", resource_id=endpoint_id)
+
+
+@pytest.mark.anyio
 async def test_runtime_binding_resolver_returns_settings_binding_without_agent_endpoint() -> None:
     resolver = RuntimeBindingResolver(
         model_endpoint_repository=SimpleNamespace(get_default_model_endpoint=AsyncMock(return_value=None)),

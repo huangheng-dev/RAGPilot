@@ -4,6 +4,7 @@ import os
 
 from ragpilot_api.application.errors import ResourceConflictError
 from ragpilot_api.application.model_gateway.contracts import RuntimeModelBinding
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
 from ragpilot_api.infrastructure.database.repositories.model_endpoint_repository import ModelEndpointRepository
 from ragpilot_api.shared.settings import Settings
 
@@ -13,9 +14,11 @@ class RuntimeBindingResolver:
         self,
         model_endpoint_repository: ModelEndpointRepository,
         settings: Settings,
+        runtime_credential_service: RuntimeCredentialService | None = None,
     ) -> None:
         self.model_endpoint_repository = model_endpoint_repository
         self.settings = settings
+        self.runtime_credential_service = runtime_credential_service
 
     async def resolve_chat_runtime_binding(
         self,
@@ -38,7 +41,7 @@ class RuntimeBindingResolver:
             )
 
         try:
-            return self._build_model_endpoint_binding(configured_model_endpoint)
+            return await self._build_model_endpoint_binding(configured_model_endpoint)
         except ResourceConflictError as error:
             return await self._resolve_fallback_binding(
                 configured_model_endpoint_id=configured_model_endpoint.id,
@@ -52,7 +55,7 @@ class RuntimeBindingResolver:
             return self._build_settings_binding(source="settings")
 
         try:
-            return self._build_model_endpoint_binding(default_model_endpoint)
+            return await self._build_model_endpoint_binding(default_model_endpoint)
         except ResourceConflictError as error:
             return self._build_settings_binding(
                 source="settings_fallback",
@@ -75,7 +78,7 @@ class RuntimeBindingResolver:
             and default_model_endpoint.id != configured_model_endpoint_id
         ):
             try:
-                return self._build_model_endpoint_binding(
+                return await self._build_model_endpoint_binding(
                     default_model_endpoint,
                     configured_model_endpoint_id=configured_model_endpoint_id,
                     configured_model_endpoint_name=configured_model_endpoint_name,
@@ -93,7 +96,7 @@ class RuntimeBindingResolver:
             fallback_reason=f"{fallback_reason}:settings",
         )
 
-    def _build_model_endpoint_binding(
+    async def _build_model_endpoint_binding(
         self,
         model_endpoint,
         *,
@@ -119,7 +122,8 @@ class RuntimeBindingResolver:
             model_endpoint_id=model_endpoint.id,
             model_endpoint_name=model_endpoint.name,
             api_base_url=model_endpoint.base_url,
-            api_key=self._resolve_api_key(
+            api_key=await self._resolve_api_key(
+                resource_id=model_endpoint.id,
                 credential_mode=model_endpoint.credential_mode,
                 credential_key_hint=model_endpoint.credential_key_hint,
             ),
@@ -170,9 +174,10 @@ class RuntimeBindingResolver:
             return False
         return True
 
-    def _resolve_api_key(
+    async def _resolve_api_key(
         self,
         *,
+        resource_id,
         credential_mode: str,
         credential_key_hint: str | None,
     ) -> str | None:
@@ -187,6 +192,14 @@ class RuntimeBindingResolver:
 
         if normalized_mode == "managed_reserved":
             return None
+
+        if normalized_mode == "managed_encrypted":
+            if self.runtime_credential_service is None:
+                raise ResourceConflictError("Managed model credential service is unavailable.")
+            secret = await self.runtime_credential_service.resolve(resource_type="model_endpoint", resource_id=resource_id)
+            if not secret:
+                raise ResourceConflictError("Managed model credential is missing.")
+            return secret
 
         raise ResourceConflictError(f"Unsupported credential mode: {credential_mode}")
 

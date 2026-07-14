@@ -45,6 +45,7 @@ class RuntimeGovernanceEventService:
         self,
         *,
         resource_type: str | None = None,
+        resource_id: UUID | None = None,
         action_type: str | None = None,
         actor_role: str | None = None,
         query: str | None = None,
@@ -52,6 +53,7 @@ class RuntimeGovernanceEventService:
     ) -> list[RuntimeGovernanceEventResponse]:
         runtime_governance_events = await self.runtime_governance_event_repository.list_runtime_governance_events(
             resource_type=resource_type,
+            resource_id=resource_id,
             action_type=action_type,
             actor_role=actor_role,
             query=query,

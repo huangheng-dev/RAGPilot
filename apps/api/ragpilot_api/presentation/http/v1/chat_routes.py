@@ -36,6 +36,9 @@ from ragpilot_api.presentation.http.request_actor import (
     require_actor_tenant_access,
 )
 from ragpilot_api.shared.settings import get_settings
+from ragpilot_api.application.model_gateway.runtime_binding_resolver import RuntimeBindingResolver
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.database.repositories.runtime_credential_repository import RuntimeCredentialRepository
 
 
 router = APIRouter()
@@ -52,6 +55,10 @@ def build_chat_service(session: AsyncSession) -> ChatService:
         knowledge_base_repository=KnowledgeBaseRepository(session),
         retrieval_profile_repository=RetrievalProfileRepository(session),
         retrieval_evaluation_repository=RetrievalEvaluationRepository(session),
+        runtime_binding_resolver=RuntimeBindingResolver(
+            ModelEndpointRepository(session), get_settings(),
+            RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
+        ),
     )
 
 

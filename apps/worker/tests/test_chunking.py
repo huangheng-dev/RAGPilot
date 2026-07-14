@@ -81,6 +81,20 @@ def test_normalize_text_supports_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
     assert parsed_document.text == "Page 1\nRAGPilot PDF handbook\n\nPage 2\nDurable ingestion workflow"
 
 
+def test_normalize_text_falls_back_to_governed_ocr_for_scanned_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
+    class EmptyPdfReader:
+        def __init__(self, stream: io.BytesIO) -> None:
+            self.pages = [type("Page", (), {"extract_text": lambda self: ""})()]
+
+    monkeypatch.setattr(chunking, "PdfReader", EmptyPdfReader)
+    monkeypatch.setattr(chunking, "_normalize_pdf_ocr_text", lambda content: "Page 1 [OCR]\n设备维护规范")
+
+    parsed_document = normalize_text(b"%PDF-scan", content_type="application/pdf", file_name="scan.pdf")
+
+    assert parsed_document.parser_name == "pdf_ocr_parser"
+    assert "Page 1 [OCR]" in parsed_document.text
+
+
 def test_normalize_text_supports_docx() -> None:
     document = DocxDocument()
     document.add_heading("RAGPilot Handbook", level=1)

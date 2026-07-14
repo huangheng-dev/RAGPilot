@@ -17,13 +17,6 @@ import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { PageTitleSync } from "@/components/console/PageTitleSync";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  getAgentExecutionStageLabelKey,
-  listAgentExecutions,
-  readAgentExecutionEvidenceSummary,
-  type AgentExecutionResponse
-} from "@/lib/agent-executions";
-import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
 import { authenticatedApiRequest } from "@/lib/authenticated-api";
 import { useAuth } from "@/lib/auth/provider";
 import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
@@ -209,8 +202,7 @@ export default function HomePage() {
   const [recentConversations, setRecentConversations] = useState<Conversation[]>([]);
   const [recentDocuments, setRecentDocuments] = useState<DocumentRecord[]>([]);
   const [tenantAgents, setTenantAgents] = useState<AgentDefinition[]>([]);
-  const [recentAgentExecutions, setRecentAgentExecutions] = useState<AgentExecutionResponse[]>([]);
-  const [, setIsLoadingDirectory] = useState(true);
+  const [isLoadingDirectory, setIsLoadingDirectory] = useState(true);
 
   useEffect(() => {
     if (!isReady || session) {
@@ -227,13 +219,9 @@ export default function HomePage() {
     [tenantAgents]
   );
 
-  const agentNameById = useMemo(
-    () =>
-      tenantAgents.reduce<Record<string, string>>((accumulator, agent) => {
-        accumulator[agent.id] = agent.name;
-        return accumulator;
-      }, {}),
-    [tenantAgents]
+  const scopedAgents = useMemo(
+    () => activeAgents.filter((agent) => agent.tenant_id === selectedTenantId),
+    [activeAgents, selectedTenantId]
   );
 
   useEffect(() => {
@@ -315,6 +303,10 @@ export default function HomePage() {
   }, [isReady, session]);
 
   useEffect(() => {
+    if (isLoadingDirectory) {
+      return;
+    }
+
     if (tenants.length === 0) {
       setSelectedTenantId("");
       return;
@@ -323,7 +315,7 @@ export default function HomePage() {
     if (!tenants.some((tenant) => tenant.id === selectedTenantId)) {
       setSelectedTenantId(tenants[0].id);
     }
-  }, [selectedTenantId, tenants]);
+  }, [isLoadingDirectory, selectedTenantId, tenants]);
 
   useEffect(() => {
     if (!selectedTenantId) {
@@ -406,13 +398,16 @@ export default function HomePage() {
   }, [selectedWorkspaceId]);
 
   useEffect(() => {
-    if (!session || tenants.length === 0) {
+    if (
+      !session ||
+      !selectedTenantId ||
+      !tenants.some((tenant) => tenant.id === selectedTenantId)
+    ) {
       setDocumentMetrics(EMPTY_DOCUMENT_METRICS);
       setConversationMetrics(EMPTY_CONVERSATION_METRICS);
       setRecentConversations([]);
       setRecentDocuments([]);
       setTenantAgents([]);
-      setRecentAgentExecutions([]);
       setHomeWorkspaces([]);
       setHomeKnowledgeBases([]);
       return;
@@ -422,8 +417,11 @@ export default function HomePage() {
 
     async function refreshHomeOverview() {
       try {
+        const scopedTenants = tenants.filter(
+          (tenant) => tenant.id === selectedTenantId,
+        );
         const workspaceGroups = await Promise.all(
-          tenants.map(async (tenant) => ({
+          scopedTenants.map(async (tenant) => ({
             tenantId: tenant.id,
             workspaces: normalizeArray(await listWorkspaces(tenant.id))
           }))
@@ -452,9 +450,8 @@ export default function HomePage() {
             }))
           ),
           Promise.all(
-            tenants.map(async (tenant) => ({
-              agents: normalizeArray(await listTenantAgents(tenant.id)),
-              executions: normalizeArray(await listAgentExecutions(tenant.id, undefined, 4))
+            scopedTenants.map(async (tenant) => ({
+              agents: normalizeArray(await listTenantAgents(tenant.id))
             }))
           )
         ]);
@@ -506,12 +503,6 @@ export default function HomePage() {
         setRecentConversations(nextRecentConversations);
         setRecentDocuments(nextRecentDocuments);
         setTenantAgents(agentGroups.flatMap((group) => group.agents));
-        setRecentAgentExecutions(
-          agentGroups
-            .flatMap((group) => group.executions)
-            .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
-            .slice(0, 4)
-        );
       } catch {
         if (!isMounted) {
           return;
@@ -522,7 +513,6 @@ export default function HomePage() {
         setRecentConversations([]);
         setRecentDocuments([]);
         setTenantAgents([]);
-        setRecentAgentExecutions([]);
         setHomeWorkspaces([]);
         setHomeKnowledgeBases([]);
       }
@@ -533,7 +523,7 @@ export default function HomePage() {
     return () => {
       isMounted = false;
     };
-  }, [session, tenants]);
+  }, [selectedTenantId, session, tenants]);
 
   if (!isReady || !session) {
     return null;
@@ -560,7 +550,7 @@ export default function HomePage() {
     knowledgeBaseId: (latestDocument?.knowledge_base_id ?? selectedKnowledgeBaseId) || null
   });
   const agentsHref = buildAgentsHref({
-    tenantId: (activeAgents[0]?.tenant_id ?? selectedTenantId) || null,
+    tenantId: selectedTenantId || null,
     status: "all"
   });
   const latestActivityLabel = conversationMetrics.latest_activity_at
@@ -570,7 +560,6 @@ export default function HomePage() {
     name: session.displayName?.trim() || t("home.welcome.fallbackName")
   });
 
-  const hasActiveAgents = activeAgents.length > 0;
 
   return (
     <ConsoleShell activeHref="/">
@@ -672,71 +661,19 @@ export default function HomePage() {
             contentClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
             actionHref={agentsHref}
             actionLabel={t("home.overview.viewMore")}
-            count={recentAgentExecutions.length > 0 ? recentAgentExecutions.length : activeAgents.length}
+            count={scopedAgents.length}
             title={t("home.overview.agents")}
           >
-            {recentAgentExecutions.length === 0 && activeAgents.length === 0 ? (
+            {scopedAgents.length === 0 ? (
               <div className="sm:col-span-2 xl:col-span-4">
                 <Link className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30" href={agentsHref}>
                   <ConsoleEmptyState>
-                    {hasActiveAgents
-                      ? t("home.commandCenter.agents.readyDetail", {
-                          name: activeAgents[0]?.name ?? t("home.overview.agents")
-                        })
-                      : t("home.overview.emptyAgents")}
+                    {t("home.overview.emptyAgents")}
                   </ConsoleEmptyState>
                 </Link>
               </div>
-            ) : recentAgentExecutions.length > 0 ? (
-              recentAgentExecutions.map((agentExecution) => {
-                const evidenceSummary = readAgentExecutionEvidenceSummary(agentExecution.result_payload_json);
-                const followUpActions = buildAgentExecutionFollowUpActions({
-                  sourceContext: { surface: "home" },
-                  execution: agentExecution,
-                  executionInput: evidenceSummary?.executionInput,
-                  recommendedActions: evidenceSummary?.recommendedActionSpecs ?? []
-                });
-                const primaryAction = followUpActions[0] ?? null;
-                const previewText =
-                  evidenceSummary?.answerPreview?.trim() ||
-                  agentExecution.summary?.trim() ||
-                  agentExecution.error_message?.trim() ||
-                  t("agents.executions.pendingSummary");
-
-                return (
-                  <HomeListItem
-                    badges={
-                      <>
-                        <Badge className={cn("border", getStatusBadgeClass(agentExecution.execution_status))} variant="outline">
-                          {t(`agents.executions.statuses.${agentExecution.execution_status}`)}
-                        </Badge>
-                        <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
-                          {t(`agents.modes.${agentExecution.execution_mode}`)}
-                        </Badge>
-                        {agentExecution.task_state ? (
-                          <Badge className="border-slate-200 bg-white text-slate-700" variant="outline">
-                            {t(getAgentExecutionStageLabelKey(agentExecution.task_state.stage_key))}
-                          </Badge>
-                        ) : null}
-                      </>
-                    }
-                    detail={previewText}
-                    href={
-                      primaryAction?.href ??
-                      buildAgentsHref({
-                        tenantId: selectedTenantId || null,
-                        status: "active",
-                        agentId: agentExecution.agent_definition_id
-                      })
-                    }
-                    key={agentExecution.id}
-                    meta={formatTimestamp(agentExecution.updated_at)}
-                  title={agentNameById[agentExecution.agent_definition_id] ?? t("agents.executions.unknownAgent")}
-                />
-              );
-            })
             ) : (
-              activeAgents.slice(0, 4).map((agent) => (
+              scopedAgents.slice(0, 4).map((agent) => (
                 <HomeListItem
                   badges={
                     <>
@@ -750,8 +687,8 @@ export default function HomePage() {
                   }
                   detail={agent.objective?.trim().length ? agent.objective : t("home.overview.noAgentObjective")}
                   href={buildAgentsHref({
-                    tenantId: selectedTenantId || null,
-                    status: "active",
+                    tenantId: agent.tenant_id,
+                    status: "all",
                     agentId: agent.id
                   })}
                   key={agent.id}

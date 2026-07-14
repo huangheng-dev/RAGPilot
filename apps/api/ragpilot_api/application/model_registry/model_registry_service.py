@@ -35,6 +35,7 @@ from ragpilot_api.infrastructure.database.repositories.agent_repository import A
 from ragpilot_api.infrastructure.database.repositories.model_endpoint_repository import ModelEndpointRepository
 from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_repository import RuntimeGovernanceEventRepository
 from ragpilot_api.shared.settings import Settings
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
 
 
 class ModelRegistryService:
@@ -44,11 +45,13 @@ class ModelRegistryService:
         agent_repository: AgentRepository,
         settings: Settings,
         runtime_governance_event_repository: RuntimeGovernanceEventRepository | None = None,
+        runtime_credential_service: RuntimeCredentialService | None = None,
     ) -> None:
         self.model_endpoint_repository = model_endpoint_repository
         self.agent_repository = agent_repository
         self.settings = settings
         self.runtime_governance_event_repository = runtime_governance_event_repository
+        self.runtime_credential_service = runtime_credential_service
 
     async def create_model_endpoint(self, request: ModelEndpointCreateRequest) -> ModelEndpointResponse:
         model_endpoint = await self.model_endpoint_repository.create_model_endpoint(
@@ -376,6 +379,11 @@ class ModelRegistryService:
                 model_name=model_endpoint.model_name,
                 api_base_url=model_endpoint.base_url,
                 request_timeout_seconds=self.settings.chat_model_request_timeout_seconds,
+                concurrency_limit=int(getattr(self.settings, "model_runtime_concurrency_limit", 8)),
+                requests_per_minute=int(getattr(self.settings, "model_runtime_requests_per_minute", 120)),
+                max_attempts=int(getattr(self.settings, "model_runtime_max_attempts", 2)),
+                retryable_status_codes=getattr(self.settings, "model_runtime_retryable_status_code_set", {429, 502, 503, 504}),
+                retry_backoff_seconds=float(getattr(self.settings, "model_runtime_retry_backoff_seconds", 0.25)),
             )
             try:
                 result = await provider.generate_chat_completion(messages=preview_messages)
@@ -406,7 +414,8 @@ class ModelRegistryService:
                     request_metadata=request_metadata,
                 )
 
-            api_key = self._resolve_api_key(
+            api_key = await self._resolve_api_key(
+                resource_id=model_endpoint.id,
                 credential_mode=model_endpoint.credential_mode,
                 credential_key_hint=model_endpoint.credential_key_hint,
             )
@@ -432,6 +441,11 @@ class ModelRegistryService:
                 api_base_url=model_endpoint.base_url,
                 api_key=api_key,
                 request_timeout_seconds=self.settings.chat_model_request_timeout_seconds,
+                concurrency_limit=int(getattr(self.settings, "model_runtime_concurrency_limit", 8)),
+                requests_per_minute=int(getattr(self.settings, "model_runtime_requests_per_minute", 120)),
+                max_attempts=int(getattr(self.settings, "model_runtime_max_attempts", 2)),
+                retryable_status_codes=getattr(self.settings, "model_runtime_retryable_status_code_set", {429, 502, 503, 504}),
+                retry_backoff_seconds=float(getattr(self.settings, "model_runtime_retry_backoff_seconds", 0.25)),
             )
             try:
                 result = await provider.generate_chat_completion(messages=preview_messages)
@@ -464,9 +478,10 @@ class ModelRegistryService:
             request_metadata=request_metadata,
         )
 
-    def _resolve_api_key(
+    async def _resolve_api_key(
         self,
         *,
+        resource_id: UUID,
         credential_mode: str,
         credential_key_hint: str | None,
     ) -> str | None:
@@ -480,6 +495,8 @@ class ModelRegistryService:
             return resolved.strip() if resolved and resolved.strip() else None
         if normalized_mode == "managed_reserved":
             return None
+        if normalized_mode == "managed_encrypted" and self.runtime_credential_service is not None:
+            return await self.runtime_credential_service.resolve(resource_type="model_endpoint", resource_id=resource_id)
         return None
 
     def _matches_model_runtime_state(

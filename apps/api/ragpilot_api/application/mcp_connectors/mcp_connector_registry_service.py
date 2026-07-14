@@ -13,6 +13,7 @@ from ragpilot_api.contracts.http.mcp_connector_contracts import (
     McpConnectorPreviewResponse,
     McpRemoteToolCatalogResponse,
     McpRemoteToolResponse,
+    McpConnectorCompatibilityResponse,
     McpConnectorResponse,
     McpConnectorTypeGovernanceBreakdownResponse,
     McpConnectorUpdateRequest,
@@ -23,6 +24,7 @@ from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
 from ragpilot_api.infrastructure.mcp.client import McpProtocolError, McpStreamableHttpClient
 from ragpilot_api.shared.settings import Settings, get_settings
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
 
 
 class McpConnectorRegistryService:
@@ -32,11 +34,13 @@ class McpConnectorRegistryService:
         tool_registration_repository: ToolRegistrationRepository,
         runtime_governance_event_repository: RuntimeGovernanceEventRepository | None = None,
         settings: Settings | None = None,
+        runtime_credential_service: RuntimeCredentialService | None = None,
     ) -> None:
         self.mcp_connector_repository = mcp_connector_repository
         self.tool_registration_repository = tool_registration_repository
         self.runtime_governance_event_repository = runtime_governance_event_repository
         self.settings = settings or get_settings()
+        self.runtime_credential_service = runtime_credential_service
 
     async def create_mcp_connector(self, request: McpConnectorCreateRequest) -> McpConnectorResponse:
         mcp_connector = await self.mcp_connector_repository.create_mcp_connector(
@@ -125,6 +129,7 @@ class McpConnectorRegistryService:
         *,
         mcp_connector_id: UUID,
         action_type: str,
+        actor_user_id: UUID | None = None,
     ) -> McpConnectorGovernanceActionResponse | None:
         mcp_connector = await self.mcp_connector_repository.get_mcp_connector(mcp_connector_id=mcp_connector_id)
         if mcp_connector is None:
@@ -162,6 +167,14 @@ class McpConnectorRegistryService:
                 summary = "Connector disabled until runtime governance follow-up is complete."
             else:
                 summary = "Connector is already disabled."
+        elif action_type in {"approve_connector", "review_connector", "reject_connector"}:
+            target_status = {
+                "approve_connector": "approved", "review_connector": "reviewing", "reject_connector": "rejected",
+            }[action_type]
+            mcp_connector = await self.mcp_connector_repository.set_governance_status(
+                mcp_connector=mcp_connector, governance_status=target_status, actor_user_id=actor_user_id,
+            )
+            summary = f"Connector governance status changed to {target_status}."
         else:
             raise ResourceConflictError("Unsupported MCP connector governance action.")
 
@@ -180,6 +193,34 @@ class McpConnectorRegistryService:
             mcp_connector=connector_response,
         )
 
+    async def get_compatibility_report(self, *, mcp_connector_id: UUID) -> McpConnectorCompatibilityResponse:
+        connector = await self.mcp_connector_repository.get_mcp_connector(mcp_connector_id=mcp_connector_id)
+        if connector is None:
+            raise ResourceNotFoundError("MCP connector not found.")
+        transport_ready = connector.connector_type == "streamable_http" and bool((connector.base_url or "").strip())
+        authentication_ready = connector.auth_mode == "none" or bool(await self._resolve_credential(connector))
+        approval_ready = getattr(connector, "governance_status", "approved") == "approved"
+        blockers = []
+        if not connector.is_enabled: blockers.append("connector_disabled")
+        if not transport_ready: blockers.append("transport_not_ready")
+        if not authentication_ready: blockers.append("authentication_not_ready")
+        if not approval_ready: blockers.append("governance_approval_required")
+        discovered_tool_count = 0
+        if not blockers:
+            catalog = await self.list_remote_tools(mcp_connector_id=mcp_connector_id)
+            discovered_tool_count = len(catalog.tools)
+        return McpConnectorCompatibilityResponse(
+            mcp_connector_id=connector.id,
+            governance_status=getattr(connector, "governance_status", "approved"),
+            compatible=not blockers,
+            supported_protocol_versions=["2024-11-05", "2025-03-26"],
+            transport_ready=transport_ready,
+            authentication_ready=authentication_ready,
+            approval_ready=approval_ready,
+            discovered_tool_count=discovered_tool_count,
+            blockers=blockers,
+        )
+
     async def get_mcp_connector_governance_summary(self) -> McpConnectorGovernanceSummaryResponse:
         mcp_connectors = await self.mcp_connector_repository.list_mcp_connectors()
         tool_counts = await self._build_tool_reference_counts()
@@ -193,6 +234,7 @@ class McpConnectorRegistryService:
             "none": McpConnectorAuthGovernanceBreakdownResponse(auth_mode="none"),
             "environment": McpConnectorAuthGovernanceBreakdownResponse(auth_mode="environment"),
             "managed_reserved": McpConnectorAuthGovernanceBreakdownResponse(auth_mode="managed_reserved"),
+            "managed_encrypted": McpConnectorAuthGovernanceBreakdownResponse(auth_mode="managed_encrypted"),
         }
         summary = McpConnectorGovernanceSummaryResponse()
 
@@ -224,6 +266,10 @@ class McpConnectorRegistryService:
             runtime_ready = is_mcp_connector_runtime_ready(mcp_connector)
 
             summary.total_connectors += 1
+            governance_status = getattr(mcp_connector, "governance_status", "approved")
+            if governance_status == "approved": summary.approved_connectors += 1
+            elif governance_status == "reviewing": summary.reviewing_connectors += 1
+            elif governance_status == "rejected": summary.rejected_connectors += 1
             if mcp_connector.is_enabled:
                 summary.enabled_connectors += 1
             else:
@@ -308,10 +354,10 @@ class McpConnectorRegistryService:
             )
 
         credential_present = None
-        if mcp_connector.auth_mode == "environment":
-            credential_present = bool(resolve_mcp_connector_environment_secret(mcp_connector.credential_key_hint))
+        if mcp_connector.auth_mode in {"environment", "managed_encrypted"}:
+            credential_present = bool(await self._resolve_credential(mcp_connector))
             request_metadata["credential_present"] = credential_present
-            if not (mcp_connector.credential_key_hint or "").strip():
+            if mcp_connector.auth_mode == "environment" and not (mcp_connector.credential_key_hint or "").strip():
                 return build_mcp_connector_preview_response(
                     mcp_connector,
                     preview_status="blocked",
@@ -319,12 +365,20 @@ class McpConnectorRegistryService:
                     request_metadata=request_metadata,
                     error_message="Set the credential environment-variable hint before previewing this connector.",
                 )
+            if mcp_connector.auth_mode == "managed_encrypted" and not credential_present:
+                return build_mcp_connector_preview_response(
+                    mcp_connector,
+                    preview_status="blocked",
+                    summary="Managed MCP credential is not available for preview.",
+                    request_metadata=request_metadata,
+                    error_message="Rotate a managed credential before previewing this connector.",
+                )
 
         request_headers = {
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
         }
-        credential = resolve_mcp_connector_environment_secret(mcp_connector.credential_key_hint)
+        credential = await self._resolve_credential(mcp_connector)
         if credential:
             request_headers["Authorization"] = f"Bearer {credential}"
         initialize_payload = {
@@ -381,6 +435,10 @@ class McpConnectorRegistryService:
                     base_url=mcp_connector.base_url or "",
                     bearer_token=credential,
                     timeout_seconds=5.0,
+                    concurrency_limit=int(getattr(self.settings, "mcp_runtime_concurrency_limit", 16)),
+                    requests_per_minute=int(getattr(self.settings, "mcp_runtime_requests_per_minute", 240)),
+                    max_attempts=int(getattr(self.settings, "mcp_runtime_max_attempts", 2)),
+                    retry_backoff_seconds=float(getattr(self.settings, "mcp_runtime_retry_backoff_seconds", 0.25)),
                 )
                 await runtime_client.initialize()
                 discovered_tools = await runtime_client.list_tools()
@@ -427,8 +485,12 @@ class McpConnectorRegistryService:
 
         client = McpStreamableHttpClient(
             base_url=connector.base_url,
-            bearer_token=resolve_mcp_connector_environment_secret(connector.credential_key_hint),
+            bearer_token=await self._resolve_credential(connector),
             timeout_seconds=10.0,
+            concurrency_limit=int(getattr(self.settings, "mcp_runtime_concurrency_limit", 16)),
+            requests_per_minute=int(getattr(self.settings, "mcp_runtime_requests_per_minute", 240)),
+            max_attempts=int(getattr(self.settings, "mcp_runtime_max_attempts", 2)),
+            retry_backoff_seconds=float(getattr(self.settings, "mcp_runtime_retry_backoff_seconds", 0.25)),
         )
         try:
             initialization = await client.initialize()
@@ -495,6 +557,17 @@ class McpConnectorRegistryService:
             status_field_name="preview_status",
         )
 
+    async def _resolve_credential(self, connector: McpConnector) -> str | None:
+        if connector.auth_mode == "managed_encrypted":
+            if self.runtime_credential_service is None:
+                return None
+            return await self.runtime_credential_service.resolve(
+                resource_type="mcp_connector", resource_id=connector.id,
+            )
+        if connector.auth_mode == "environment":
+            return resolve_mcp_connector_environment_secret(connector.credential_key_hint)
+        return None
+
 
 def normalize_mcp_connector_base_url(base_url: str | None) -> str | None:
     if base_url is None:
@@ -515,6 +588,8 @@ def requires_mcp_connector_base_url(connector_type: str) -> bool:
 
 
 def is_mcp_connector_configured(mcp_connector: McpConnector) -> bool:
+    if getattr(mcp_connector, "governance_status", "approved") != "approved":
+        return False
     if mcp_connector.connector_type == "managed_reserved":
         return False
     if mcp_connector.auth_mode == "managed_reserved":
@@ -597,6 +672,9 @@ def build_mcp_connector_response(
         credential_key_hint=mcp_connector.credential_key_hint,
         notes=mcp_connector.notes,
         is_enabled=mcp_connector.is_enabled,
+        governance_status=getattr(mcp_connector, "governance_status", "approved"),
+        approved_by_user_id=getattr(mcp_connector, "approved_by_user_id", None),
+        approved_at=getattr(mcp_connector, "approved_at", None),
         referenced_tool_count=referenced_tool_count,
         integration_ready_tool_count=integration_ready_tool_count,
         recent_preview_completed_events=int(preview_activity.get("completed", 0)),

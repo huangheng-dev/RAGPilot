@@ -62,6 +62,51 @@ def build_agent_definition(**overrides):
 
 
 @pytest.mark.anyio
+async def test_cancelling_waiting_execution_closes_pending_approval() -> None:
+    tenant_id = uuid4()
+    waiting = build_agent_execution(
+        tenant_id=tenant_id,
+        execution_status="awaiting_approval",
+        temporal_workflow_id="agent-execution-waiting",
+        completed_at=None,
+    )
+    cancelled = build_agent_execution(**{
+        **waiting.__dict__,
+        "execution_status": "cancelled",
+        "cancelled_at": datetime.now(timezone.utc),
+    })
+    pending_approval = SimpleNamespace(approval_status="pending")
+    execution_repository = SimpleNamespace(
+        get_agent_execution=AsyncMock(return_value=waiting),
+        request_agent_execution_cancellation=AsyncMock(return_value=waiting),
+        cancel_agent_execution=AsyncMock(return_value=cancelled),
+    )
+    approval_repository = SimpleNamespace(
+        list_for_execution=AsyncMock(return_value=[pending_approval]),
+        decide=AsyncMock(return_value=pending_approval),
+    )
+    temporal = SimpleNamespace(cancel_workflow=AsyncMock())
+    service = AgentExecutionService(
+        SimpleNamespace(), execution_repository, SimpleNamespace(), SimpleNamespace(),
+        SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
+        temporal_workflow_client=temporal,
+        agent_approval_repository=approval_repository,
+    )
+
+    response = await service.cancel_agent_execution(execution_id=waiting.id, tenant_id=tenant_id)
+
+    assert response.execution_status == "cancelled"
+    approval_repository.decide.assert_awaited_once_with(
+        request=pending_approval, status="cancelled", actor_user_id=None,
+        reason="Agent execution was cancelled.",
+    )
+    temporal.cancel_workflow.assert_awaited_once_with(
+        temporal_workflow_id="agent-execution-waiting",
+        reason="Agent execution cancelled by an operator.",
+    )
+
+
+@pytest.mark.anyio
 async def test_agent_execution_service_builds_filtered_metrics() -> None:
     tenant_id = uuid4()
     latest_created_at = datetime.now(timezone.utc)

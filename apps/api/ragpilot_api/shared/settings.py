@@ -27,22 +27,44 @@ class Settings(BaseSettings):
     minio_bucket: str = "ragpilot-documents"
     retrieval_engine: str = "native"
     agent_runtime_engine: str = "native"
+    agent_approval_timeout_hours: int = 24
+    runtime_credential_master_key: str = "ragpilot-local-development-master-key-change-me"
     retrieval_embedding_model: str = "ragpilot-dev-1536"
     retrieval_embedding_dimension: int = 1536
     retrieval_rerank_enabled: bool = True
     retrieval_rerank_strategy: str = "native_term_density_v1"
     retrieval_rerank_window: int = 12
+    retrieval_rerank_timeout_seconds: float = 2.0
+    retrieval_score_normalization_strategy: str = "rank_percentile_v1"
+    elasticsearch_retrieval_enabled: bool = False
+    elasticsearch_url: str = "http://elasticsearch:9200"
+    elasticsearch_index_prefix: str = "ragpilot-document-chunks"
+    elasticsearch_request_timeout_seconds: float = 5.0
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
+    otel_trace_sample_ratio: float = 1.0
     chat_model_provider: str = "deterministic"
     chat_model_name: str = "ragpilot-grounded-template"
     chat_model_api_base_url: str | None = None
     chat_model_api_key: str | None = None
     chat_model_request_timeout_seconds: int = 180
+    model_runtime_concurrency_limit: int = 8
+    model_runtime_requests_per_minute: int = 120
+    model_runtime_max_attempts: int = 2
+    model_runtime_retry_backoff_seconds: float = 0.25
+    model_runtime_retryable_status_codes: str = "429,502,503,504"
+    model_input_cost_per_1k_tokens_usd: float = 0.0
+    model_output_cost_per_1k_tokens_usd: float = 0.0
     model_preview_review_window_hours: int = 24
     mcp_preview_review_window_hours: int = 24
     tool_preview_review_window_hours: int = 24
     tool_runtime_request_timeout_seconds: int = 30
     tool_runtime_max_attempts: int = 2
     tool_runtime_retryable_status_codes: str = "502,503,504"
+    mcp_runtime_concurrency_limit: int = 16
+    mcp_runtime_requests_per_minute: int = 240
+    mcp_runtime_max_attempts: int = 2
+    mcp_runtime_retry_backoff_seconds: float = 0.25
     auth_primary_mode: AuthPrimaryMode = "directory_local"
     auth_provider_display_name: str = "Enterprise Identity"
     auth_provider_sign_in_url: str | None = None
@@ -80,6 +102,20 @@ class Settings(BaseSettings):
             except ValueError:
                 continue
         return values
+
+    @property
+    def model_runtime_retryable_status_code_set(self) -> set[int]:
+        return _parse_status_codes(self.model_runtime_retryable_status_codes)
+
+
+def _parse_status_codes(raw_codes: str) -> set[int]:
+    values: set[int] = set()
+    for raw_value in raw_codes.split(","):
+        try:
+            values.add(int(raw_value.strip()))
+        except ValueError:
+            continue
+    return values
 
 
 @lru_cache(maxsize=1)

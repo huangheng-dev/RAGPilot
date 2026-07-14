@@ -45,6 +45,8 @@ Ingress
 3. Point the config map at your real managed dependency endpoints.
 4. Adjust resource requests, ingress class, and hostnames for your cluster.
 5. Confirm that `NEXT_PUBLIC_API_BASE_URL` matches the public API route exposed by your ingress.
+6. Install External Secrets Operator and provide a `ClusterSecretStore` named `production-secret-store`; the `ExternalSecret` refreshes `ragpilot/production` hourly.
+7. Confirm Metrics Server is available for the API HPA and verify the PodDisruptionBudget before rollout.
 
 ## Example
 

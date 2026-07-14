@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  Check,
   ChevronDown,
   FileText,
   Globe,
@@ -25,11 +26,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { revokeCurrentDirectorySession } from "@/lib/auth-directory";
 import { hasDirectoryCapability } from "@/lib/auth/access";
 import { useAuth } from "@/lib/auth/provider";
+import { authenticatedApiRequest } from "@/lib/authenticated-api";
 import { useI18n } from "@/lib/i18n/provider";
 import { usePreferences } from "@/lib/preferences/provider";
 import { cn } from "@/lib/utils";
 import { readWorkspaceView } from "@/lib/workspace-navigation";
-import { readCurrentTenantId, writeCurrentTenantId } from "@/lib/tenant-scope";
+import {
+  CURRENT_TENANT_CHANGE_EVENT,
+  CURRENT_TENANT_STORAGE_KEY,
+  readCurrentTenantId,
+  writeCurrentTenantId,
+} from "@/lib/tenant-scope";
 
 type ConsoleShellProps = {
   activeHref?: "/" | "/workspace" | "/chat" | "/documents" | "/agents" | "/operations" | "/admin" | "/settings";
@@ -37,6 +44,11 @@ type ConsoleShellProps = {
 };
 
 type WorkspaceView = "chat" | "documents" | "workflows";
+
+type AccessibleTenant = {
+  id: string;
+  name: string;
+};
 
 const repositoryUrl = process.env.NEXT_PUBLIC_GIT_REPOSITORY_URL?.trim() || null;
 
@@ -48,6 +60,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
   const [currentTenantId, setCurrentTenantId] = useState("");
+  const [accessibleTenants, setAccessibleTenants] = useState<AccessibleTenant[]>([]);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   const primaryNavigation: Array<{
@@ -79,7 +92,10 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
     }
 
     function handleOutsidePointerDown(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
         setIsUserMenuOpen(false);
       }
     }
@@ -96,25 +112,95 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
   );
 
   useEffect(() => {
+    let isMounted = true;
+    const membershipTenants = activeMemberships.map((membership) => ({
+      id: membership.tenant_id,
+      name: membership.tenant_name,
+    }));
+    setAccessibleTenants([]);
+
+    if (!session) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadAccessibleTenants() {
+      try {
+        const tenants = await authenticatedApiRequest<AccessibleTenant[]>("/tenants");
+        if (isMounted) {
+          setAccessibleTenants(Array.isArray(tenants) ? tenants : membershipTenants);
+        }
+      } catch {
+        if (isMounted) {
+          setAccessibleTenants(membershipTenants);
+        }
+      }
+    }
+
+    void loadAccessibleTenants();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeMemberships, session]);
+
+  useEffect(() => {
     const storedTenantId = readCurrentTenantId();
-    const nextTenantId = activeMemberships.some((membership) => membership.tenant_id === storedTenantId)
+    const nextTenantId = accessibleTenants.some((tenant) => tenant.id === storedTenantId)
       ? storedTenantId
-      : (activeMemberships[0]?.tenant_id ?? "");
+      : (accessibleTenants[0]?.id ?? "");
     setCurrentTenantId(nextTenantId);
     if (nextTenantId) writeCurrentTenantId(nextTenantId);
-  }, [activeMemberships]);
+  }, [accessibleTenants]);
+
+  useEffect(() => {
+    function syncCurrentTenant() {
+      const nextTenantId = readCurrentTenantId();
+      if (accessibleTenants.some((tenant) => tenant.id === nextTenantId)) {
+        setCurrentTenantId(nextTenantId);
+      }
+    }
+
+    function handleTenantStorageChange(event: StorageEvent) {
+      if (event.key === CURRENT_TENANT_STORAGE_KEY) {
+        syncCurrentTenant();
+      }
+    }
+
+    window.addEventListener(CURRENT_TENANT_CHANGE_EVENT, syncCurrentTenant);
+    window.addEventListener("storage", handleTenantStorageChange);
+    return () => {
+      window.removeEventListener(CURRENT_TENANT_CHANGE_EVENT, syncCurrentTenant);
+      window.removeEventListener("storage", handleTenantStorageChange);
+    };
+  }, [accessibleTenants]);
 
   function handleTenantChange(tenantId: string) {
     setCurrentTenantId(tenantId);
     writeCurrentTenantId(tenantId);
     const nextUrl = new URL(window.location.href);
-    const tenantAwarePaths = ["/", "/chat", "/documents", "/agents", "/operations"];
+    if (pathname === "/settings") {
+      setIsUserMenuOpen(false);
+      return;
+    }
+
+    const tenantAwarePaths = ["/", "/chat", "/documents", "/agents", "/operations", "/admin"];
     if (!tenantAwarePaths.includes(pathname)) {
       nextUrl.pathname = "/";
       nextUrl.search = "";
     }
     nextUrl.searchParams.set("tenant_id", tenantId);
-    ["workspace_id", "knowledge_base_id", "conversation_id", "document_id", "agent_id", "workflow_run_id"].forEach((key) => nextUrl.searchParams.delete(key));
+    [
+      "workspace_id",
+      "knowledge_base_id",
+      "conversation_id",
+      "document_id",
+      "agent_id",
+      "workflow_run_id",
+      "user_id",
+      "management_panel",
+    ].forEach((key) => nextUrl.searchParams.delete(key));
     window.location.assign(nextUrl.toString());
   }
 
@@ -124,6 +210,9 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
+  const currentTenantName =
+    accessibleTenants.find((tenant) => tenant.id === currentTenantId)?.name ??
+    "";
 
   async function handleSignOut() {
     try {
@@ -230,12 +319,18 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
                 <Button
                   className="h-9 rounded-lg border-transparent bg-slate-100/80 px-1.5 shadow-none hover:bg-slate-200/70 dark:bg-slate-900 dark:hover:bg-slate-800"
                   onClick={() => setIsUserMenuOpen((currentValue) => !currentValue)}
+                  title={t("shell.userMenu.currentTenant")}
                   type="button"
                   variant="outline"
                 >
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-xs font-semibold text-blue-700 shadow-sm dark:bg-slate-800 dark:text-blue-300">
                     {userInitials || <UserCircle2 className="h-4 w-4" />}
                   </div>
+                  {currentTenantName ? (
+                    <span className="hidden max-w-36 truncate px-1 text-sm font-medium text-slate-700 xl:inline dark:text-slate-200">
+                      {currentTenantName}
+                    </span>
+                  ) : null}
                   <ChevronDown className="h-4 w-4 text-slate-500" />
                 </Button>
 
@@ -246,25 +341,41 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{session.email}</div>
                     </div>
 
-                    {activeMemberships.length > 0 ? (
+                    {accessibleTenants.length > 0 ? (
                       <div className="mt-2 rounded-xl border border-slate-200/80 p-2 dark:border-slate-800">
                         <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                           {t("shell.userMenu.currentTenant")}
                         </div>
-                        {activeMemberships.length > 1 ? (
-                          <Select onValueChange={handleTenantChange} value={currentTenantId}>
-                            <SelectTrigger className="h-9 w-full bg-white"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {activeMemberships.map((membership) => (
-                                <SelectItem key={membership.id} value={membership.tenant_id}>{membership.tenant_name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <div className="truncate px-1 pb-1 text-sm font-medium text-slate-700 dark:text-slate-200">
-                            {activeMemberships[0].tenant_name}
-                          </div>
-                        )}
+                        <div className="grid gap-1">
+                          {accessibleTenants.map((tenant) => {
+                            const isCurrentTenant =
+                              tenant.id === currentTenantId;
+
+                            return (
+                              <button
+                                aria-current={
+                                  isCurrentTenant ? "true" : undefined
+                                }
+                                className={cn(
+                                  "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition",
+                                  isCurrentTenant
+                                    ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                                    : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-900",
+                                )}
+                                key={tenant.id}
+                                onClick={() => handleTenantChange(tenant.id)}
+                                type="button"
+                              >
+                                <span className="min-w-0 truncate">
+                                  {tenant.name}
+                                </span>
+                                {isCurrentTenant ? (
+                                  <Check className="h-4 w-4 shrink-0" />
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : null}
 

@@ -6,9 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 McpConnectorType = Literal["streamable_http", "sse", "managed_reserved"]
-McpConnectorAuthMode = Literal["none", "environment", "managed_reserved"]
+McpConnectorAuthMode = Literal["none", "environment", "managed_reserved", "managed_encrypted"]
 McpConnectorPreviewStatus = Literal["completed", "blocked", "failed"]
-McpConnectorGovernanceActionType = Literal["enable_connector", "disable_connector"]
+McpConnectorGovernanceActionType = Literal["enable_connector", "disable_connector", "approve_connector", "review_connector", "reject_connector"]
 
 
 class McpConnectorCreateRequest(BaseModel):
@@ -47,6 +47,9 @@ class McpConnectorResponse(BaseModel):
     credential_key_hint: str | None
     notes: str | None
     is_enabled: bool
+    governance_status: Literal["reviewing", "approved", "rejected"] = "approved"
+    approved_by_user_id: UUID | None = None
+    approved_at: datetime | None = None
     referenced_tool_count: int = 0
     integration_ready_tool_count: int = 0
     recent_preview_completed_events: int = 0
@@ -98,6 +101,18 @@ class McpRemoteToolCatalogResponse(BaseModel):
     discovered_at: datetime
 
 
+class McpConnectorCompatibilityResponse(BaseModel):
+    mcp_connector_id: UUID
+    governance_status: str
+    compatible: bool
+    supported_protocol_versions: list[str] = Field(default_factory=list)
+    transport_ready: bool
+    authentication_ready: bool
+    approval_ready: bool
+    discovered_tool_count: int = 0
+    blockers: list[str] = Field(default_factory=list)
+
+
 class McpConnectorTypeGovernanceBreakdownResponse(BaseModel):
     connector_type: McpConnectorType
     total_connectors: int = 0
@@ -125,6 +140,9 @@ class McpConnectorGovernanceSummaryResponse(BaseModel):
     environment_auth_connectors: int = 0
     missing_credential_hint_connectors: int = 0
     managed_reserved_connectors: int = 0
+    approved_connectors: int = 0
+    reviewing_connectors: int = 0
+    rejected_connectors: int = 0
     recent_preview_completed_events: int = 0
     recent_preview_blocked_events: int = 0
     recent_preview_failed_events: int = 0

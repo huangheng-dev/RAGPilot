@@ -274,6 +274,7 @@ async def test_restore_document_returns_restored_document_response() -> None:
     document_id = uuid4()
     knowledge_base_id = uuid4()
     tenant_id = uuid4()
+    projection_event_id = uuid4()
 
     restored_document = SimpleNamespace(
         id=document_id,
@@ -288,10 +289,11 @@ async def test_restore_document_returns_restored_document_response() -> None:
         updated_at=now,
     )
     repository = SimpleNamespace(
-        restore_document=AsyncMock(return_value=restored_document),
+        restore_document=AsyncMock(return_value=(restored_document, projection_event_id)),
     )
+    temporal_client = SimpleNamespace(start_search_projection_workflow=AsyncMock(return_value="search-projection-1"))
 
-    service = DocumentService(document_repository=repository)
+    service = DocumentService(document_repository=repository, temporal_workflow_client=temporal_client)
 
     response = await service.restore_document(
         document_id=document_id,
@@ -305,6 +307,50 @@ async def test_restore_document_returns_restored_document_response() -> None:
         document_id=document_id,
         knowledge_base_id=knowledge_base_id,
     )
+    temporal_client.start_search_projection_workflow.assert_awaited_once_with(
+        projection_event_id=str(projection_event_id)
+    )
+
+
+@pytest.mark.anyio
+async def test_delete_document_dispatches_transactional_projection_event() -> None:
+    document_id = uuid4()
+    knowledge_base_id = uuid4()
+    projection_event_id = uuid4()
+    deleted_at = datetime.now(timezone.utc)
+    repository = SimpleNamespace(
+        soft_delete_document=AsyncMock(return_value=(document_id, deleted_at, projection_event_id)),
+    )
+    temporal_client = SimpleNamespace(start_search_projection_workflow=AsyncMock(return_value="search-projection-1"))
+    service = DocumentService(document_repository=repository, temporal_workflow_client=temporal_client)
+
+    response = await service.delete_document(document_id=document_id, knowledge_base_id=knowledge_base_id)
+
+    assert response.document_id == document_id
+    assert response.deleted_at == deleted_at
+    temporal_client.start_search_projection_workflow.assert_awaited_once_with(
+        projection_event_id=str(projection_event_id)
+    )
+
+
+@pytest.mark.anyio
+async def test_delete_document_succeeds_when_temporal_dispatch_is_temporarily_unavailable() -> None:
+    document_id = uuid4()
+    knowledge_base_id = uuid4()
+    projection_event_id = uuid4()
+    deleted_at = datetime.now(timezone.utc)
+    repository = SimpleNamespace(
+        soft_delete_document=AsyncMock(return_value=(document_id, deleted_at, projection_event_id)),
+    )
+    temporal_client = SimpleNamespace(
+        start_search_projection_workflow=AsyncMock(side_effect=RuntimeError("Temporal unavailable"))
+    )
+    service = DocumentService(document_repository=repository, temporal_workflow_client=temporal_client)
+
+    response = await service.delete_document(document_id=document_id, knowledge_base_id=knowledge_base_id)
+
+    assert response.document_id == document_id
+    assert response.deleted_at == deleted_at
 
 
 @pytest.mark.anyio

@@ -68,3 +68,18 @@ async def test_invalid_json_rpc_response_is_rejected(monkeypatch):
 
     with pytest.raises(McpProtocolError):
         await McpStreamableHttpClient(base_url="https://mcp.example").list_tools()
+
+
+@pytest.mark.anyio
+async def test_initialize_rejects_unsupported_protocol_version(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload["id"],
+            "result": {"protocolVersion": "2099-01-01", "serverInfo": {"name": "future"}},
+        })
+
+    install_mock_client(monkeypatch, handler)
+
+    with pytest.raises(McpProtocolError, match="unsupported protocol version"):
+        await McpStreamableHttpClient(base_url="https://mcp.example").initialize()

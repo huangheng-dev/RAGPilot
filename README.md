@@ -52,7 +52,7 @@ Tenant
 - document upload and source registration
 - URL-based single-page web content import
 - parsing, normalization, chunking, and embedding
-- vector and lexical indexing
+- hybrid retrieval with vector persistence, Elasticsearch BM25, and PostgreSQL fallback
 - document versioning, rebuild, and status tracking
 
 RAGPilot treats knowledge intake as a governed lifecycle:
@@ -118,15 +118,20 @@ RAGPilot/
 
 ## Runtime Stack
 
+Core runtime:
+
 - `Next.js`
 - `FastAPI`
 - `Temporal`
 - `PostgreSQL`
 - `pgvector`
-- `Elasticsearch`
 - `Redis`
 - `MinIO`
-- `OpenTelemetry`
+
+Implemented architecture baselines:
+
+- `Elasticsearch`: versioned Chunk projection, lifecycle synchronization, scoped Backfill, exact rebuild validation, atomic read/write Alias cutover, tenant-safe BM25 retrieval, PostgreSQL fallback, and projection diagnostics are active
+- `OpenTelemetry`: correlated traces, metrics, and logs across API, Worker, and Agent execution, backed by the Collector, Prometheus, and Tempo
 
 ## Integration Layer
 
@@ -134,13 +139,13 @@ RAGPilot includes active governed integration paths for:
 
 - `Ollama`
 - `vLLM`
-- `LlamaIndex` retrieval runtime lanes
-- `LangGraph` agent runtime lanes
+- `LlamaIndex` retrieval pilot lane
+- `LangGraph` workflow-recovery pilot lane
 
-RAGPilot also includes an `MCP`-compatible connector boundary for governed external tool exposure.
+RAGPilot also includes a governed Streamable HTTP `MCP` client path for connector discovery, tool mapping, and Agent invocation. The standalone MCP server package remains a reserved outbound-server boundary.
 
 All of these integrations sit behind explicit runtime selection, configuration, and governance boundaries.
-The shipped Docker API baseline includes the optional `LlamaIndex` and `LangGraph` dependencies required for governed runtime execution and readiness checks.
+The shipped Docker API baseline includes the optional `LlamaIndex` and `LangGraph` dependencies required for pilot execution and readiness checks; dependency presence does not imply production promotion.
 
 ## Repository Conventions
 
@@ -214,7 +219,8 @@ Ingress
 -> Web
 -> API
 -> Worker
--> PostgreSQL / Redis / MinIO / Elasticsearch / Temporal
+-> PostgreSQL / Redis / MinIO / Temporal
+-> Elasticsearch (lifecycle projection, atomic rebuild, BM25 recall, and diagnostics active)
 ```
 
 For Kubernetes-oriented rollout:

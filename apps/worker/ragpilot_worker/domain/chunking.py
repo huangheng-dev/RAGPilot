@@ -49,7 +49,10 @@ def normalize_text(content: bytes, *, content_type: str | None, file_name: str) 
     if normalized_content_type in JSON_CONTENT_TYPES or lower_name.endswith(".json"):
         return ParsedDocument(parser_name="json_parser", text=_normalize_json_text(content))
     if normalized_content_type in PDF_CONTENT_TYPES or lower_name.endswith(".pdf"):
-        return ParsedDocument(parser_name="pdf_parser", text=_normalize_pdf_text(content))
+        extracted = _normalize_pdf_text(content)
+        if extracted.strip():
+            return ParsedDocument(parser_name="pdf_parser", text=extracted)
+        return ParsedDocument(parser_name="pdf_ocr_parser", text=_normalize_pdf_ocr_text(content))
     if normalized_content_type in DOCX_CONTENT_TYPES or lower_name.endswith(".docx"):
         return ParsedDocument(parser_name="docx_parser", text=_normalize_docx_text(content))
     if normalized_content_type in XLSX_CONTENT_TYPES or lower_name.endswith(".xlsx"):
@@ -110,6 +113,29 @@ def _normalize_pdf_text(content: bytes) -> str:
         if normalized_page_text:
             sections.append(f"Page {page_index}\n{normalized_page_text}")
 
+    return "\n\n".join(sections).strip()
+
+
+def _normalize_pdf_ocr_text(content: bytes) -> str:
+    try:
+        import fitz
+        import pytesseract
+        from PIL import Image
+    except ImportError as error:
+        raise ValueError("Scanned PDF requires the governed OCR runtime dependencies.") from error
+
+    sections: list[str] = []
+    document = fitz.open(stream=content, filetype="pdf")
+    try:
+        for page_index, page in enumerate(document, start=1):
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+            page_text = pytesseract.image_to_string(image, lang="chi_sim+eng")
+            normalized = _normalize_multiline_text(page_text)
+            if normalized:
+                sections.append(f"Page {page_index} [OCR]\n{normalized}")
+    finally:
+        document.close()
     return "\n\n".join(sections).strip()
 
 

@@ -12,6 +12,7 @@ from ragpilot_worker.workflows.document_ingestion import (
     DocumentIngestionWorkflow,
     LegacyDocumentIngestionWorkflow,
 )
+from ragpilot_worker.workflows import document_ingestion as document_ingestion_workflow
 
 
 def build_mapping_result(payload: dict[str, int]) -> Mock:
@@ -121,6 +122,59 @@ async def test_replace_document_chunks_translates_fk_violation_into_rewrite_conf
 def test_document_ingestion_workflow_registration_keeps_legacy_temporal_name() -> None:
     assert DocumentIngestionWorkflow.__temporal_workflow_definition.name == "DocumentIngestionWorkflow"
     assert LegacyDocumentIngestionWorkflow.__temporal_workflow_definition.name == "DocumentIngestionWorkflow.run"
+
+
+@pytest.mark.anyio
+async def test_document_ingestion_workflow_hands_outbox_event_to_projection_activity(monkeypatch) -> None:
+    execute_activity = AsyncMock(
+        side_effect=[
+            {
+                "document_id": "document-1",
+                "workflow_run_id": "workflow-1",
+                "projection_event_id": "projection-event-1",
+                "status": "completed",
+            },
+            {"event_id": "projection-event-1", "status": "completed"},
+        ]
+    )
+    monkeypatch.setattr(document_ingestion_workflow.workflow, "execute_activity", execute_activity)
+
+    result = await document_ingestion_workflow.execute_document_ingestion_activity(
+        {"document_id": "document-1", "workflow_run_id": "workflow-1"}
+    )
+
+    assert execute_activity.await_count == 2
+    assert execute_activity.await_args_list[1].args[:2] == (
+        "project_document_version_to_elasticsearch",
+        {"projection_event_id": "projection-event-1"},
+    )
+    assert result["search_projection_status"] == "completed"
+
+
+@pytest.mark.anyio
+async def test_mark_ingestion_completed_creates_projection_outbox_event_in_same_commit() -> None:
+    session = AsyncMock()
+    result = Mock()
+    result.scalar_one.return_value = "projection-event-1"
+    session.execute.return_value = result
+    service = DocumentIngestionService(session)
+
+    projection_event_id = await service.mark_ingestion_completed(
+        workflow_run_id="workflow-1",
+        document_id="document-1",
+        workflow_step_id="step-1",
+        document_version_id="version-1",
+        parser_name="text",
+        chunk_count=2,
+        embedding_model="embedding-model",
+        embedding_count=2,
+    )
+
+    executed_sql = "\n".join(str(call.args[0]) for call in session.execute.await_args_list)
+    assert "INSERT INTO search_projection_outbox_events" in executed_sql
+    assert "ON CONFLICT (event_key) DO UPDATE" in executed_sql
+    assert projection_event_id == "projection-event-1"
+    assert session.commit.await_count == 1
 
 
 @pytest.mark.anyio

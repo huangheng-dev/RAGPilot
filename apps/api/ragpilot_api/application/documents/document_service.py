@@ -399,7 +399,8 @@ class DocumentService:
         if deleted_document is None:
             raise ResourceNotFoundError("Document not found.")
 
-        deleted_document_id, deleted_at = deleted_document
+        deleted_document_id, deleted_at, projection_event_id = deleted_document
+        await self._dispatch_search_projection_event(projection_event_id)
         return DocumentDeleteResponse(document_id=deleted_document_id, deleted_at=deleted_at)
 
     async def restore_document(
@@ -408,12 +409,15 @@ class DocumentService:
         document_id: UUID,
         knowledge_base_id: UUID,
     ) -> DocumentRestoreResponse:
-        restored_document = await self.document_repository.restore_document(
+        restore_result = await self.document_repository.restore_document(
             document_id=document_id,
             knowledge_base_id=knowledge_base_id,
         )
-        if restored_document is None:
+        if restore_result is None:
             raise ResourceNotFoundError("Document not found.")
+        restored_document, projection_event_id = restore_result
+        if projection_event_id is not None:
+            await self._dispatch_search_projection_event(projection_event_id)
 
         return DocumentRestoreResponse(
             document=build_document_response(restored_document),
@@ -441,11 +445,24 @@ class DocumentService:
         storage = self.document_storage or DocumentStorage()
         for storage_bucket, storage_key in candidate["assets"]:
             storage.delete_document_object(storage_bucket=storage_bucket, storage_key=storage_key)
-        await self.document_repository.permanently_delete_document(document_id=document.id)
+        projection_event_id = await self.document_repository.permanently_delete_document(document_id=document.id)
+        await self._dispatch_search_projection_event(projection_event_id)
         return DocumentPermanentDeleteResponse(
             document_id=document.id,
             permanently_deleted_at=datetime.now(timezone.utc),
         )
+
+    async def _dispatch_search_projection_event(self, projection_event_id: UUID) -> None:
+        temporal_workflow_client = self.temporal_workflow_client or TemporalWorkflowClient()
+        try:
+            await temporal_workflow_client.start_search_projection_workflow(
+                projection_event_id=str(projection_event_id),
+            )
+        except Exception:
+            # The transactional Outbox event remains pending and can be reconciled
+            # after Temporal connectivity returns. Document lifecycle writes must
+            # not be rolled back because an external dispatcher is unavailable.
+            return
 
 
 def build_document_response(

@@ -2846,6 +2846,7 @@ export default function WorkspaceConsolePage({
             preferredWorkflowPage: initialLocationStateRef.current?.workflowPage
           }
         );
+        writeCurrentTenantId(tenant.id);
     } catch (error) {
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.contextSwitchFailed")));
       setStatusMessage(t("workspace.status.contextSwitchFailed"));

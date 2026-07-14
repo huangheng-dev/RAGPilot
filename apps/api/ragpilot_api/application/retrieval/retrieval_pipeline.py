@@ -9,6 +9,25 @@ LEXICAL_WEIGHT = 0.35
 HYBRID_OVERLAP_BONUS = 0.05
 MAX_QUERY_TERMS = 24
 DEFAULT_RERANK_STRATEGY = "native_term_density_v1"
+DEFAULT_SCORE_NORMALIZATION_STRATEGY = "rank_percentile_v1"
+
+
+def normalize_ranked_scores(rows: list[dict[str, Any]], *, score_key: str) -> dict[object, float]:
+    """Return bounded rank-percentile scores so BM25 scales remain query-independent."""
+    ranked = sorted(
+        rows,
+        key=lambda row: float(row.get(score_key) or 0.0),
+        reverse=True,
+    )
+    count = len(ranked)
+    if count == 0:
+        return {}
+    if count == 1:
+        return {ranked[0]["document_chunk_id"]: 1.0}
+    return {
+        row["document_chunk_id"]: 1.0 - (rank / count)
+        for rank, row in enumerate(ranked)
+    }
 
 
 def normalize_query_text(query_text: str) -> str:
@@ -30,8 +49,13 @@ def build_query_terms(query_text: str) -> list[str]:
 
     for span in re.findall(r"[\u4e00-\u9fff]+", normalized):
         append_term(span)
+        for prefix in ("什么是", "如何", "怎么", "请问"):
+            if span.startswith(prefix):
+                append_term(span[len(prefix) :])
         max_ngram_length = min(len(span), 8)
-        for ngram_length in range(max_ngram_length, 1, -1):
+        # Preserve short CJK concepts first. Longest-first exhausted the bounded
+        # term budget and made PostgreSQL fallback miss phrases such as 重大故障.
+        for ngram_length in range(2, max_ngram_length + 1):
             for index in range(0, len(span) - ngram_length + 1):
                 append_term(span[index : index + ngram_length])
                 if len(deduplicated_terms) >= MAX_QUERY_TERMS:
@@ -98,6 +122,7 @@ def merge_retrieval_results(
     vector_weight: float = VECTOR_WEIGHT,
     lexical_weight: float = LEXICAL_WEIGHT,
     hybrid_overlap_bonus: float = HYBRID_OVERLAP_BONUS,
+    score_normalization_strategy: str = DEFAULT_SCORE_NORMALIZATION_STRATEGY,
 ) -> list[dict[str, Any]]:
     if retrieval_mode == "vector":
         return build_vector_results(vector_rows=vector_rows, top_k=top_k)
@@ -105,6 +130,7 @@ def merge_retrieval_results(
         return build_lexical_results(lexical_rows=lexical_rows, top_k=top_k)
 
     lexical_max_score = max((max(float(row.get("lexical_score") or 0.0), 0.0) for row in lexical_rows), default=0.0)
+    lexical_rank_scores = normalize_ranked_scores(lexical_rows, score_key="lexical_score")
     lexical_rows_present = lexical_max_score > 0.0 or len(lexical_rows) > 0
     merged_by_chunk_id: dict[object, dict[str, Any]] = {}
 
@@ -125,7 +151,11 @@ def merge_retrieval_results(
     for row in lexical_rows:
         chunk_id = row["document_chunk_id"]
         lexical_score = max(float(row.get("lexical_score") or 0.0), 0.0)
-        lexical_normalized_score = (lexical_score / lexical_max_score) if lexical_max_score > 0 else 0.0
+        lexical_normalized_score = (
+            lexical_rank_scores.get(chunk_id, 0.0)
+            if score_normalization_strategy == DEFAULT_SCORE_NORMALIZATION_STRATEGY
+            else (lexical_score / lexical_max_score) if lexical_max_score > 0 else 0.0
+        )
 
         if chunk_id in merged_by_chunk_id:
             existing = merged_by_chunk_id[chunk_id]

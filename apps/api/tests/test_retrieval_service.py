@@ -110,7 +110,7 @@ async def test_retrieve_chunks_merges_vector_and_lexical_results_into_hybrid_ord
     assert response.results[1].retrieval_method == "lexical"
     assert response.results[1].vector_score is None
     assert response.results[1].lexical_score == 2.0
-    assert response.results[1].lexical_normalized_score == pytest.approx(2.0 / 3.0)
+    assert response.results[1].lexical_normalized_score == pytest.approx(0.5)
     repository.search_vector_document_chunks.assert_awaited_once()
     repository.search_lexical_document_chunks.assert_awaited_once()
 

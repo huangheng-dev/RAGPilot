@@ -745,6 +745,7 @@ class RetrievalService:
             rerank_applied=retrieval_outcome.rerank_applied,
             rerank_strategy=retrieval_outcome.rerank_strategy,
             rerank_window=retrieval_outcome.rerank_window,
+            rerank_metadata=retrieval_outcome.rerank_metadata,
             result_count=len(results),
             retrieval_method_breakdown=retrieval_method_breakdown,
             top_result_chunk_id=top_result.document_chunk_id if top_result is not None else None,
@@ -767,6 +768,7 @@ class RetrievalService:
             rerank_applied=retrieval_outcome.rerank_applied,
             rerank_strategy=retrieval_outcome.rerank_strategy,
             rerank_window=retrieval_outcome.rerank_window,
+            rerank_metadata=retrieval_outcome.rerank_metadata,
             results=self._build_result_rows(retrieval_outcome.results),
         )
 

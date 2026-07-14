@@ -7,9 +7,12 @@ from ragpilot_worker.domain.chunking import build_text_chunks, normalize_text
 from ragpilot_worker.infrastructure.database import async_session_factory
 from ragpilot_worker.infrastructure.embeddings import build_embedding_provider
 from ragpilot_worker.infrastructure.object_storage import DocumentObjectStorage
+from ragpilot_worker.infrastructure.observability import traced_activity
+from opentelemetry import trace
 
 
 @activity.defn(name="ingest_document")
+@traced_activity("worker.document_ingestion")
 async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
     workflow_run_id = payload["workflow_run_id"]
     document_id = payload["document_id"]
@@ -54,6 +57,7 @@ async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
         )
         if not chunks:
             raise ValueError("Document ingestion produced no chunks.")
+        trace.get_current_span().set_attribute("ragpilot.ingestion.chunk_count", len(chunks))
 
         async with async_session_factory() as session:
             service = DocumentIngestionService(session)
@@ -75,6 +79,7 @@ async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
             )
 
         embeddings = await embedding_provider.embed_texts([chunk["content"] for chunk in inserted_chunks])
+        trace.get_current_span().set_attribute("ragpilot.embedding.vector_count", len(embeddings))
         if len(embeddings) != len(inserted_chunks):
             raise ValueError("Embedding generation did not return one vector per chunk.")
 
@@ -95,7 +100,7 @@ async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
 
         async with async_session_factory() as session:
             service = DocumentIngestionService(session)
-            await service.mark_ingestion_completed(
+            projection_event_id = await service.mark_ingestion_completed(
                 workflow_run_id=workflow_run_id,
                 document_id=document_id,
                 workflow_step_id=workflow_step_id,
@@ -130,5 +135,6 @@ async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
         "document_id": document_id,
         "workflow_run_id": workflow_run_id,
         "workflow_step_id": workflow_step_id or "",
+        "projection_event_id": projection_event_id,
         "status": "completed",
     }

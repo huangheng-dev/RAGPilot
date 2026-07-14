@@ -197,6 +197,23 @@ class AgentExecution(Base, TimestampMixin):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AgentApprovalRequest(Base, TimestampMixin):
+    __tablename__ = "agent_approval_requests"
+    __table_args__ = (UniqueConstraint("resume_token", name="uq_agent_approval_requests_resume_token"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    agent_execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_executions.id"))
+    tool_registration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tool_registrations.id"))
+    approval_status: Mapped[str] = mapped_column(String(40), server_default=text("'pending'"))
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    resume_token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ModelEndpoint(Base, TimestampMixin):
     __tablename__ = "model_endpoints"
     __table_args__ = (UniqueConstraint("slug", name="uq_model_endpoints_slug"),)
@@ -292,7 +309,25 @@ class McpConnector(Base, TimestampMixin):
     credential_key_hint: Mapped[str | None] = mapped_column(String(160))
     notes: Mapped[str | None] = mapped_column(Text)
     is_enabled: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    governance_status: Mapped[str] = mapped_column(String(40), server_default=text("'approved'"))
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RuntimeCredential(Base, TimestampMixin):
+    __tablename__ = "runtime_credentials"
+    __table_args__ = (UniqueConstraint("resource_type", "resource_id", name="uq_runtime_credentials_resource"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    resource_type: Mapped[str] = mapped_column(String(80))
+    resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    ciphertext: Mapped[str] = mapped_column(Text)
+    nonce: Mapped[str] = mapped_column(String(80))
+    key_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    secret_hint: Mapped[str] = mapped_column(String(40))
+    rotated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    rotated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 
 class RuntimeGovernanceEvent(Base):
@@ -375,6 +410,26 @@ class DocumentChunkEmbedding(Base):
     embedding_dimension: Mapped[int] = mapped_column(Integer)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+
+class SearchProjectionOutboxEvent(Base, TimestampMixin):
+    __tablename__ = "search_projection_outbox_events"
+    __table_args__ = (UniqueConstraint("event_key", name="uq_search_projection_outbox_event_key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    aggregate_type: Mapped[str] = mapped_column(String(80))
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    document_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    event_type: Mapped[str] = mapped_column(String(80))
+    event_key: Mapped[str] = mapped_column(String(320))
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    event_status: Mapped[str] = mapped_column(String(40), server_default=text("'pending'"))
+    attempt_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
 
 
 class Conversation(Base, TimestampMixin):

@@ -298,7 +298,7 @@ class DocumentIngestionService:
         chunk_count: int,
         embedding_model: str,
         embedding_count: int,
-    ) -> None:
+    ) -> str:
         now = datetime.now(timezone.utc)
         await self.session.execute(
             text(
@@ -382,7 +382,67 @@ class DocumentIngestionService:
                 "embedding_model": embedding_model,
             },
         )
+        projection_event_result = await self.session.execute(
+            text(
+                """
+                INSERT INTO search_projection_outbox_events (
+                    id,
+                    tenant_id,
+                    aggregate_type,
+                    aggregate_id,
+                    document_id,
+                    document_version_id,
+                    event_type,
+                    event_key,
+                    payload_json,
+                    event_status,
+                    attempt_count,
+                    available_at,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    gen_random_uuid(),
+                    document_versions.tenant_id,
+                    'document_version',
+                    document_versions.id,
+                    document_versions.document_id,
+                    document_versions.id,
+                    'document_version_upsert',
+                    'document-version:' || document_versions.id::text || ':upsert:' || document_versions.content_hash,
+                    jsonb_build_object(
+                        'workflow_run_id', CAST(:workflow_run_id AS text),
+                        'document_id', document_versions.document_id::text,
+                        'document_version_id', document_versions.id::text,
+                        'content_hash', document_versions.content_hash
+                    ),
+                    'pending',
+                    0,
+                    :available_at,
+                    :created_at,
+                    :updated_at
+                FROM document_versions
+                WHERE document_versions.id = :document_version_id
+                  AND document_versions.document_id = :document_id
+                  AND document_versions.ingestion_status = 'completed'
+                ON CONFLICT (event_key) DO UPDATE
+                SET payload_json = EXCLUDED.payload_json,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id
+                """
+            ),
+            {
+                "workflow_run_id": workflow_run_id,
+                "document_id": document_id,
+                "document_version_id": document_version_id,
+                "available_at": now,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        projection_event_id = projection_event_result.scalar_one()
         await self.session.commit()
+        return str(projection_event_id)
 
     async def mark_ingestion_failed(
         self,

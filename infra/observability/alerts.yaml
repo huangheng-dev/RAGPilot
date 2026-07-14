@@ -1,0 +1,61 @@
+groups:
+  - name: ragpilot-runtime
+    rules:
+      - alert: RagPilotApiErrorRateHigh
+        expr: sum(rate(ragpilot_http_server_requests_total{http_response_status_code=~"5.."}[5m])) / clamp_min(sum(rate(ragpilot_http_server_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: RagPilot API 5xx rate exceeds 5%
+          owner: platform-oncall
+          runbook: docs/runbooks/production-reliability.md#api-errors
+      - alert: RagPilotOperationErrors
+        expr: sum(increase(ragpilot_operation_errors_total[10m])) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Repeated governed operation failures detected
+      - alert: RagPilotProjectionLagHigh
+        expr: max(ragpilot_projection_lag_seconds_sum / clamp_min(ragpilot_projection_lag_seconds_count, 1)) > 300
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: Search projection is more than five minutes behind
+      - alert: RagPilotProjectionFailures
+        expr: max(ragpilot_projection_failed_events_sum / clamp_min(ragpilot_projection_failed_events_count, 1)) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Search projection has failed outbox events
+      - alert: RagPilotWorkerRetriesHigh
+        expr: sum(increase(ragpilot_worker_activity_retries_total[15m])) > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Worker activity retry volume is elevated
+          owner: workflow-oncall
+          runbook: docs/runbooks/production-reliability.md#worker-retries
+      - alert: RagPilotApiLatencySloBurn
+        expr: histogram_quantile(0.95, sum by (le) (rate(ragpilot_http_server_request_duration_seconds_bucket[10m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: API p95 latency exceeds the 2 second interactive SLO
+          owner: platform-oncall
+          runbook: docs/runbooks/production-reliability.md#latency
+      - alert: RagPilotModelFailureRateHigh
+        expr: sum(rate(ragpilot_operation_errors_total{operation=~"model.*"}[10m])) > 0.05
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: Model runtime dependency failures exceed the error budget
+          owner: ai-runtime-oncall
+          runbook: docs/runbooks/production-reliability.md#model-runtime
+      - alert: RagPilotApiCapacityHigh
+        expr: process_resident_memory_bytes{job="ragpilot-otel"} > 805306368
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: API memory exceeds the 768 MiB capacity threshold
+          owner: platform-oncall
+          runbook: docs/runbooks/production-reliability.md#capacity

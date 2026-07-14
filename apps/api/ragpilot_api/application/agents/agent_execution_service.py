@@ -1,7 +1,8 @@
 from __future__ import annotations
+from ragpilot_api.infrastructure.observability import traced
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,12 @@ from ragpilot_api.application.agents.agent_runtime_engines import (
     build_agent_runtime_engine,
     normalize_agent_runtime_engine_name,
 )
+from ragpilot_api.application.agents.agent_execution_validation import (
+    classify_agent_failure,
+    validate_agent_execution_input,
+    validate_agent_result_payload,
+)
+from ragpilot_api.application.agents.agent_evaluation import evaluate_agent_executions
 from ragpilot_api.application.model_gateway.model_gateway import ModelGateway
 from ragpilot_api.application.model_gateway.runtime_binding_resolver import RuntimeBindingResolver
 from ragpilot_api.application.retrieval.retrieval_engines import normalize_retrieval_engine_name
@@ -18,12 +25,16 @@ from ragpilot_api.application.tool_runtime.tool_runtime_service import ToolRunti
 from ragpilot_api.contracts.http.agent_execution_contracts import (
     AgentExecutionCreateRequest,
     AgentExecutionMetricsResponse,
+    AgentExecutionEvaluationResponse,
+    AgentApprovalDecisionRequest,
+    AgentApprovalResponse,
     AgentExecutionOutputResponse,
     AgentExecutionResponse,
     AgentExecutionTaskStateResponse,
 )
 from ragpilot_api.infrastructure.database.models import AgentDefinition, AgentExecution
 from ragpilot_api.infrastructure.database.repositories.agent_execution_repository import AgentExecutionRepository
+from ragpilot_api.infrastructure.database.repositories.agent_approval_repository import AgentApprovalRepository
 from ragpilot_api.infrastructure.database.repositories.agent_repository import AgentRepository
 from ragpilot_api.infrastructure.database.repositories.conversation_repository import ConversationRepository
 from ragpilot_api.infrastructure.database.repositories.document_repository import DocumentRepository
@@ -36,6 +47,7 @@ from ragpilot_api.infrastructure.database.repositories.workspace_repository impo
 from ragpilot_api.presentation.http.request_actor import RequestActor
 from ragpilot_api.shared.settings import Settings
 from ragpilot_api.infrastructure.workflows.temporal_client import TemporalWorkflowClient
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
 
 
 @dataclass(frozen=True)
@@ -96,6 +108,8 @@ class AgentExecutionService:
         model_gateway: ModelGateway | None = None,
         tool_runtime_service: ToolRuntimeService | None = None,
         temporal_workflow_client: TemporalWorkflowClient | None = None,
+        agent_approval_repository: AgentApprovalRepository | None = None,
+        runtime_credential_service: RuntimeCredentialService | None = None,
     ) -> None:
         self.agent_repository = agent_repository
         self.agent_execution_repository = agent_execution_repository
@@ -110,6 +124,7 @@ class AgentExecutionService:
         self.model_gateway = model_gateway or (ModelGateway(settings) if settings is not None else None)
         self.tool_runtime_service = tool_runtime_service
         self.temporal_workflow_client = temporal_workflow_client
+        self.agent_approval_repository = agent_approval_repository
         self.agent_runtime_engine_name = normalize_agent_runtime_engine_name(
             getattr(settings, "agent_runtime_engine", "native") if settings is not None else "native"
         )
@@ -118,18 +133,21 @@ class AgentExecutionService:
             engine_name=self.agent_runtime_engine_name,
         )
         self.runtime_binding_resolver = (
-            RuntimeBindingResolver(model_endpoint_repository, settings)
+            RuntimeBindingResolver(model_endpoint_repository, settings, runtime_credential_service)
             if model_endpoint_repository is not None and settings is not None
             else None
         )
 
+    @traced("agent.execution.create")
     async def create_agent_execution(
         self,
         request: AgentExecutionCreateRequest,
         *,
         actor: RequestActor,
         existing_execution_id: UUID | None = None,
+        approved_tool_registration_ids: set[UUID] | None = None,
     ) -> AgentExecutionResponse:
+        normalized_execution_input = validate_agent_execution_input(request.execution_input)
         agent_definition = await self.agent_repository.get_agent_definition(
             agent_definition_id=request.agent_definition_id,
             tenant_id=request.tenant_id,
@@ -149,8 +167,9 @@ class AgentExecutionService:
                 tenant_id=request.tenant_id,
                 workspace_id=resolved_scope.workspace_id,
                 knowledge_base_id=resolved_scope.knowledge_base_id,
-                execution_input=request.execution_input.strip() if request.execution_input else None,
+                execution_input=normalized_execution_input,
                 actor=actor,
+                approved_tool_registration_ids=approved_tool_registration_ids,
             )
             if self.tool_runtime_service is not None
             else None
@@ -176,9 +195,41 @@ class AgentExecutionService:
                 knowledge_base_scope=agent_definition.knowledge_base_scope,
                 model_endpoint_id=agent_definition.model_endpoint_id,
                 tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
-                execution_input=request.execution_input.strip() if request.execution_input else None,
+                execution_input=normalized_execution_input,
                 launched_by_user_id=actor.user_id,
             )
+
+        approval_trace = None
+        if tool_runtime_summary is not None and self.agent_approval_repository is not None:
+            for trace in tool_runtime_summary.model_dump().get("traces", []):
+                if trace.get("governance_issue") == "approval_required":
+                    approval_trace = trace
+                    break
+        if approval_trace is not None:
+            approval = await self.agent_approval_repository.create_request(
+                tenant_id=request.tenant_id,
+                agent_execution_id=agent_execution.id,
+                tool_registration_id=UUID(str(approval_trace["tool_registration_id"])),
+                requested_by_user_id=actor.user_id,
+                expires_at=datetime.now(timezone.utc) + timedelta(
+                    hours=int(getattr(self.settings, "agent_approval_timeout_hours", 24))
+                ),
+            )
+            agent_execution = await self.agent_execution_repository.mark_agent_execution_awaiting_approval(
+                agent_execution=agent_execution,
+                result_payload_json={
+                    "approval_request": {
+                        "id": str(approval.id),
+                        "tool_registration_id": str(approval.tool_registration_id),
+                        "status": approval.approval_status,
+                        "resume_token": str(approval.resume_token),
+                        "expires_at": approval.expires_at.isoformat(),
+                        "timeout_seconds": int(getattr(self.settings, "agent_approval_timeout_hours", 24)) * 3600,
+                    },
+                    "tool_runtime": tool_runtime_summary.model_dump(mode="json"),
+                },
+            )
+            return build_agent_execution_response(agent_execution)
 
         agent_execution = await self.agent_execution_repository.mark_agent_execution_running(
             agent_execution=agent_execution
@@ -189,7 +240,7 @@ class AgentExecutionService:
                 service=self,
                 agent_definition=agent_definition,
                 resolved_scope=resolved_scope,
-                execution_input=request.execution_input.strip() if request.execution_input else None,
+                execution_input=normalized_execution_input,
                 runtime_binding=runtime_binding,
                 tool_runtime_summary=tool_runtime_summary,
             )
@@ -239,12 +290,14 @@ class AgentExecutionService:
                 result_payload_json,
                 execution_mode=agent_definition.agent_mode,
             )
+            result_payload_json = validate_agent_result_payload(result_payload_json)
             agent_execution = await self.agent_execution_repository.complete_agent_execution(
                 agent_execution=agent_execution,
                 summary=summary,
                 result_payload_json=sanitize_json_value(result_payload_json),
             )
         except Exception as error:
+            failure = classify_agent_failure(error)
             agent_execution = await self.agent_execution_repository.fail_agent_execution(
                 agent_execution=agent_execution,
                 error_message=str(error),
@@ -254,6 +307,10 @@ class AgentExecutionService:
                     "scope_issue": resolved_scope.scope_issue,
                     "agent_runtime_engine": self.agent_runtime_engine_name,
                     "configured_agent_runtime_engine": self.agent_runtime_engine_name,
+                    "failure_classification": {
+                        "category": failure.category,
+                        "retryable": failure.retryable,
+                    },
                     "agent_runtime_resolution": {
                         "configured_engine": self.agent_runtime_engine_name,
                         "executed_engine": self.agent_runtime_engine_name,
@@ -281,6 +338,7 @@ class AgentExecutionService:
         if agent_definition is None:
             raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
         resolved_scope = await self._resolve_agent_scope(agent_definition)
+        normalized_execution_input = validate_agent_execution_input(request.execution_input)
         execution = await self.agent_execution_repository.create_agent_execution(
             tenant_id=request.tenant_id,
             agent_definition_id=request.agent_definition_id,
@@ -292,7 +350,7 @@ class AgentExecutionService:
             knowledge_base_scope=agent_definition.knowledge_base_scope,
             model_endpoint_id=agent_definition.model_endpoint_id,
             tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
-            execution_input=request.execution_input.strip() if request.execution_input else None,
+            execution_input=normalized_execution_input,
             launched_by_user_id=actor.user_id,
             retry_of_execution_id=retry_of_execution_id,
         )
@@ -305,15 +363,96 @@ class AgentExecutionService:
         )
         return build_agent_execution_response(execution)
 
+    async def evaluate_agent_execution_lane(
+        self,
+        *,
+        tenant_id: UUID,
+        agent_definition_id: UUID | None = None,
+        execution_mode: str | None = None,
+        minimum_samples: int = 20,
+    ) -> AgentExecutionEvaluationResponse:
+        executions = await self.agent_execution_repository.list_agent_executions_for_metrics(
+            tenant_id=tenant_id,
+            agent_definition_id=agent_definition_id,
+            execution_mode=execution_mode,
+            execution_status=None,
+        )
+        report = evaluate_agent_executions(executions, minimum_samples=minimum_samples)
+        return AgentExecutionEvaluationResponse(
+            sample_size=report.sample_size,
+            completion_rate=report.completion_rate,
+            failure_rate=report.failure_rate,
+            cancellation_rate=report.cancellation_rate,
+            fallback_rate=report.fallback_rate,
+            approval_block_rate=report.approval_block_rate,
+            promotion_ready=report.promotion_ready,
+            failed_gates=list(report.failed_gates),
+        )
+
+    async def list_agent_approval_requests(self, *, execution_id: UUID, tenant_id: UUID) -> list[AgentApprovalResponse]:
+        if self.agent_approval_repository is None:
+            return []
+        requests = await self.agent_approval_repository.list_for_execution(
+            agent_execution_id=execution_id, tenant_id=tenant_id,
+        )
+        return [AgentApprovalResponse.model_validate(item, from_attributes=True) for item in requests]
+
+    @traced("approval.agent_execution.decision")
+    async def decide_agent_approval(
+        self, *, approval_request_id: UUID, request: AgentApprovalDecisionRequest, actor: RequestActor,
+    ) -> AgentApprovalResponse:
+        if self.agent_approval_repository is None or actor.user_id is None:
+            raise RuntimeError("Agent approval persistence is not configured.")
+        approval = await self.agent_approval_repository.get(
+            approval_request_id=approval_request_id, tenant_id=request.tenant_id,
+        )
+        if approval is None:
+            raise ResourceNotFoundError("Agent approval request not found in the current tenant scope.")
+        if approval.resume_token != request.resume_token:
+            raise RuntimeError("Agent approval resume token does not match.")
+        if approval.approval_status != "pending":
+            raise RuntimeError("Agent approval request has already been decided.")
+        if approval.expires_at <= datetime.now(timezone.utc):
+            await self.agent_approval_repository.decide(
+                request=approval, status="expired", actor_user_id=actor.user_id,
+                reason="Approval request expired before decision.",
+            )
+            raise RuntimeError("Agent approval request has expired.")
+        execution = await self.agent_execution_repository.get_agent_execution(
+            agent_execution_id=approval.agent_execution_id, tenant_id=request.tenant_id,
+        )
+        if execution is None or execution.execution_status != "awaiting_approval":
+            raise RuntimeError("Agent execution is not waiting for this approval.")
+        approval = await self.agent_approval_repository.decide(
+            request=approval, status=request.decision, actor_user_id=actor.user_id, reason=request.reason,
+        )
+        if execution.temporal_workflow_id and self.temporal_workflow_client is not None:
+            await self.temporal_workflow_client.signal_agent_approval(
+                temporal_workflow_id=execution.temporal_workflow_id,
+                decision=request.decision,
+                reason=request.reason,
+            )
+        return AgentApprovalResponse.model_validate(approval, from_attributes=True)
+
+    @traced("agent.execution.cancel")
     async def cancel_agent_execution(self, *, execution_id: UUID, tenant_id: UUID) -> AgentExecutionResponse:
         execution = await self.agent_execution_repository.get_agent_execution(
             agent_execution_id=execution_id, tenant_id=tenant_id,
         )
         if execution is None:
             raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
-        if execution.execution_status not in {"queued", "running"}:
+        if execution.execution_status not in {"queued", "running", "awaiting_approval"}:
             return build_agent_execution_response(execution)
         await self.agent_execution_repository.request_agent_execution_cancellation(agent_execution=execution)
+        if execution.execution_status == "awaiting_approval" and self.agent_approval_repository is not None:
+            for approval in await self.agent_approval_repository.list_for_execution(
+                agent_execution_id=execution.id, tenant_id=tenant_id,
+            ):
+                if approval.approval_status == "pending":
+                    await self.agent_approval_repository.decide(
+                        request=approval, status="cancelled", actor_user_id=None,
+                        reason="Agent execution was cancelled.",
+                    )
         if execution.temporal_workflow_id and self.temporal_workflow_client is not None:
             await self.temporal_workflow_client.cancel_workflow(
                 temporal_workflow_id=execution.temporal_workflow_id,
@@ -632,6 +771,9 @@ class AgentExecutionService:
             total_executions=len(agent_executions),
             queued_executions=sum(1 for item in agent_executions if item.execution_status == "queued"),
             running_executions=sum(1 for item in agent_executions if item.execution_status == "running"),
+            awaiting_approval_executions=sum(
+                1 for item in agent_executions if item.execution_status == "awaiting_approval"
+            ),
             completed_executions=sum(1 for item in agent_executions if item.execution_status == "completed"),
             failed_executions=sum(1 for item in agent_executions if item.execution_status == "failed"),
             latest_execution_at=latest_execution_at,
@@ -709,6 +851,7 @@ class AgentExecutionService:
             tool_runtime_summary=tool_runtime_summary,
         )
 
+    @traced("agent.step.grounded_chat")
     async def _build_grounded_chat_result(
         self,
         *,
@@ -734,6 +877,7 @@ class AgentExecutionService:
             or "Prepare a grounded overview for the current knowledge base scope."
         )
         answer_preview = None
+        generation = None
         retrieval_outcome = None
         retrieval_results: list[dict] = []
         if self.retrieval_repository is not None and self.settings is not None and self.model_gateway is not None:
@@ -783,6 +927,7 @@ class AgentExecutionService:
             "conversation_metrics": conversation_metrics,
             "document_metrics": document_metrics,
             "answer_preview": answer_preview,
+            "model_usage": generation.usage_json if generation is not None else None,
             "retrieval_result_count": len(retrieval_results),
             "retrieval_results": [
                 {
@@ -1006,6 +1151,8 @@ def build_agent_execution_task_state(
         stage_key = "queued_for_execution"
     elif agent_execution.execution_status == "running":
         stage_key = "running_execution"
+    elif agent_execution.execution_status == "awaiting_approval":
+        stage_key = "waiting_for_approval"
     elif resolved_lane == "grounded_chat" and isinstance(payload.get("answer_preview"), str) and payload.get("answer_preview"):
         stage_key = "grounded_answer_ready"
     elif resolved_lane == "document_intake" and isinstance(payload.get("document_metrics"), dict):

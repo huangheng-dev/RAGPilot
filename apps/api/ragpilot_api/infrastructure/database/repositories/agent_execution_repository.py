@@ -57,6 +57,15 @@ class AgentExecutionRepository:
         await self.session.refresh(agent_execution)
         return agent_execution
 
+    async def mark_agent_execution_awaiting_approval(self, *, agent_execution: AgentExecution,
+                                                      result_payload_json: dict) -> AgentExecution:
+        agent_execution.execution_status = "awaiting_approval"
+        agent_execution.result_payload_json = result_payload_json
+        agent_execution.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(agent_execution)
+        return agent_execution
+
     async def get_agent_execution(self, *, agent_execution_id: UUID, tenant_id: UUID) -> AgentExecution | None:
         return await self.session.scalar(
             select(AgentExecution).where(

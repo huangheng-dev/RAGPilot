@@ -25,6 +25,7 @@ Thumbs.db
 data/
 tmp/
 logs/
+backups/
 .logs/
 output/
 work/

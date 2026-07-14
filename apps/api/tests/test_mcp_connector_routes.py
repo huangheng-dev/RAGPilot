@@ -243,7 +243,7 @@ def test_mcp_connector_governance_action_route_records_runtime_governance_event(
     captured: dict[str, object] = {}
 
     class FakeMcpConnectorRegistryService:
-        async def apply_mcp_connector_governance_action(self, *, mcp_connector_id, action_type):
+        async def apply_mcp_connector_governance_action(self, *, mcp_connector_id, action_type, actor_user_id=None):
             return {
                 "action_type": action_type,
                 "summary": "Connector disabled until runtime governance follow-up is complete.",

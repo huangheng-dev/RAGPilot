@@ -184,3 +184,37 @@ async def test_langgraph_pilot_agent_runtime_falls_back_to_native_for_other_mode
     assert payload["agent_runtime_resolution"]["configured_engine"] == "langgraph_pilot"
     assert payload["agent_runtime_resolution"]["executed_engine"] == "native"
     assert payload["agent_runtime_resolution"]["fallback_applied"] is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("metrics", "expected_branch"),
+    [
+        ({"failed_documents": 2, "active_documents": 3}, "recover_failed"),
+        ({"failed_documents": 0, "active_documents": 3}, "review_processing"),
+        ({"failed_documents": 0, "active_documents": 0}, "release_ready"),
+    ],
+)
+async def test_langgraph_document_intake_uses_governed_branch(metrics, expected_branch) -> None:
+    engine = LangGraphPilotAgentRuntimeEngine()
+    service = SimpleNamespace(
+        _build_document_intake_result=AsyncMock(return_value=(
+            "Document intake graph completed.",
+            {"execution_lane": "document_intake", "document_metrics": metrics},
+        )),
+    )
+
+    summary, payload = await engine.execute(
+        service=service,
+        agent_definition=SimpleNamespace(agent_mode="document_intake"),
+        resolved_scope=SimpleNamespace(knowledge_base_id="kb-1"),
+        execution_input="Review document intake.",
+        runtime_binding=None,
+        tool_runtime_summary=None,
+    )
+
+    assert summary == "Document intake graph completed."
+    assert payload["agent_runtime_engine"] == "langgraph_pilot"
+    assert payload["agent_runtime_resolution"]["fallback_applied"] is False
+    assert payload["agent_runtime_graph"]["workflow"] == "document_intake"
+    assert payload["agent_runtime_graph"]["selected_branch"] == expected_branch

@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class WorkerSettings(BaseSettings):
+    environment: str = "development"
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "ragpilot-ingestion"
@@ -26,6 +27,13 @@ class WorkerSettings(BaseSettings):
     embedding_api_base_url: str | None = None
     embedding_api_key: str | None = None
     embedding_request_timeout_seconds: int = 60
+    elasticsearch_projection_enabled: bool = False
+    elasticsearch_url: str = "http://elasticsearch:9200"
+    elasticsearch_request_timeout_seconds: int = 30
+    elasticsearch_index_prefix: str = "ragpilot-document-chunks"
+    elasticsearch_index_version: int = 1
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

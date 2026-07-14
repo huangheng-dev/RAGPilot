@@ -49,6 +49,7 @@ class RetrievalResponse(BaseModel):
     rerank_applied: bool = False
     rerank_strategy: str | None = None
     rerank_window: int | None = None
+    rerank_metadata: dict = Field(default_factory=dict)
     results: list[RetrievalResultChunkResponse]
 
 
@@ -63,6 +64,7 @@ class RetrievalEngineDiagnosticsResponse(BaseModel):
     rerank_applied: bool = False
     rerank_strategy: str | None = None
     rerank_window: int | None = None
+    rerank_metadata: dict = Field(default_factory=dict)
     result_count: int
     retrieval_method_breakdown: dict[str, int]
     top_result_chunk_id: UUID | None = None
