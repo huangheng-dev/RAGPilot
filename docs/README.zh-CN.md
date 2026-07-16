@@ -1,174 +1,63 @@
-# RAGPilot 文档索引
+# RAGPilot 技术文档
 
 语言：[English](./README.md) | 简体中文
 
-## 目的
+本目录存放随 RAGPilot 代码版本化维护的公开技术文档。根目录 [README](../README.zh-CN.md) 负责介绍产品；这里分别说明已验证行为、长期架构、运营流程和优先演进方向，避免形成互相竞争的事实来源。除已有中文入口外，当前链接的技术与治理正文以英文版本为权威来源；中文标签用于导航，不代表目标文档已经完成全文翻译。
 
-这个索引用于定义 RAGPilot 稳定的项目文档结构，并为贡献者和运维人员提供随代码版本化维护的权威文档入口。
+## 文档权威边界
 
-目标是：
+| 文档 | 负责内容 | 不负责内容 |
+| --- | --- | --- |
+| [项目现状](./product/project-snapshot.md) | 已验证产品行为和当前范围 | 未来优先级或实现历史 |
+| [项目蓝图](./product/project-blueprint.md) | 长期产品原则和目标架构 | 当前完成状态 |
+| [路线图](./planning/roadmap.md) | 工程演进优先级 | 当前能力事实 |
+| [系统概览](./architecture/system-overview.md) | 已落地运行边界和链路 | 产品待办 |
+| [API 概览](./api/api-outline.md) | 当前 HTTP 契约分组 | 推测性接口 |
+| [平台数据模型](./architecture/platform-data-model.md) | 当前持久化聚合与关系 | 候选数据表 |
+| [更新记录](../CHANGELOG.md) | 发布历史和重要变更 | 架构权威定义 |
 
-- 保持 Markdown 文件组织清晰
-- 保持文件夹名称稳定
-- 让新增文档有明确归属
-- 防止产品方向和实现说明分散
+发布验证会将接口和数据表清单与 FastAPI、SQLAlchemy 契约自动核对。
 
-文档权威边界保持精简：
+## 目录说明
 
-- `product/project-blueprint.md` 负责目标架构和长期边界
-- `product/project-snapshot.md` 负责当前已实现事实
-- `planning/roadmap.md` 负责尚未完成的工作
+| 目录 | 内容 |
+| --- | --- |
+| `product/` | 产品定位、已验证范围和长期蓝图 |
+| `architecture/` | 系统拓扑、数据模型、仓库结构和命名规则 |
+| `api/` | 面向集成的 HTTP 契约摘要 |
+| `planning/` | 当前工程演进与推进顺序 |
+| `runbooks/` | 本地开发、部署验证、运行维护和故障排查 |
 
-发布规则：
+敏感或组织专属材料只能放入 Git 忽略的 `docs/internal/` 或 `docs/private/` 目录。
 
-- 根目录 Markdown 文件提供项目概览、贡献、安全和发布记录入口
-- `docs/` 是随代码一同版本化和评审的公开技术文档层
-- 敏感或组织专属内容只能放入 Git 忽略的 `docs/internal/` 或 `docs/private/` 目录
+## 阅读路径
 
-## 文件夹结构
+快速了解项目：
 
-```text
-docs/
-  api/
-  architecture/
-  planning/
-  product/
-  runbooks/
-```
+1. [根目录 README](../README.zh-CN.md)
+2. [项目现状](./product/project-snapshot.md)
+3. [系统概览](./architecture/system-overview.md)
 
-## 当前文档集合
+架构与扩展开发：
 
-### `docs/product`
+1. [项目蓝图](./product/project-blueprint.md)
+2. [仓库结构](./architecture/repository-structure.md)
+3. [平台数据模型](./architecture/platform-data-model.md)
+4. [API 概览](./api/api-outline.md)
+5. [命名规范](./architecture/naming-conventions.md)
 
-用于：
+运行与交付：
 
-- 产品方向
-- 范围边界
-- 实施阶段
-- 产品决策参考
+1. [本地开发手册](./runbooks/local-development.md)
+2. [生产可靠性手册](./runbooks/production-reliability.md)
+3. [Kubernetes 部署基线](../infra/k8s/README.md)
+4. [路线图](./planning/roadmap.md)
 
-当前文件：
+## 维护规则
 
-- `project-blueprint.md`
-- `project-snapshot.md`
-
-### `docs/architecture`
-
-用于：
-
-- 仓库结构
-- 命名规则
-- 系统设计
-- 数据模型方向
-
-当前文件：
-
-- `naming-conventions.md`
-- `platform-data-model.md`
-- `repository-structure.md`
-- `system-overview.md`
-
-### `docs/api`
-
-用于：
-
-- HTTP API 概览
-- 接口分组参考
-- 契约级摘要
-- 面向集成的 API 说明
-
-当前文件：
-
-- `api-outline.md`
-
-### `docs/planning`
-
-用于：
-
-- 路线图
-- 近期交付优先级
-- 阶段进度追踪
-- 推进顺序说明
-
-当前文件：
-
-- `roadmap.md`
-
-### `docs/runbooks`
-
-用于：
-
-- 本地启动
-- 运维流程
-- 维护说明
-- 故障排查
-
-当前文件：
-
-- `local-development.md`
-- `production-reliability.md`
-
-## 当前覆盖范围
-
-当前文档集合按不同权威层级覆盖 RAGPilot 实时平台：
-
-- 已交付的 Home、Chat、Documents、Agents、Access Control、Operations、Settings、Admin、Login 和兼容 Workspace 界面；
-- 租户、工作空间、知识库、数据源、文档、访问控制、检索、Chat、工作流、Agent、模型、工具、MCP、Prompt 和 API Key 契约；
-- 持久化摄取、增量数据源同步、搜索投影、Agent 执行、审批、取消、重试和重放行为；
-- Docker、Kubernetes、可观测性、迁移、本地开发、可靠性和发布验证流程；
-- 目标架构、已实现行为和尚未完成工作的明确分工。
-
-根目录 README 是公开介绍，不是第二份技术规格。路由和数据表清单通过自动测试与代码保持一致。
-
-## Markdown 命名规则
-
-所有 Markdown 文件应遵循：
-
-- 使用小写
-- 使用 `kebab-case`
-- 使用明确名称
-- 尽量保持领域优先命名
-- 根目录和文件夹级 `README` 语言索引文件是唯一命名例外
-
-推荐模式：
-
-- `<domain>-blueprint.md`
-- `<domain>-reference.md`
-- `<domain>-overview.md`
-- `<domain>-structure.md`
-- `<scope>-development.md`
-
-避免：
-
-- `notes.md`
-- `misc.md`
-- `temp.md`
-- `draft.md`
-- `new-file.md`
-
-## 文档决策规则
-
-新增 Markdown 文件前：
-
-1. 判断它属于产品、架构、API、规划还是 runbook
-2. 放到正确文件夹
-3. 使用清晰的 `kebab-case` 文件名
-4. 当它成为稳定文档后，从上级索引或 README 中链接它
-
-## 建议阅读顺序
-
-最快理解整个项目，建议从这里开始：
-
-1. [Project Snapshot](./product/project-snapshot.md)
-2. [Project Blueprint](./product/project-blueprint.md)
-3. [Roadmap](./planning/roadmap.md)
-4. [System Overview](./architecture/system-overview.md)
-5. [API Outline](./api/api-outline.md)
-6. [Platform Data Model](./architecture/platform-data-model.md)
-7. [Local Development Runbook](./runbooks/local-development.md)
-8. [Production Reliability Runbook](./runbooks/production-reliability.md)
-
-查看系统边界时阅读：
-
-- [Repository Structure](./architecture/repository-structure.md)
-- [Naming Conventions](./architecture/naming-conventions.md)
+- 优先更新权威文档，不新建第二份状态或架构说明。
+- 已实现行为写入项目现状，优先演进方向写入路线图。
+- 代码与验证完成前，不把接口、数据表或能力描述为当前事实。
+- 文件名使用小写 `kebab-case`，`README` 只用于目录索引。
+- 稳定文档应从本索引或相关上级文档链接。
+- 阶段性计划的长期结论合并后，应删除已失效文件。

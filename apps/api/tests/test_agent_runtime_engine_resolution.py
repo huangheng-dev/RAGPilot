@@ -51,15 +51,16 @@ def test_build_agent_runtime_engine_rejects_unknown_engine() -> None:
 @pytest.mark.anyio
 async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_graph(monkeypatch) -> None:
     class FakeCompiledGraph:
-        def __init__(self, nodes, edges, start_node) -> None:
+        def __init__(self, nodes, edges, start_node, end_node) -> None:
             self.nodes = nodes
             self.edges = edges
             self.start_node = start_node
+            self.end_node = end_node
 
         async def ainvoke(self, initial_state):
             state = dict(initial_state)
             current_node = self.edges[self.start_node]
-            while current_node is not None:
+            while current_node is not None and current_node != self.end_node:
                 node_handler = self.nodes[current_node]
                 update = node_handler(state)
                 if inspect.isawaitable(update):
@@ -81,11 +82,12 @@ async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_
             self.edges[source] = target
 
         def compile(self):
-            return FakeCompiledGraph(self.nodes, self.edges, "__start__")
+            return FakeCompiledGraph(self.nodes, self.edges, "__start__", "__end__")
 
     fake_graph_module = SimpleNamespace(
         StateGraph=FakeStateGraph,
         START="__start__",
+        END="__end__",
     )
 
     monkeypatch.setattr(
@@ -153,9 +155,11 @@ async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_
     trace = payload["agent_runtime_graph"]["trace"]
     assert [entry["step"] for entry in trace] == [
         "collect_workflow_metrics",
-        "collect_failed_runs",
+        "classify_workflow_pressure",
         "compose_workflow_summary",
     ]
+    assert payload["agent_runtime_graph"]["risk_level"] == "high"
+    assert all(float(entry["duration_ms"]) >= 0 for entry in trace)
 
 
 @pytest.mark.anyio
@@ -218,3 +222,13 @@ async def test_langgraph_document_intake_uses_governed_branch(metrics, expected_
     assert payload["agent_runtime_resolution"]["fallback_applied"] is False
     assert payload["agent_runtime_graph"]["workflow"] == "document_intake"
     assert payload["agent_runtime_graph"]["selected_branch"] == expected_branch
+    assert payload["intake_decision"]["branch"] == expected_branch
+    assert payload["intake_validation"]["status"] == "passed"
+    assert len(payload["recommended_actions"]) == 2
+    assert [entry["step"] for entry in payload["agent_runtime_graph"]["trace"]] == [
+        "collect_document_context",
+        "classify_intake_posture",
+        expected_branch,
+        "validate_intake_result",
+        "compose_document_intake",
+    ]

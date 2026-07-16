@@ -2,16 +2,16 @@
 
 ## Purpose
 
-This blueprint defines RAGPilot's durable product and architecture boundaries. It describes what the platform is designed to become without claiming that every target is already implemented.
+This blueprint defines RAGPilot's durable product principles, target architecture, and decision boundaries. Current implementation status is intentionally maintained elsewhere so that long-term direction and verified behavior remain distinct.
 
 Documentation authority is intentionally separated:
 
 - [Project Snapshot](./project-snapshot.md) records verified current behavior.
-- [Roadmap](../planning/roadmap.md) records incomplete work and priorities.
+- [Roadmap](../planning/roadmap.md) records prioritized engineering evolution.
 - [System Overview](../architecture/system-overview.md) explains the realized runtime architecture.
 - [API Outline](../api/api-outline.md) and [Platform Data Model](../architecture/platform-data-model.md) inventory current contracts.
 
-The blueprint must not become a second status report, changelog, or historical implementation plan.
+The blueprint is not a status report, changelog, or historical implementation plan.
 
 ## Product Position
 

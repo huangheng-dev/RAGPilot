@@ -62,6 +62,27 @@ def build_agent_definition(**overrides):
     return SimpleNamespace(**{**defaults, **overrides})
 
 
+@pytest.mark.parametrize(
+    ("branch", "expected_action_keys"),
+    [
+        ("recover_failed", ["review_failed_documents", "inspect_workflow_recovery"]),
+        ("review_processing", ["review_active_intake"]),
+        ("release_ready", ["review_ready_documents", "validate_intake_in_chat"]),
+    ],
+)
+def test_document_intake_recommended_actions_follow_langgraph_branch(
+    branch, expected_action_keys,
+) -> None:
+    service = object.__new__(AgentExecutionService)
+
+    actions = service._build_mode_recommended_action_specs(
+        execution_mode="document_intake",
+        payload={"intake_decision": {"branch": branch}},
+    )
+
+    assert [action.action_key for action in actions] == expected_action_keys
+
+
 @pytest.mark.anyio
 async def test_agent_replay_reuses_source_definition_and_sandbox_snapshot() -> None:
     tenant_id = uuid4()

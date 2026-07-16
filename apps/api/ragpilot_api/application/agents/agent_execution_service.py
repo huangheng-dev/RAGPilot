@@ -640,33 +640,62 @@ class AgentExecutionService:
                 ),
             ]
         elif execution_mode == "document_intake":
-            actions = [
-                RecommendedActionSpec(
-                    action_key="review_failed_documents",
-                    action_label="Open failed documents first and confirm whether reindex is required.",
-                    target_view="documents",
-                    action_category="recovery",
-                    priority="primary",
-                    handoff_intent="document_recovery",
-                    document_status="failed",
-                ),
-                RecommendedActionSpec(
-                    action_key="review_active_intake",
-                    action_label="Review active intake items before publishing new knowledge-base changes.",
-                    target_view="documents",
-                    action_category="continue",
-                    handoff_intent="agent_brief",
-                    document_status="running",
-                ),
-                RecommendedActionSpec(
-                    action_key="inspect_workflow_recovery",
-                    action_label="Escalate persistent indexing failures into workflow operations.",
-                    target_view="workflows",
-                    action_category="recovery",
-                    handoff_intent="document_recovery",
-                    workflow_status="failed",
-                ),
-            ]
+            intake_decision = payload.get("intake_decision")
+            intake_branch = (
+                str(intake_decision.get("branch"))
+                if isinstance(intake_decision, dict) and intake_decision.get("branch")
+                else None
+            )
+            failed_action = RecommendedActionSpec(
+                action_key="review_failed_documents",
+                action_label="Open failed documents first and confirm whether source correction or reindex is required.",
+                target_view="documents",
+                action_category="recovery",
+                priority="primary",
+                handoff_intent="document_recovery",
+                document_status="failed",
+            )
+            active_action = RecommendedActionSpec(
+                action_key="review_active_intake",
+                action_label="Monitor active intake items until processing reaches terminal state.",
+                target_view="documents",
+                action_category="continue",
+                priority="primary",
+                handoff_intent="agent_brief",
+                document_status="running",
+            )
+            workflow_action = RecommendedActionSpec(
+                action_key="inspect_workflow_recovery",
+                action_label="Inspect failed ingestion workflows before retrying the intake chain.",
+                target_view="workflows",
+                action_category="recovery",
+                handoff_intent="document_recovery",
+                workflow_status="failed",
+            )
+            ready_documents_action = RecommendedActionSpec(
+                action_key="review_ready_documents",
+                action_label="Validate retrieval readiness against the completed document set.",
+                target_view="documents",
+                action_category="validation",
+                priority="primary",
+                handoff_intent="grounded_validation",
+                document_status="completed",
+            )
+            validate_in_chat_action = RecommendedActionSpec(
+                action_key="validate_intake_in_chat",
+                action_label="Validate citation quality in Chat before completing release review.",
+                target_view="chat",
+                action_category="validation",
+                handoff_intent="grounded_validation",
+            )
+            if intake_branch == "recover_failed":
+                actions = [failed_action, workflow_action]
+            elif intake_branch == "review_processing":
+                actions = [active_action]
+            elif intake_branch == "release_ready":
+                actions = [ready_documents_action, validate_in_chat_action]
+            else:
+                actions = [failed_action, active_action, workflow_action]
         else:
             actions = [
                 RecommendedActionSpec(

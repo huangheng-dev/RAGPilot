@@ -2,10 +2,10 @@
 
 ## Purpose
 
-This document is the current-state authority for RAGPilot. It records what the runnable repository actually delivers without repeating route inventories, database schemas, changelog history, or future task lists.
+This document is the current-state authority for RAGPilot. It records verified behavior and scope without repeating route inventories, database schemas, changelog history, or evolution priorities.
 
 - Target architecture: `project-blueprint.md`
-- Incomplete work: `../planning/roadmap.md`
+- Prioritized evolution: `../planning/roadmap.md`
 - HTTP inventory: `../api/api-outline.md`
 - Database inventory: `../architecture/platform-data-model.md`
 
@@ -76,7 +76,7 @@ PostgreSQL remains the business source of truth. pgvector and Elasticsearch are 
 
 - pgvector semantic recall and Elasticsearch BM25/filter recall with PostgreSQL lexical fallback
 - governed fusion, native reranking, retrieval profiles, effective-profile resolution, and diagnostics
-- optional `llamaindex_pilot` comparison behind the retrieval-engine boundary
+- opt-in `llamaindex_pilot` comparison that wraps already-authorized native candidates with LlamaIndex's similarity and long-context processors, reauthorizes the resulting Chunk set in PostgreSQL, and records processor/version/count evidence
 - persisted retrieval evaluation records, summaries, and operator follow-up queues
 - versioned contract datasets with ranking, latency, groundedness, citation, isolation, and cost gates in CI and release preflight
 - grounded conversations, Messages, Citations, feedback, history, search, metrics, rename, and deletion
@@ -104,7 +104,7 @@ The `packages/prompts` package remains the authored-asset/import-export boundary
 - standalone `stdio` MCP server with API-key-scoped knowledge search, document inspection, and workflow inspection tools
 - persisted Agent definitions, launches, durable executions, evaluation summaries, retry/cancel/replay lineage, replay fingerprints, and human approval decisions
 - immutable per-execution definition and allowed-Tool sandbox snapshots, deployment-capped tool/runtime/output budgets, and optional JSON Schema result validation
-- optional bounded `langgraph_pilot` lanes inside Temporal-owned durable execution
+- opt-in typed `langgraph_pilot` document-intake and workflow-recovery lanes with governed branch decisions, branch-specific actions, output validation, and operator-visible trace timing inside Temporal-owned durable execution
 
 The standalone `apps/mcp-server` package is an active read-only outbound-server boundary. It remains separate from the MCP client/control-plane path and is not a top-level product destination.
 
@@ -131,15 +131,15 @@ The standalone `apps/mcp-server` package is an active read-only outbound-server 
 - PostgreSQL owns business truth and durable governance state.
 - pgvector owns semantic recall; Elasticsearch owns rebuildable lexical/search projection.
 - Temporal owns durable retries, timers, cancellation, waiting, and workflow history.
-- LangGraph, when selected, owns bounded in-run graph transitions rather than durable business workflow ownership.
-- LlamaIndex remains an optional retrieval adapter rather than the platform foundation.
+- LangGraph, when selected through `AGENT_RUNTIME_ENGINE`, owns typed document-intake and workflow-recovery decisions, branch-specific plans, output validation, and node timing inside a Temporal-owned execution; it does not own durable business workflow state.
+- LlamaIndex, when selected through `RETRIEVAL_ENGINE`, owns optional authorized candidate post-processing and comparison evidence; PostgreSQL authorization and the application retrieval contract remain authoritative.
 - Model-provider behavior stays behind the model gateway.
 - MCP and HTTP Tools remain explicitly registered, tenant-scoped, policy-checked, and auditable.
 - Browser pages consume backend-owned policy and governance contracts instead of recreating them locally.
 
-## Deliberate Incomplete Boundaries
+## Current Scope Boundaries
 
-The active Roadmap owns details. The important current boundaries are:
+RAGPilot deliberately keeps the following areas bounded until deployment requirements or evaluation evidence justify expansion:
 
 - production selection and closure of the deployed identity-provider mode
 - optional legacy MCP SSE compatibility
@@ -148,11 +148,11 @@ The active Roadmap owns details. The important current boundaries are:
 - deployment-specific backup/restore, capacity, telemetry retention, and incident exercises
 - broader LangGraph lanes only when branching, checkpointing, approval, and output validation justify them
 
-These are explicit boundaries, not evidence that the core product path is missing.
+These boundaries protect the core operating path from unsupported deployment assumptions and low-evidence expansion.
 
 ## Maintenance Rule
 
-Update this file only when verified product behavior changes. Do not append implementation chronology or page-by-page micro-features. Detailed changes belong in `CHANGELOG.md`; unfinished work belongs in the Roadmap.
+Update this file only when verified product behavior changes. Do not append implementation chronology or page-by-page micro-features. Detailed changes belong in `CHANGELOG.md`; prioritized evolution belongs in the Roadmap.
 
 ## Primary References
 

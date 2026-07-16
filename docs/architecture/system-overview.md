@@ -2,27 +2,34 @@
 
 ## Purpose
 
-This document explains the architecture realized by the current repository. Durable target rules belong in the [Project Blueprint](../product/project-blueprint.md), verified product behavior in the [Project Snapshot](../product/project-snapshot.md), and incomplete work in the [Roadmap](../planning/roadmap.md).
+This document explains the architecture realized by the current repository. Durable target rules belong in the [Project Blueprint](../product/project-blueprint.md), verified product behavior in the [Project Snapshot](../product/project-snapshot.md), and prioritized evolution in the [Roadmap](../planning/roadmap.md).
 
 ## Runtime Topology
 
-```text
-Browser
--> Next.js Web
--> FastAPI API
-   -> PostgreSQL / pgvector
-   -> Redis
-   -> MinIO
-   -> Elasticsearch
-   -> Temporal
-      -> Document Worker
-      -> Agent Worker
-   -> Model Gateway
-   -> Tool Runtime / MCP clients
+```mermaid
+flowchart LR
+    browser["Browser"] --> web["Next.js Web"] --> api["FastAPI API"]
 
-API + Workers + runtime integrations
--> OpenTelemetry Collector
--> Prometheus / Tempo / Grafana
+    api --> postgres["PostgreSQL / pgvector"]
+    api --> redis["Redis"]
+    api --> minio["MinIO"]
+    api --> elasticsearch["Elasticsearch"]
+    api --> temporal["Temporal"]
+    api --> models["Model Gateway"]
+    api --> tools["Tool Runtime / MCP clients"]
+
+    temporal --> documentWorker["Document Worker"]
+    temporal --> agentWorker["Agent Worker"]
+
+    api --> otel["OpenTelemetry Collector"]
+    documentWorker --> otel
+    agentWorker --> otel
+    models --> otel
+    tools --> otel
+    otel --> prometheus["Prometheus"]
+    otel --> tempo["Tempo"]
+    prometheus --> grafana["Grafana"]
+    tempo --> grafana
 ```
 
 PostgreSQL owns business and governance state. pgvector and Elasticsearch serve retrieval roles; Elasticsearch remains a rebuildable projection. Temporal owns durable ingestion, Data Source synchronization, and Agent execution history.
@@ -50,12 +57,14 @@ Authenticated scoped query
 -> tenant / Workspace / Knowledge Base / Document / Chunk authorization
 -> pgvector semantic recall + Elasticsearch BM25 recall
 -> PostgreSQL lexical fallback when required
--> governed fusion, rerank, context assembly, and evidence validation
+-> governed fusion and native rerank
+-> optional LlamaIndex authorized-candidate processing and final PostgreSQL reauthorization
+-> context assembly and evidence validation
 -> model generation through the gateway
 -> SSE delivery, Citations, Message, Prompt binding, and diagnostics persistence
 ```
 
-Authorization is applied to candidate retrieval, including Elasticsearch candidates revalidated against PostgreSQL policy before exposure.
+Authorization is applied to candidate retrieval, including Elasticsearch candidates revalidated against PostgreSQL policy before exposure. When `llamaindex_pilot` is selected, LlamaIndex operates only on that authorized candidate set and the processed Chunk identifiers are checked against PostgreSQL policy again before they can reach Chat or evaluation output.
 
 ### Agent execution
 
@@ -64,12 +73,13 @@ Agent launch
 -> API persists definition, scope, Tool sandbox, budgets, and optional output Schema
 -> Temporal starts the execution
 -> Agent Worker materializes the immutable snapshot
+-> optional LangGraph decision graph selects and validates a bounded execution branch
 -> retrieval and approved Tools execute through governed runtimes
 -> approval, cancellation, retry, and result validation update durable state
 -> terminal execution can be replayed with source lineage and a stable fingerprint
 ```
 
-Temporal owns durable retries, timers, cancellation, and approval waiting. The optional `langgraph_pilot` remains a bounded in-run graph lane rather than the owner of durable workflow state.
+Temporal owns durable retries, timers, cancellation, approval waiting, and workflow history. When `langgraph_pilot` is selected, typed graphs classify document-intake or workflow-recovery posture, create branch-specific plans, validate graph output, and emit node timing inside one Temporal-owned execution. LangGraph does not replace the durable workflow boundary.
 
 ## Layer Responsibilities
 
@@ -110,6 +120,7 @@ The current exact route inventory is maintained in [API Outline](../api/api-outl
 - executes persisted Agent snapshots independently of later Agent-definition edits;
 - enforces allowed Tools and deployment-capped execution budgets;
 - coordinates retrieval, MCP, and native/HTTP Tool calls;
+- runs optional typed LangGraph decision lanes within the Temporal-owned execution boundary;
 - validates optional JSON Schema output contracts;
 - persists execution, approval, retry, cancel, replay, result, and metric evidence.
 
@@ -118,8 +129,8 @@ The current exact route inventory is maintained in [API Outline](../api/api-outl
 - PostgreSQL and pgvector own scoped semantic retrieval and durable Chunk state;
 - Elasticsearch owns versioned BM25/search projection and index diagnostics;
 - PostgreSQL lexical matching provides an explicit fallback;
-- fusion, reranking, context assembly, and evidence validation remain application-owned;
-- `llamaindex_pilot` is an optional comparison lane behind the same retrieval contract;
+- fusion, native reranking, context assembly, and evidence validation remain application-owned;
+- `llamaindex_pilot` is an opt-in authorized-candidate processing and comparison lane behind the same retrieval contract, with a final PostgreSQL authorization check;
 - versioned datasets gate ranking, isolation, groundedness, citation, latency, and cost behavior.
 
 ### Model Gateway
@@ -185,4 +196,4 @@ These assets form a production-oriented baseline, not a substitute for environme
 
 ## Maintenance Rule
 
-Update this overview when a realized service boundary, data owner, runtime path, or product surface changes. Do not add speculative components here; place target boundaries in the Blueprint and incomplete delivery work in the Roadmap.
+Update this overview when a realized service boundary, data owner, runtime path, or product surface changes. Do not add speculative components here; place durable target boundaries in the Blueprint and active evolution priorities in the Roadmap.

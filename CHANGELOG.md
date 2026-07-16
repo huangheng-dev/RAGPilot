@@ -29,6 +29,8 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - retrieval regression cases for knowledge-base isolation, deleted/stale content, retrieval injection, and multilingual OCR
 - governed Agent execution budgets, immutable definition/tool sandbox snapshots, JSON Schema result validation, replay fingerprints, and auditable terminal-run replay
 - Compose health-gated startup for PostgreSQL, Redis, Temporal, API, and dependent runtime workers
+- an authorized LlamaIndex comparison lane with official similarity/long-context processors, final PostgreSQL reauthorization, and processor evidence
+- typed LangGraph decision lanes for document intake and workflow recovery with branch-specific plans, validation, node timing, and operator-visible traces
 
 ### Changed
 
@@ -43,6 +45,8 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - administration, operations, and settings use aligned navigation, spacing, filters, summaries, and detail surfaces
 - model request handling uses a production-oriented timeout window and explicit unavailable or timeout responses
 - English and Simplified Chinese product copy is aligned across the updated operator workflows
+- retrieval and Agent runtime defaults are consistently `native` across application, Compose, Kubernetes, and environment templates; installed framework adapters require explicit activation
+- Chinese documentation navigation uses translated labels while clearly identifying English technical and governance bodies as the current canonical source
 
 ### Security
 

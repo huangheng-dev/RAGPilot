@@ -208,7 +208,7 @@ Owns repeatable local startup, migration, test, release, documentation, security
 
 ### `docs/planning`
 
-- `roadmap.md` — the only active incomplete-work list
+- `roadmap.md` — the single source for active evolution priorities
 
 ### `docs/runbooks`
 
@@ -223,7 +223,7 @@ Owns repeatable local startup, migration, test, release, documentation, security
 4. Keep PostgreSQL as the durable business-state owner; search and cache integrations remain replaceable infrastructure.
 5. Add schema changes through Alembic and update the data-model contract in the same change.
 6. Add or change HTTP routes together with API-outline and automated documentation-contract validation.
-7. Record verified behavior in the Snapshot and unfinished work in the Roadmap; do not create competing status documents.
+7. Record verified behavior in the Snapshot and prioritized evolution in the Roadmap; do not create competing status documents.
 8. Keep generated output, local credentials, private deployment overlays, and organization-specific notes out of tracked source directories.
 
 ## Decision Rule

@@ -5018,13 +5018,24 @@ export default function AgentsConsolePage() {
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                                   {t("agents.executions.runtimeTrace")}
                                 </div>
+                                {runtimeSummary.graphDecisionReason ? (
+                                  <div className="mt-2 text-xs leading-5 text-slate-600">
+                                    {[
+                                      runtimeSummary.graphSelectedBranch,
+                                      runtimeSummary.graphRiskLevel,
+                                      runtimeSummary.graphDecisionReason,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </div>
+                                ) : null}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {runtimeSummary.graphTrace.map(
                                     (entry, index) => (
                                       <ConsoleOutlineBadge
                                         key={`${agentExecution.id}-graph-${entry.step}-${index}`}
                                       >
-                                        {`${entry.step} · ${entry.status}`}
+                                        {`${entry.step} · ${entry.status}${entry.durationMs !== null ? ` · ${entry.durationMs.toFixed(1)}ms` : ""}`}
                                       </ConsoleOutlineBadge>
                                     ),
                                   )}

@@ -6,11 +6,11 @@ Language: English | [简体中文](./README.zh-CN.md)
 [![Release Readiness](https://github.com/huangheng-dev/RAGPilot/actions/workflows/release-readiness.yml/badge.svg)](https://github.com/huangheng-dev/RAGPilot/actions/workflows/release-readiness.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-RAGPilot is an open-source AI knowledge operations platform for teams operating retrieval-grounded applications. It combines governed source ingestion, permission-aware hybrid retrieval, citation-backed Chat, constrained Agent execution, durable workflows, and runtime administration in one system.
+RAGPilot is an open-source platform for building and operating governed retrieval-augmented generation systems. It connects source ingestion, permission-aware hybrid retrieval, citation-backed Chat, constrained Agent execution, durable workflows, and runtime administration in one product.
 
-The Web console, API, Workers, persistence model, runtime policy, deployment assets, and release validation are maintained together in a versioned monorepo. RAGPilot is designed around explicit scope, recoverable state, and reviewable evidence.
+Authorization, provenance, recoverability, evaluation, and observability are part of the runtime design rather than add-on concerns. The Web console, API, Workers, persistence model, deployment assets, and release gates evolve together in a versioned monorepo.
 
-## Architecture Characteristics
+## Why RAGPilot
 
 - **Governed knowledge lifecycle:** Data Sources, Documents, immutable versions, Chunks, embeddings, indexing state, synchronization cursors, leases, and recovery history are persisted and operable.
 - **Authorization inside retrieval:** tenant, Workspace, Knowledge Base, Document, and Chunk access is enforced at retrieval candidate boundaries, including PostgreSQL reauthorization of Elasticsearch candidates.
@@ -18,7 +18,7 @@ The Web console, API, Workers, persistence model, runtime policy, deployment ass
 - **Durable operations:** Temporal owns long-running ingestion, source synchronization, and Agent execution state instead of hiding background work inside HTTP requests.
 - **Measurable quality:** versioned retrieval datasets, evidence validation, Prompt bindings, Citations, traces, and release gates make runtime changes reviewable.
 
-## Operating Flow
+## End-to-End Flow
 
 ```text
 Tenant and identity scope
@@ -81,7 +81,7 @@ Tenant and identity scope
 - W3C Trace Context across API, Temporal, Workers, retrieval, model, Agent, Tool, MCP, embedding, and Elasticsearch boundaries
 - privacy-safe structured logs, metrics, traces, dashboards, and alert baselines
 
-## Runtime and Integration Status
+## Runtime Stack and Integrations
 
 Core runtime components:
 
@@ -103,22 +103,22 @@ Active integration paths:
 - Streamable HTTP MCP client discovery, Tool mapping, and Agent invocation
 - read-only `stdio` MCP server for scoped knowledge search, Document inspection, and Workflow inspection
 
-Optional pilot lanes:
+Framework integration lanes:
 
-- `LlamaIndex` retrieval comparison behind the retrieval-engine contract
-- `LangGraph` bounded in-run graph execution inside Temporal-owned durable Agent workflows
+- `LlamaIndex` wraps already-authorized native candidates, applies official similarity and long-context processors, revalidates the final Chunk set against PostgreSQL policy, and records comparison evidence
+- `LangGraph` runs typed, bounded decision graphs for document intake and workflow recovery inside Temporal-owned durable Agent executions, including branch selection, validation, and trace timing
 
-Pilot dependencies are not mandatory platform foundations, and their presence does not imply promotion to the default runtime path.
+The standard development and container profiles include both adapters, but availability does not imply activation. `native` remains the default retrieval and Agent runtime; framework lanes are selected explicitly through `RETRIEVAL_ENGINE` and `AGENT_RUNTIME_ENGINE` and are promoted only with evaluation evidence.
 
-## Version Scope
+## Scope and Deployment Boundaries
 
-- the built-in Web connector synchronizes one public page per Data Source; it is not a crawler
-- OCR supports scanned PDFs and listed standalone image formats but does not claim complete complex-layout or table reconstruction
-- local-password authentication is runnable; deployment-owned OIDC/SAML callback and operational closure are environment-specific evolution work
-- the Kubernetes manifests are a production-oriented baseline, not a claim that an unconfigured checkout is ready for public traffic
-- provider-neutral reranking and broader framework lanes require evaluation evidence before promotion
+- the built-in Web connector intentionally synchronizes one public page per Data Source rather than crawling a site
+- OCR targets scanned PDFs and listed standalone image formats; complex-layout and table reconstruction remain format-dependent
+- local-password authentication is included; deployments that select an external identity provider must complete and validate its callbacks, claim mapping, and operating policy
+- the Kubernetes manifests provide a production-oriented baseline that still requires environment-specific images, Secrets, dependencies, and validation
+- alternate reranking and framework paths are promoted only when versioned evaluations demonstrate a measurable benefit
 
-Current implementation details are maintained in the [Project Snapshot](./docs/product/project-snapshot.md). Durable architecture rules are defined in the [Project Blueprint](./docs/product/project-blueprint.md), and engineering evolution priorities are maintained in the [Roadmap](./docs/planning/roadmap.md).
+For exact implementation status, use the [Project Snapshot](./docs/product/project-snapshot.md). The [Project Blueprint](./docs/product/project-blueprint.md) defines durable architecture rules, while the [Roadmap](./docs/planning/roadmap.md) records prioritized evolution.
 
 ## Local Development
 

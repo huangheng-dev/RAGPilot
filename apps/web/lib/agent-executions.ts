@@ -177,6 +177,9 @@ export type AgentExecutionRuntimeSummary = {
   agentRuntimeEngine: string | null;
   configuredAgentRuntimeEngine: string | null;
   graphWorkflow: string | null;
+  graphSelectedBranch: string | null;
+  graphRiskLevel: string | null;
+  graphDecisionReason: string | null;
   graphTraceCount: number;
   fallbackApplied: boolean;
   fallbackReason: string | null;
@@ -185,6 +188,7 @@ export type AgentExecutionRuntimeSummary = {
   graphTrace: Array<{
     step: string;
     status: string;
+    durationMs: number | null;
   }>;
 };
 
@@ -531,6 +535,18 @@ export function readAgentExecutionRuntimeSummary(
     graphPayload && typeof graphPayload.workflow === "string" && graphPayload.workflow.trim().length > 0
       ? graphPayload.workflow.trim()
       : null;
+  const graphSelectedBranch =
+    graphPayload && typeof graphPayload.selected_branch === "string" && graphPayload.selected_branch.trim().length > 0
+      ? graphPayload.selected_branch.trim()
+      : null;
+  const graphRiskLevel =
+    graphPayload && typeof graphPayload.risk_level === "string" && graphPayload.risk_level.trim().length > 0
+      ? graphPayload.risk_level.trim()
+      : null;
+  const graphDecisionReason =
+    graphPayload && typeof graphPayload.decision_reason === "string" && graphPayload.decision_reason.trim().length > 0
+      ? graphPayload.decision_reason.trim()
+      : null;
   const graphTraceCount =
     graphPayload && Array.isArray(graphPayload.trace)
       ? graphPayload.trace.filter((entry) => Boolean(entry) && typeof entry === "object").length
@@ -544,7 +560,8 @@ export function readAgentExecutionRuntimeSummary(
           )
           .map((entry) => ({
             step: typeof entry.step === "string" && entry.step.trim().length > 0 ? entry.step.trim() : "step",
-            status: typeof entry.status === "string" && entry.status.trim().length > 0 ? entry.status.trim() : "unknown"
+            status: typeof entry.status === "string" && entry.status.trim().length > 0 ? entry.status.trim() : "unknown",
+            durationMs: typeof entry.duration_ms === "number" && Number.isFinite(entry.duration_ms) ? entry.duration_ms : null
           }))
       : [];
   const fallbackApplied =
@@ -584,6 +601,9 @@ export function readAgentExecutionRuntimeSummary(
     agentRuntimeEngine,
     configuredAgentRuntimeEngine,
     graphWorkflow,
+    graphSelectedBranch,
+    graphRiskLevel,
+    graphDecisionReason,
     graphTraceCount,
     fallbackApplied,
     fallbackReason,

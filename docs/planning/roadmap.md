@@ -2,85 +2,67 @@
 
 ## Purpose
 
-This is the only active list of incomplete product and architecture work.
+This roadmap records prioritized evolution beyond the verified [Project Snapshot](../product/project-snapshot.md). It is not a second capability inventory, release history, or claim that every listed direction is required by every deployment.
 
-- Target boundaries belong in `../product/project-blueprint.md`.
-- Implemented behavior belongs in `../product/project-snapshot.md`.
-- Superseded phases, rollout plans, checklists, and one-time evidence are removed after their durable conclusions are consolidated.
+Durable target boundaries belong in the [Project Blueprint](../product/project-blueprint.md). An evolution item is reflected in the Snapshot only after its runtime behavior, persistence, authorization, governance, tests, deployment configuration, and diagnostics agree where applicable.
 
-An item leaves this roadmap only after runtime behavior, persistence, governance, tests, deployment configuration, and operator diagnostics agree where those dimensions apply.
+## Verified Baseline
 
-## Current Baseline
+The current platform already closes its primary operating loop: governed source intake, durable ingestion, permission-aware hybrid retrieval, grounded Chat, constrained Agent execution, operational recovery, observability, and release validation. Exact implementation status remains owned by the [Project Snapshot](../product/project-snapshot.md).
 
-The following capabilities are implemented and must not be reported as missing core work:
+The tracks below extend depth, integration coverage, and deployment confidence; they do not redefine the existing core.
 
-- PostgreSQL and pgvector source-of-truth retrieval with Elasticsearch BM25 projection, fusion, reranking, lifecycle reconciliation, and PostgreSQL lexical fallback
-- optional `llamaindex_pilot` retrieval and bounded `langgraph_pilot` agent-runtime lanes behind explicit engine boundaries
-- Temporal-backed ingestion and Agent execution with cancellation, retry/replay lineage, immutable execution-policy snapshots, deployment-owned budgets, and optional JSON Schema result validation
-- governed Streamable HTTP MCP discovery, tool mapping, preview, approval, and Agent invocation
-- read-only `stdio` MCP tool delivery for tenant-safe knowledge search, document inspection, and workflow inspection
-- encrypted runtime credentials and Redis-backed cross-instance model/MCP concurrency and request-rate limits
-- correlated W3C Trace Context across API, Temporal, Worker, retrieval, model, Agent, and tool boundaries
-- privacy-safe structured JSON logs, OTLP log export, metrics, dashboards, alert baselines, and operator runbooks
-- versioned retrieval evaluation data with groundedness, citation, cost, latency, and ranking regression gates in CI and release preflight
-- versioned Prompt records bound to Message, Agent Run, and Agent Execution history
-- tenant-scoped platform API keys with hashed secrets, scopes, expiry, revocation, usage tracking, and audit events
-- SSE chat delivery with incremental web rendering and persisted final messages
-- provider-native Ollama/OpenAI-compatible streaming with completion fallback and disconnect cancellation
-- scanned-PDF and standalone-image OCR with governed format and pixel boundaries
-- durable Data Source identity, document binding, synchronization cursor/status, run history, and legacy backfill
-- versioned connector SPI and active SSRF-guarded `public_web_v1` incremental sync with database leases, Temporal child ingestion, and Documents-surface operation
-- tenant Access Groups and document/Chunk user-or-group ACL enforcement in retrieval
-- authenticated browser smoke testing, production Web builds, API/Worker suites, and stable-mode startup validation
-- health-gated Compose startup across PostgreSQL, Redis, Temporal, API, and dependent Workers
+## Deployment Qualification
 
-## Active Priorities
+Production qualification is completed against the environment that will actually carry traffic. These activities are deployment responsibilities because identity providers, managed services, retention requirements, capacity, and recovery objectives differ by operator.
 
-### P0 — Production identity and access closure
+### Identity and credential operations
 
-- select the deployed authentication mode: governed local password or an external identity provider
-- finish external provider callback, logout, claim mapping, and session-revocation operations where that deployment mode is selected
-- add operator-facing API-key management if API keys must be administered outside the API contract
-- define rotation, emergency revocation, and ownership policy for model and MCP credentials
+- select and validate the deployed authentication mode: governed local password or an external identity provider
+- complete callback, logout, claim mapping, and session-revocation operations when an external provider is selected
+- expose API-key administration in a product surface only when operators require browser-based management
+- define ownership, rotation, and emergency revocation policy for platform, model, MCP, and infrastructure credentials
 
-### P0 — Production reliability
+### Reliability validation
 
-- validate backup and restore for PostgreSQL, MinIO, Elasticsearch projections, and required secrets
-- define production telemetry retention, sampling, alert routing, and incident ownership
-- run capacity, dependency-failure, recovery-time, and disaster-recovery exercises in the target deployment environment
-- keep Kubernetes and managed-service deployment overlays aligned with the verified stable-mode contract
+- validate backup and restore for PostgreSQL, object storage, Elasticsearch projections, and required Secrets
+- define telemetry retention, sampling, alert routing, incident ownership, and escalation policy
+- exercise capacity limits, dependency failure, recovery-time objectives, and disaster recovery
+- keep Kubernetes or managed-service overlays aligned with the verified runtime contract
+
+## Engineering Evolution
 
 ### P1 — Retrieval and document depth
 
-- expand versioned evaluation datasets with representative production-like queries, adversarial tenant-isolation cases, and larger regression baselines
-- promote provider-neutral reranking only when it beats the deterministic fallback under those gates
-- deepen the active scanned-PDF and standalone-image OCR plus DOCX/XLSX parsers for complex layouts and tables where product demand justifies it
-- add additional multi-item connector adapters only for proven product demand; each adapter must satisfy the existing lease, cursor, idempotency, network-safety, and authoritative-snapshot contract
+- expand versioned evaluations with representative production-like queries, adversarial isolation cases, and larger regression baselines
+- promote provider-neutral reranking only when it outperforms the deterministic fallback without weakening isolation, latency, cost, or recoverability
+- deepen OCR and DOCX/XLSX structure extraction for complex layouts and tables where product demand justifies the maintenance cost
+- add multi-item connector adapters only for proven workflows; every adapter must preserve lease, cursor, idempotency, network-safety, and authoritative-snapshot contracts
 
-### P1 — Streaming and Agent runtime depth
+### P1 — Runtime interoperability
 
-- add optional legacy MCP SSE compatibility only when a supported integration requires it
-- expand LangGraph beyond bounded lanes only when graph branching, checkpointing, approval, and output validation are visible and testable
+- add legacy MCP SSE compatibility only when a supported integration requires it
+- expand LangGraph beyond bounded lanes only when branching, checkpointing, approval, and output validation are observable and testable
 
 ### P2 — Governance experience
 
-- expose Prompt version comparison, activation, rollback, and import/export only if operators need to manage authored assets in product surfaces
+- expose Prompt comparison, activation, rollback, and import/export when operators need authored-asset management in product surfaces
 - deepen API-key, credential, model, MCP, Data Source, and evaluation audit views without duplicating backend policy in the browser
 - keep resource ownership, reason, actor, and lifecycle evidence queryable through tenant-safe contracts
 
-## Explicit Non-Goals
+## Deliberate Non-Goals
 
 - replacing PostgreSQL as the business source of truth
 - making LlamaIndex or LangGraph mandatory platform foundations
-- exposing unrestricted MCP tools to Agents
+- exposing unrestricted MCP or HTTP Tools to Agents
 - adding framework names without a closed product path
-- adding low-value dashboard or orchestration surfaces that do not close an operator workflow
+- adding dashboards, control panels, or orchestration surfaces that do not close an operator workflow
 
 ## Update Rule
 
 For every material closure:
 
-1. update `project-snapshot.md` with the verified current behavior;
+1. update the Snapshot with verified behavior;
 2. remove or narrow the corresponding roadmap item;
 3. update the API, data-model, architecture, and runbook documents that own the affected contract;
-4. remove superseded planning documents after their durable conclusions are consolidated, rather than retaining competing current-state sources.
+4. remove superseded planning material after its durable conclusions are consolidated.

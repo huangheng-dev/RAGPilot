@@ -165,7 +165,16 @@ For frontend-only iteration against an already-running API:
 npm run web:serve
 ```
 
-The API and Worker virtual environments live under their application directories. Prefer repository scripts because they install the required optional LlamaIndex/LangGraph runtime extras and keep host-specific settings consistent.
+The API and Worker virtual environments live under their application directories. Prefer repository scripts because they install the optional LlamaIndex/LangGraph runtime extras and keep host-specific settings consistent. Installed dependencies are available for explicit comparison and Agent-runtime selection; they are not enabled automatically.
+
+The default runtime posture is:
+
+```dotenv
+RETRIEVAL_ENGINE=native
+AGENT_RUNTIME_ENGINE=native
+```
+
+To exercise the governed framework lanes, select `llamaindex_pilot` for `RETRIEVAL_ENGINE` or `langgraph_pilot` for `AGENT_RUNTIME_ENGINE`, restart the affected API/Worker services, and confirm the effective engine in health and runtime diagnostics. `LLAMAINDEX_SIMILARITY_CUTOFF` and `LLAMAINDEX_LONG_CONTEXT_REORDER_ENABLED` configure the LlamaIndex processors; framework paths should remain non-default until versioned evaluations support promotion.
 
 ## Runtime and Dependency Checks
 

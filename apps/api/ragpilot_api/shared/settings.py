@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     retrieval_rerank_window: int = 12
     retrieval_rerank_timeout_seconds: float = 2.0
     retrieval_candidate_limit: int = 50
+    llamaindex_similarity_cutoff: float = 0.0
+    llamaindex_long_context_reorder_enabled: bool = True
     retrieval_evidence_validation_enabled: bool = True
     retrieval_evidence_minimum_term_coverage: float = 0.05
     retrieval_evidence_minimum_vector_score: float = 0.72
