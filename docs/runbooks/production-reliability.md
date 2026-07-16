@@ -28,6 +28,17 @@ Check HPA CPU/memory, database pool pressure, model policy admission and depende
 
 API scales between 2 and 10 replicas at 70% CPU or 75% memory. Preserve at least one API replica during voluntary disruptions. Treat 768 MiB resident memory as the investigation threshold against the 1 GiB limit.
 
+Run the versioned capacity contract against the target staging release before promotion. Supply a dedicated least-privilege API key and non-sensitive seeded tenant/Knowledge Base; do not reuse an operator or production credential:
+
+```powershell
+$env:RAGPILOT_CAPACITY_API_KEY = "<staging-api-key>"
+$env:RAGPILOT_CAPACITY_TENANT_ID = "<tenant-id>"
+$env:RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID = "<knowledge-base-id>"
+uv run --project apps/api --locked python -m ragpilot_api.commands.staging_capacity_gate packages/evals/staging/capacity-contract-v1.json --base-url https://staging.example.com --output output/capacity/staging.json
+```
+
+Promotion passes only when all three scenarios complete within the versioned error, throughput and p95 thresholds. Reports contain aggregate timings, status counts and transport-error classes; they exclude headers, credentials, request bodies and response bodies. Archive the report with the release evidence. Recalibrate thresholds from measured environment SLOs rather than weakening them to make a failing release pass.
+
 ## Worker retries
 
 Inspect Temporal retry history and classify transient dependency errors separately from deterministic parser failures. Do not retry non-idempotent MCP tool calls automatically.
@@ -58,5 +69,6 @@ These results qualify the maintained local stack and automation. They are not a 
 - restore: every manifest hash verified; the isolated database restored with 46 public tables at Alembic `202607160001`; the isolated MinIO volume restored 31 files from the final qualification backup; all temporary resources were removed
 - reliability: 20 concurrent health requests succeeded; Elasticsearch degradation and recovery were visible in the API health contract; Redis interruption and recovery were confirmed by PING
 - framework qualification: the versioned 10-case database corpus passed for Native and LlamaIndex with no recall regression; the versioned 7-case agent corpus passed all LangGraph branch, validation, trace and fallback gates
+- control-plane capacity: local liveness completed 200 requests at concurrency 20 with zero errors and p95 122.8 ms; database readiness completed 100 requests at concurrency 20 with zero errors and p95 436.1 ms
 
-Record Kubernetes render results, external secret delivery, production identity checks, live OCR language availability, off-cluster backup replication and alert delivery separately for each deployed environment.
+The authenticated retrieval capacity scenario was not executed locally because it requires environment-owned staging identity and seeded knowledge. Therefore the local evidence above does not qualify a staging promotion. Record the full capacity report, Kubernetes render results, image signature verification, external secret delivery, production identity checks, live OCR language availability, off-cluster backup replication and alert delivery separately for each deployed environment.

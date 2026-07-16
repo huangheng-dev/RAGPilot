@@ -1,5 +1,12 @@
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -8,6 +15,40 @@ on:
   pull_request:
 
 jobs:
+  containers:
+    name: Container build (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            dockerfile: infra/docker/api.Dockerfile
+            build_args: API_OPTIONAL_EXTRAS=retrieval-llamaindex,agent-langgraph
+          - image: worker
+            dockerfile: infra/docker/worker.Dockerfile
+            build_args: ""
+          - image: web
+            dockerfile: infra/docker/web.Dockerfile
+            build_args: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build release-profile image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build_args }}
+          push: false
+          cache-from: type=gha,scope=ci-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.image }}
+
   web:
     name: Web build
     runs-on: ubuntu-latest
@@ -53,12 +94,15 @@ jobs:
 
       - name: Install API dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e './apps/api[retrieval-llamaindex,agent-langgraph]'
-          python -m pip install pytest pip-audit
+          python -m pip install uv==0.11.16
+          uv sync --project apps/api --locked --all-extras --dev
 
       - name: Audit API Python dependencies
-        run: python -m pip_audit
+        run: uv run --project apps/api --locked pip-audit
+
+      - name: Audit synchronized dependency locks
+        shell: pwsh
+        run: ./infra/scripts/dependency-lock-audit.ps1
 
       - name: Start Temporal test dependency
         run: |
@@ -78,10 +122,12 @@ jobs:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
         run: |
-          (cd apps/api && python -m alembic upgrade head)
-          python -m ragpilot_api.commands.retrieval_contract_gate packages/evals/retrieval/core-contract-v1.json
-          python -m ragpilot_api.commands.retrieval_database_gate packages/evals/retrieval/database-contract-v1.json
-          python -m pytest apps/api/tests
+          uv run --project apps/api --locked alembic upgrade head
+          uv run --project apps/api --locked python -m ragpilot_api.commands.retrieval_contract_gate packages/evals/retrieval/core-contract-v1.json
+          uv run --project apps/api --locked python -m ragpilot_api.commands.retrieval_database_gate packages/evals/retrieval/database-contract-v1.json
+          uv run --project apps/api --locked python -m ragpilot_api.commands.retrieval_framework_gate packages/evals/retrieval/database-contract-v1.json
+          uv run --project apps/api --locked python -m ragpilot_api.commands.agent_runtime_framework_gate packages/evals/agents/runtime-contract-v1.json
+          uv run --project apps/api --locked pytest apps/api/tests
 
       - name: Stop Temporal test dependency
         if: always()
@@ -102,11 +148,11 @@ jobs:
 
       - name: Install Worker dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ./apps/worker pytest pip-audit
+          python -m pip install uv==0.11.16
+          uv sync --project apps/worker --locked --dev
 
       - name: Audit Worker Python dependencies
-        run: python -m pip_audit
+        run: uv run --project apps/worker --locked pip-audit
 
       - name: Run Worker tests
-        run: python -m pytest apps/worker/tests
+        run: uv run --project apps/worker --locked pytest apps/worker/tests

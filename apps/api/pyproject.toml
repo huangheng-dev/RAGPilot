@@ -31,10 +31,16 @@ dependencies = [
 
 [project.optional-dependencies]
 retrieval-llamaindex = [
-  "llama-index-core>=0.14.22",
+  "llama-index-core>=0.14.22,<0.15",
 ]
 agent-langgraph = [
-  "langgraph",
+  "langgraph>=1.0,<2.0",
+]
+
+[dependency-groups]
+dev = [
+  "pip-audit>=2.9.0,<3.0",
+  "pytest>=9.0,<10.0",
 ]
 
 [tool.setuptools.packages.find]

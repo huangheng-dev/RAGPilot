@@ -171,11 +171,12 @@ npm run compose:up:detached
 
 RAGPilot 提供面向生产交付的基线：
 
-- Web、API、Document Worker 和 Agent Worker 的生产模式容器构建
-- 包含数据库迁移 Job、探针、资源、Ingress、扩缩容/中断控制和外部 Secret 集成的 Kubernetes 清单
+- Web、API、Document Worker 和 Agent Worker 的可复现生产容器定义：提交 Node/Python 依赖锁并按摘要固定基础镜像
+- PR 镜像构建，以及由版本标签触发的多架构 GHCR 发布、SBOM、来源证明和 Cosign 无密钥签名
+- 包含数据库迁移 Job、探针、资源、Ingress、滚动更新/中断/拓扑控制、受限运行身份和外部 Secret 集成的 Kubernetes 清单
 - [`.env.production.example`](./.env.production.example) 生产环境模板
 - OpenTelemetry、Prometheus、Tempo、Grafana、仪表盘和告警配置
-- [`infra/scripts`](./infra/scripts) 下的发布、备份恢复、可靠性和推送辅助脚本
+- 版本化容量契约，以及 [`infra/scripts`](./infra/scripts) 下的发布、备份恢复、可靠性和推送辅助脚本
 
 部署方仍需选择并闭环身份模式，提供真实镜像与 Secret，配置可信来源和托管依赖，验证迁移和模型连通性，并在目标环境完成备份恢复、容量、遥测保留、事件响应和灾难恢复演练。
 
@@ -195,11 +196,12 @@ npm run release:preflight
 - 公开文档和 Markdown 链接
 - Web lint、类型安全和生产构建
 - Node 生产依赖策略
+- Python 解析锁与容器依赖锁同步性
 - API、Worker 测试和迁移完整性
 - 确定性与真实数据库检索回归门禁
 - MCP 构建和协议测试
 - 登录后的浏览器 E2E 行为
-- 公开候选文件、交付资产和常见密钥泄漏模式
+- 发布镜像配置、公开交付资产和常见密钥泄漏模式
 
 API 路由和 ORM 数据表文档还会与实际 FastAPI、SQLAlchemy 契约进行自动核对。
 

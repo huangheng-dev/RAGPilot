@@ -55,56 +55,56 @@ Write-Host "Git baseline commit present: $hasCommit"
 Write-Host "Git remotes: $([string]::Join(', ', $remoteNames))"
 
 Write-Host ""
-Write-Host "1/12 Auditing public documentation..." -ForegroundColor Cyan
+Write-Host "1/13 Auditing public documentation..." -ForegroundColor Cyan
 & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-docs-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Public documentation audit failed."
 }
 
 Write-Host ""
-Write-Host "2/12 Auditing public markdown links..." -ForegroundColor Cyan
+Write-Host "2/13 Auditing public markdown links..." -ForegroundColor Cyan
 & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/public-links-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Public markdown link audit failed."
 }
 
 Write-Host ""
-Write-Host "3/12 Linting web..." -ForegroundColor Cyan
+Write-Host "3/13 Linting web..." -ForegroundColor Cyan
 & npm run web:lint
 if ($LASTEXITCODE -ne 0) {
   throw "Web lint failed."
 }
 
 Write-Host ""
-Write-Host "4/12 Building web..." -ForegroundColor Cyan
+Write-Host "4/13 Building web..." -ForegroundColor Cyan
 & npm run web:check
 if ($LASTEXITCODE -ne 0) {
   throw "Web build failed."
 }
 
 Write-Host ""
-Write-Host "5/12 Auditing production Node dependencies..." -ForegroundColor Cyan
+Write-Host "5/13 Auditing production Node dependencies..." -ForegroundColor Cyan
 & npm audit --omit=dev --audit-level=high
 if ($LASTEXITCODE -ne 0) {
   throw "Production Node dependency audit failed."
 }
 
 Write-Host ""
-Write-Host "6/12 Running API tests..." -ForegroundColor Cyan
+Write-Host "6/13 Running API tests..." -ForegroundColor Cyan
 & npm run api:test
 if ($LASTEXITCODE -ne 0) {
   throw "API tests failed."
 }
 
 Write-Host ""
-Write-Host "7/12 Running Worker tests..." -ForegroundColor Cyan
+Write-Host "7/13 Running Worker tests..." -ForegroundColor Cyan
 & npm run worker:test
 if ($LASTEXITCODE -ne 0) {
   throw "Worker tests failed."
 }
 
 Write-Host ""
-Write-Host "8/12 Building and testing the MCP server..." -ForegroundColor Cyan
+Write-Host "8/13 Building and testing the MCP server..." -ForegroundColor Cyan
 & npm run mcp:build
 if ($LASTEXITCODE -ne 0) {
   throw "MCP server build failed."
@@ -115,28 +115,35 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "9/12 Running isolated authenticated browser E2E tests..." -ForegroundColor Cyan
+Write-Host "9/13 Running isolated authenticated browser E2E tests..." -ForegroundColor Cyan
 & npm run e2e:test
 if ($LASTEXITCODE -ne 0) {
   throw "Authenticated browser E2E tests failed."
 }
 
 Write-Host ""
-Write-Host "10/12 Auditing public candidate files..." -ForegroundColor Cyan
+Write-Host "10/13 Auditing public candidate files..." -ForegroundColor Cyan
 & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/release-candidate-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Release candidate audit failed."
 }
 
 Write-Host ""
-Write-Host "11/12 Auditing production delivery assets..." -ForegroundColor Cyan
+Write-Host "11/13 Auditing synchronized dependency locks..." -ForegroundColor Cyan
+& $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/dependency-lock-audit.ps1"
+if ($LASTEXITCODE -ne 0) {
+  throw "Dependency lock audit failed."
+}
+
+Write-Host ""
+Write-Host "12/13 Auditing production delivery assets..." -ForegroundColor Cyan
 & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/production-delivery-audit.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Production delivery audit failed."
 }
 
 Write-Host ""
-Write-Host "12/12 Running secret scan..." -ForegroundColor Cyan
+Write-Host "13/13 Running secret scan..." -ForegroundColor Cyan
 & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File "infra/scripts/secret-scan.ps1"
 if ($LASTEXITCODE -ne 0) {
   throw "Secret scan failed."

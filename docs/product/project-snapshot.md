@@ -125,8 +125,9 @@ The standalone `apps/mcp-server` package is an active read-only outbound-server 
 - privacy-safe structured JSON logs with trace/span identity and OTLP log export
 - bounded metrics and spans for latency, errors, queue state, retries, usage, fallback, projection, Agent, and Tool behavior
 - Collector, Prometheus, Tempo, Grafana, dashboards, alert baselines, and operator reliability runbook
-- health-gated Docker dependency stack, stable host-managed API/Web mode, Kubernetes baseline, and release preflight
-- API, Worker, Web build, MCP build/protocol tests, versioned deterministic/database retrieval gates, Native-versus-LlamaIndex quality gates, Native-versus-LangGraph branch-contract gates, and authenticated browser E2E validation
+- health-gated Docker dependency stack, stable host-managed API/Web mode, hardened Kubernetes baseline, and release preflight
+- exact Python/Node dependency locks, digest-pinned container bases, pull-request image builds, and signed multi-architecture release-image publication with SBOM and provenance
+- API, Worker, Web build, MCP build/protocol tests, versioned deterministic/database retrieval gates, Native-versus-LlamaIndex quality gates, Native-versus-LangGraph branch-contract gates, versioned staging-capacity contracts, and authenticated browser E2E validation
 
 ## Technology Boundaries
 
@@ -149,7 +150,7 @@ RAGPilot deliberately keeps the following areas bounded until deployment require
 - optional legacy MCP SSE compatibility
 - complex-layout/table OCR and deeper structure-preserving parsing
 - larger production-like evaluation datasets and provider-neutral reranking promotion
-- deployment-specific backup/restore, capacity, telemetry retention, and incident exercises
+- environment execution of the supplied backup/restore, authenticated-capacity, telemetry-retention, and incident exercises
 - broader LangGraph lanes only when branching, checkpointing, approval, and output validation justify them
 
 These boundaries protect the core operating path from unsupported deployment assumptions and low-evidence expansion.

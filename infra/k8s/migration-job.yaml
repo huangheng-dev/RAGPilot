@@ -5,6 +5,7 @@ metadata:
   namespace: ragpilot
 spec:
   backoffLimit: 3
+  activeDeadlineSeconds: 900
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
@@ -12,6 +13,9 @@ spec:
         app: ragpilot-database-migration
     spec:
       restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -25,6 +29,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          terminationMessagePolicy: FallbackToLogsOnError
           envFrom:
             - configMapRef:
                 name: ragpilot-config

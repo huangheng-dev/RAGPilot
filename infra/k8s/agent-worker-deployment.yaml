@@ -5,6 +5,12 @@ metadata:
   namespace: ragpilot
 spec:
   replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: ragpilot-agent-worker
@@ -13,10 +19,20 @@ spec:
       labels:
         app: ragpilot-agent-worker
     spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 90
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: ragpilot-agent-worker
       containers:
         - name: agent-worker
           image: ghcr.io/your-org/ragpilot-api:0.1.0
@@ -25,6 +41,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          terminationMessagePolicy: FallbackToLogsOnError
           command: ["python", "-m", "ragpilot_api.workers.agent_execution_worker"]
           envFrom:
             - configMapRef:

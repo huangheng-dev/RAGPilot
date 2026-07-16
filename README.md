@@ -171,11 +171,12 @@ For detailed setup, migration, validation, and troubleshooting instructions, use
 
 RAGPilot includes a production-oriented delivery baseline:
 
-- production-mode container builds for Web, API, Document Worker, and Agent Worker
-- Kubernetes manifests with a database migration Job, probes, resources, ingress, scaling/disruption controls, and external Secret integration
+- reproducible production container definitions for Web, API, Document Worker, and Agent Worker, backed by committed Node/Python dependency locks and digest-pinned base images
+- pull-request image builds plus tag-triggered multi-architecture GHCR publication with SBOMs, provenance attestations, and keyless Cosign signatures
+- Kubernetes manifests with a database migration Job, probes, resources, ingress, rolling-update/disruption/topology controls, restricted runtime identities, and external Secret integration
 - a production environment template in [`.env.production.example`](./.env.production.example)
 - OpenTelemetry, Prometheus, Tempo, Grafana, dashboard, and alert configuration
-- release, backup/restore, reliability, and publishing helpers under [`infra/scripts`](./infra/scripts)
+- versioned capacity contracts plus release, backup/restore, reliability, and publishing helpers under [`infra/scripts`](./infra/scripts)
 
 Deployment operators remain responsible for selecting and closing the identity mode, supplying real images and Secrets, configuring trusted origins and managed dependencies, validating migrations and model reachability, and exercising backup/restore, capacity, telemetry retention, incident response, and disaster recovery in the target environment.
 
@@ -195,11 +196,12 @@ The preflight validates:
 - public documentation and Markdown links
 - Web lint, type safety, and production build
 - production Node dependency policy
+- synchronized Python resolution and container dependency locks
 - API and Worker tests plus migration completeness
 - deterministic and real-database retrieval regression gates
 - MCP build and protocol tests
 - authenticated browser E2E behavior
-- public candidate files, delivery assets, and common secret-leakage patterns
+- release-profile container definitions, public delivery assets, and common secret-leakage patterns
 
 API route and ORM table documentation are also checked against the running FastAPI and SQLAlchemy contracts.
 

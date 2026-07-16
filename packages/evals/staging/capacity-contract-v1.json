@@ -1,0 +1,65 @@
+{
+  "schema_version": "1",
+  "dataset_id": "ragpilot-staging-capacity-contract",
+  "version": "1.0.0",
+  "request_timeout_seconds": 30,
+  "scenarios": [
+    {
+      "scenario_id": "api-liveness-control-001",
+      "method": "GET",
+      "path": "/api/v1/health/live",
+      "requests": 200,
+      "concurrency": 20,
+      "warmup_runs": 5,
+      "expected_status_codes": [200],
+      "json_assertions": {"status": "alive"},
+      "gates": {
+        "max_error_rate": 0.0,
+        "max_p95_latency_ms": 500,
+        "min_throughput_rps": 20
+      }
+    },
+    {
+      "scenario_id": "api-readiness-database-001",
+      "method": "GET",
+      "path": "/api/v1/health/ready",
+      "requests": 100,
+      "concurrency": 20,
+      "warmup_runs": 5,
+      "expected_status_codes": [200],
+      "json_assertions": {"status": "ready"},
+      "gates": {
+        "max_error_rate": 0.0,
+        "max_p95_latency_ms": 750,
+        "min_throughput_rps": 10
+      }
+    },
+    {
+      "scenario_id": "authenticated-retrieval-001",
+      "method": "POST",
+      "path": "/api/v1/retrieval",
+      "requests": 50,
+      "concurrency": 10,
+      "warmup_runs": 3,
+      "required_environment": [
+        "RAGPILOT_CAPACITY_API_KEY",
+        "RAGPILOT_CAPACITY_TENANT_ID",
+        "RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID"
+      ],
+      "headers": {"X-API-Key": "${RAGPILOT_CAPACITY_API_KEY}"},
+      "json_body": {
+        "tenant_id": "${RAGPILOT_CAPACITY_TENANT_ID}",
+        "knowledge_base_id": "${RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID}",
+        "query_text": "What governed recovery controls are available?",
+        "top_k": 5
+      },
+      "expected_status_codes": [200],
+      "json_assertions": {},
+      "gates": {
+        "max_error_rate": 0.01,
+        "max_p95_latency_ms": 1500,
+        "min_throughput_rps": 2
+      }
+    }
+  ]
+}

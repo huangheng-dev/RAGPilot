@@ -49,6 +49,8 @@ Ingress
 6. Install External Secrets Operator and provide a `ClusterSecretStore` named `production-secret-store`; the `ExternalSecret` refreshes `ragpilot/production` hourly.
 7. Confirm Metrics Server is available for the API HPA and verify the PodDisruptionBudget before rollout.
 8. Provision the `ragpilot-tls` certificate Secret and adjust the ingress-controller namespace selector when the controller does not run in `ingress-nginx`.
+9. Verify the published digest, GitHub provenance attestation, SBOM, and Cosign signature before replacing the example image references.
+10. Add an environment-owned default-deny egress policy only after the exact managed database, object-storage, search, Temporal, model, MCP, telemetry, DNS, and identity endpoints are known.
 
 ## Environment-owned inputs
 
@@ -66,6 +68,10 @@ The checked-in manifests define contracts and safe defaults; they do not choose 
 | Operations | Set telemetry sampling/retention, alert receivers, on-call ownership, off-cluster backup replication, RPO/RTO and drill cadence. |
 
 Native retrieval remains the authorization and data-lifecycle boundary. LlamaIndex is selected per Retrieval Profile for authorized-context post-processing. LangGraph is selected per eligible Agent Definition inside the Temporal execution boundary. Installing both dependencies makes these policies deployable; it does not force every execution through them.
+
+The checked-in workloads run without automatically mounted service-account tokens, drop Linux capabilities, deny privilege escalation, use the runtime-default seccomp profile, disable Kubernetes service-link injection, spread replicas across nodes where possible, and retain bounded rollout history. API and Web use startup, readiness, and liveness probes. These defaults reduce avoidable privilege and rollout risk; cluster admission policy, image verification, workload identity, egress, and node isolation remain environment responsibilities.
+
+Version tags trigger `.github/workflows/release-images.yml`, which publishes `linux/amd64` and `linux/arm64` images to GHCR with SBOMs, maximum BuildKit provenance, GitHub provenance attestations, and keyless Cosign signatures. CI smoke-builds the same release profiles before merge. Deploy immutable digests, never mutable version tags alone.
 
 ## Example
 

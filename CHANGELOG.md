@@ -35,6 +35,9 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - release-blocking Native/LlamaIndex quality comparisons and Native/LangGraph branch, validation, trace, fallback, and steady-state overhead contracts
 - multilingual, Chinese OCR, long-context, ACL, stale/deleted lifecycle, and adversarial cross-scope retrieval regression cases
 - manifest-verified PostgreSQL and MinIO backup/restore drills with isolated resources, exact schema/version checks, fault-injection recovery assertions, and guaranteed cleanup
+- exact uv resolutions and exported container dependency locks with automated drift enforcement
+- pull-request release-profile image builds and multi-architecture GHCR publication with SBOMs, provenance attestations, and keyless Cosign signatures
+- versioned staging capacity gates for liveness, database readiness, and authenticated retrieval without recording request or response secrets
 
 ### Changed
 
@@ -53,6 +56,7 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - optional framework dependencies are split into core API, Agent Worker, and full development/evaluation build profiles instead of being mandatory container dependencies
 - Chinese documentation navigation uses translated labels while clearly identifying English technical and governance bodies as the current canonical source
 - production ingestion and retrieval embedding identities are aligned, full framework image capabilities stay consistent across API and Agent Worker, and health dependency probes are bounded independently from retrieval timeouts
+- container base images are digest-pinned and Kubernetes workloads use bounded rollout history, topology spreading, disabled automatic service-account credentials, and stricter probe/termination behavior
 
 ### Security
 

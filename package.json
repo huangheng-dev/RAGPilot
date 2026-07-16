@@ -34,6 +34,7 @@
     "release:links-audit": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/public-links-audit.ps1",
     "release:candidate-audit": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/release-candidate-audit.ps1",
     "release:delivery-audit": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/production-delivery-audit.ps1",
+    "release:locks-audit": "pwsh -NoProfile -File infra/scripts/dependency-lock-audit.ps1",
     "release:secret-scan": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/secret-scan.ps1",
     "release:ci-local": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"npm run web:check; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run api:test\"",
     "release:preflight": "pwsh -NoProfile -File infra/scripts/release-preflight.ps1",

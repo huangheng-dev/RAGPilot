@@ -27,3 +27,14 @@ python -m ragpilot_api.commands.retrieval_framework_gate packages/evals/retrieva
 ```powershell
 python -m ragpilot_api.commands.agent_runtime_framework_gate packages/evals/agents/runtime-contract-v1.json
 ```
+
+`staging/capacity-contract-v1.json` is the versioned environment-capacity contract. It measures error rate, throughput and p50/p95/p99/max latency for liveness, database readiness and authenticated retrieval. The command never writes request credentials, headers, bodies or response bodies to its report. A missing authenticated staging input fails promotion instead of silently qualifying a partial run:
+
+```powershell
+$env:RAGPILOT_CAPACITY_API_KEY = "<staging-api-key>"
+$env:RAGPILOT_CAPACITY_TENANT_ID = "<tenant-id>"
+$env:RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID = "<knowledge-base-id>"
+uv run --project apps/api --locked python -m ragpilot_api.commands.staging_capacity_gate packages/evals/staging/capacity-contract-v1.json --base-url https://staging.example.com --output output/capacity/staging.json
+```
+
+Thresholds in this repository are a promotion baseline, not a substitute for environment-specific SLO and load-shape decisions.

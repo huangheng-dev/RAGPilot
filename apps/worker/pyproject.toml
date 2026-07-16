@@ -26,5 +26,11 @@ dependencies = [
   "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
 ]
 
+[dependency-groups]
+dev = [
+  "pip-audit>=2.9.0,<3.0",
+  "pytest>=9.0,<10.0",
+]
+
 [tool.setuptools.packages.find]
 include = ["ragpilot_worker*"]
