@@ -22,6 +22,7 @@ $requiredPaths = @(
   @{ Path = "infra/docker/api.Dockerfile"; Description = "api container image" },
   @{ Path = "infra/docker/worker.Dockerfile"; Description = "worker container image" },
   @{ Path = ".github/workflows/release-images.yml"; Description = "signed image release workflow" },
+  @{ Path = ".github/workflows/release-readiness.yml"; Description = "release readiness workflow" },
   @{ Path = ".github/workflows/staging-capacity.yml"; Description = "protected staging capacity workflow" },
   @{ Path = "infra/scripts/dependency-lock-audit.ps1"; Description = "dependency lock audit" },
   @{ Path = "apps/api/uv.lock"; Description = "API dependency resolution" },
@@ -54,6 +55,7 @@ foreach ($requiredPath in $requiredPaths) {
 $requiredTrackedPaths = @(
   ".env.production.example",
   ".github/workflows/release-images.yml",
+  ".github/workflows/release-readiness.yml",
   ".github/workflows/staging-capacity.yml",
   "infra/scripts/dependency-lock-audit.ps1",
   "apps/api/uv.lock",
@@ -171,6 +173,14 @@ foreach ($contract in $requiredReleaseImageContracts) {
   if ($releaseImageWorkflow -notmatch $contract.Pattern) {
     throw "Image release workflow is missing $($contract.Description)."
   }
+}
+
+$releaseReadinessWorkflow = Get-Content ".github/workflows/release-readiness.yml" -Raw
+if ($releaseReadinessWorkflow -notmatch 'python\s+-m\s+pip\s+install\s+uv==0\.11\.16') {
+  throw "Release readiness workflow must install the lock-audit uv version explicitly."
+}
+if ($releaseReadinessWorkflow -notmatch 'npm\s+run\s+release:preflight') {
+  throw "Release readiness workflow must run the complete release preflight."
 }
 
 $stagingCapacityWorkflow = Get-Content ".github/workflows/staging-capacity.yml" -Raw
