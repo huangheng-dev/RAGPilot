@@ -58,19 +58,20 @@ Authenticated scoped query
 -> pgvector semantic recall + Elasticsearch BM25 recall
 -> PostgreSQL lexical fallback when required
 -> governed fusion and native rerank
+-> effective Retrieval Profile selects the versioned native or LlamaIndex processor policy
 -> optional LlamaIndex authorized-candidate processing and final PostgreSQL reauthorization
 -> context assembly and evidence validation
 -> model generation through the gateway
 -> SSE delivery, Citations, Message, Prompt binding, and diagnostics persistence
 ```
 
-Authorization is applied to candidate retrieval, including Elasticsearch candidates revalidated against PostgreSQL policy before exposure. When `llamaindex_pilot` is selected, LlamaIndex operates only on that authorized candidate set and the processed Chunk identifiers are checked against PostgreSQL policy again before they can reach Chat or evaluation output.
+Authorization is applied to candidate retrieval, including Elasticsearch candidates revalidated against PostgreSQL policy before exposure. The knowledge-base assignment or platform default resolves one Retrieval Profile before engine selection, and that same resolved policy is passed through the execution so diagnostics cannot claim a different engine from the one used. When `llamaindex_pilot` is selected, LlamaIndex operates only on that authorized candidate set and the processed Chunk identifiers are checked against PostgreSQL policy again before they can reach Chat or evaluation output.
 
 ### Agent execution
 
 ```text
 Agent launch
--> API persists definition, scope, Tool sandbox, budgets, and optional output Schema
+-> API persists definition, runtime policy, scope, Tool sandbox, budgets, and optional output Schema
 -> Temporal starts the execution
 -> Agent Worker materializes the immutable snapshot
 -> optional LangGraph decision graph selects and validates a bounded execution branch
@@ -79,7 +80,7 @@ Agent launch
 -> terminal execution can be replayed with source lineage and a stable fingerprint
 ```
 
-Temporal owns durable retries, timers, cancellation, approval waiting, and workflow history. When `langgraph_pilot` is selected, typed graphs classify document-intake or workflow-recovery posture, create branch-specific plans, validate graph output, and emit node timing inside one Temporal-owned execution. LangGraph does not replace the durable workflow boundary.
+Temporal owns durable retries, timers, cancellation, approval waiting, and workflow history. The Agent definition selects and versions its in-run runtime; that policy is copied into the immutable execution snapshot. When `langgraph_pilot` is selected, typed graphs classify document-intake or workflow-recovery posture, create branch-specific plans, validate graph output, and emit node timing inside one Temporal-owned execution. LangGraph does not replace the durable workflow boundary.
 
 ## Layer Responsibilities
 

@@ -178,6 +178,8 @@ Native, HTTP, and MCP Tools must execute through one policy-enforcing Tool Runti
 
 Temporal owns durable workflow semantics such as retries, timers, cancellation, approval waits, and history. LangGraph may own bounded in-run graph transitions only when branching and checkpointing provide measurable value; it must not replace Temporal's durable ownership.
 
+Framework selection is durable domain policy rather than a process-wide feature flag. Agent definitions must version their selected in-run runtime, Retrieval Profiles must version their selected post-processor policy, and executions must retain the effective versions used. Optional dependencies may be omitted from a deployment, but health and governance contracts must surface any persisted policy that cannot run there.
+
 ### Evaluation and release quality
 
 Quality must be versioned and testable. Evaluation contracts should cover:

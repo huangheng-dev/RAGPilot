@@ -82,6 +82,13 @@ def build_execution_policy(
     }
     if agent_definition_snapshot is not None:
         policy["agent_definition_snapshot"] = agent_definition_snapshot
+        configured_engine = agent_definition_snapshot.get("runtime_engine")
+        configured_version = agent_definition_snapshot.get("runtime_version")
+        if configured_engine and configured_version:
+            policy["runtime"] = {
+                "engine": configured_engine,
+                "version": configured_version,
+            }
     return policy
 
 

@@ -255,7 +255,7 @@ async def get_agent_runtime_governance(
     readiness: str | None = Query(default=None, pattern=r"^(ready|attention)$"),
     issue: str | None = Query(
         default=None,
-        pattern=r"^(model_missing|model_disabled|model_runtime_unconfigured|retrieval_profile_missing|retrieval_profile_disabled|scope_missing|scope_invalid|tools_missing|tool_registration_disabled|tool_approval_required|tool_mcp_reserved|tool_mcp_integration_pending)$",
+        pattern=r"^(model_missing|model_disabled|model_runtime_unconfigured|retrieval_profile_missing|retrieval_profile_disabled|retrieval_engine_unavailable|scope_missing|scope_invalid|tools_missing|tool_registration_disabled|tool_approval_required|tool_mcp_reserved|tool_mcp_integration_pending|runtime_engine_unavailable)$",
     ),
     model_endpoint_id: UUID | None = Query(default=None),
     model_provider_type: str | None = Query(default=None, pattern=r"^(deterministic|openai_compatible|ollama|vllm)$"),

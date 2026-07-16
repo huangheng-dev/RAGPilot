@@ -339,6 +339,7 @@ const zhCN = {
       mode: "执行模式",
       status: "草稿状态",
       modelStrategy: "模型策略",
+      runtimeEngine: "智能体运行时",
       runtimeModel: "运行模型端点",
       runtimeModelInherited: "沿用策略预留",
       runtimeModelBound: "已绑模型",
@@ -374,6 +375,10 @@ const zhCN = {
       local_reserved: "本地模型预留",
       remote_reserved: "远程模型预留",
       hybrid_reserved: "混合路由预留",
+    },
+    runtimeEngines: {
+      native: "原生运行时 · native_v1",
+      langgraph_pilot: "LangGraph · langgraph_v1",
     },
     tools: {
       chat: "对话",
@@ -854,6 +859,7 @@ const zhCN = {
         model_runtime_unconfigured: "模型运行配置不完整",
         retrieval_profile_missing: "缺失检索策略",
         retrieval_profile_disabled: "已禁用检索策略",
+        retrieval_engine_unavailable: "检索处理器不可用",
         scope_missing: "缺失范围",
         scope_invalid: "范围失效",
         tools_missing: "缺失工具",
@@ -861,6 +867,7 @@ const zhCN = {
         tool_approval_required: "审批边界工具",
         tool_mcp_reserved: "预留 MCP 工具",
         tool_mcp_integration_pending: "待接入 MCP 连接器",
+        runtime_engine_unavailable: "智能体运行时不可用",
       },
       issues: {
         model_missing: "当前没有可用的运行模型",
@@ -869,6 +876,8 @@ const zhCN = {
           "绑定的模型端点虽然已启用，但运行配置还不完整",
         retrieval_profile_missing: "当前知识范围没有解析到有效的治理检索策略",
         retrieval_profile_disabled: "当前知识范围绑定到了已停用的检索策略",
+        retrieval_engine_unavailable:
+          "当前知识范围所用检索策略依赖的处理器未安装在此部署配置中",
         scope_missing: "知识范围尚未配置",
         scope_invalid: "知识范围已无法解析到现有资源",
         tools_missing: "当前没有可用的连接工具",
@@ -879,6 +888,8 @@ const zhCN = {
           "有 {count} 个已绑定预留 MCP 工具仍未完成治理连接器指派",
         tool_mcp_integration_pending:
           "有 {count} 个已绑定预留 MCP 工具仍在等待连接器运行闭环",
+        runtime_engine_unavailable:
+          "当前部署配置未安装所选的智能体运行时",
       },
     },
     seed: {
@@ -2653,6 +2664,7 @@ const zhCN = {
       search: "按名称、标识或资源 ID 搜索",
       enabled: "已启用",
       disabled: "已停用",
+      runtimeUnavailable: "运行时不可用",
       default: "默认",
       edit: "编辑",
       test: "测试",
@@ -2705,6 +2717,10 @@ const zhCN = {
         connectorType: "连接器类型",
         authMode: "认证方式",
         retrievalMode: "检索模式",
+        retrievalEngine: "检索处理器",
+        engineVersion: "处理策略版本",
+        llamaindexSimilarityCutoff: "LlamaIndex 相似度阈值",
+        llamaindexLongContextReorder: "启用长上下文重排",
         notes: "备注 / 描述",
         approval: "需要管理员审批",
         top_k: "Top K",

@@ -1,4 +1,7 @@
 from types import SimpleNamespace
+from decimal import Decimal
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -10,6 +13,11 @@ from ragpilot_api.application.retrieval.retrieval_engines import (
     normalize_retrieval_engine_name,
     run_llamaindex_pilot_postprocessing,
 )
+from ragpilot_api.application.retrieval.retrieval_runtime import resolve_retrieval_profile
+from ragpilot_api.application.retrieval.retrieval_profile_registry_service import (
+    validate_retrieval_engine_policy,
+)
+from ragpilot_api.application.errors import ResourceConflictError
 
 
 def test_build_retrieval_engine_returns_native_engine_by_default() -> None:
@@ -46,6 +54,73 @@ def test_build_retrieval_engine_rejects_unknown_engine() -> None:
 
     with pytest.raises(ValueError, match="Unsupported retrieval engine"):
         build_retrieval_engine(settings)
+
+
+def test_enabled_llamaindex_profile_requires_deployment_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "ragpilot_api.application.retrieval.retrieval_profile_registry_service.build_runtime_readiness_snapshot",
+        lambda: SimpleNamespace(llamaindex_pilot_ready=False),
+    )
+
+    with pytest.raises(ResourceConflictError, match="deployment profile"):
+        validate_retrieval_engine_policy(
+            engine_name="llamaindex_pilot",
+            engine_version="llamaindex_authorized_context_v1",
+            is_enabled=True,
+        )
+
+    validate_retrieval_engine_policy(
+        engine_name="llamaindex_pilot",
+        engine_version="llamaindex_authorized_context_v1",
+        is_enabled=False,
+    )
+
+
+@pytest.mark.anyio
+async def test_resolve_retrieval_profile_uses_persisted_engine_policy() -> None:
+    profile_id = uuid4()
+    knowledge_base_id = uuid4()
+    knowledge_base_repository = SimpleNamespace(
+        get_knowledge_base_by_id=AsyncMock(
+            return_value=SimpleNamespace(retrieval_profile_id=profile_id)
+        )
+    )
+    retrieval_profile_repository = SimpleNamespace(
+        get_retrieval_profile=AsyncMock(
+            return_value=SimpleNamespace(
+                id=profile_id,
+                name="Authorized LlamaIndex",
+                is_enabled=True,
+                engine_name="llamaindex_pilot",
+                engine_version="llamaindex_authorized_context_v1",
+                retrieval_mode="hybrid",
+                top_k=8,
+                vector_weight=Decimal("0.7"),
+                lexical_weight=Decimal("0.3"),
+                hybrid_overlap_bonus=Decimal("0.1"),
+                llamaindex_similarity_cutoff=Decimal("0.25"),
+                llamaindex_long_context_reorder_enabled=False,
+            )
+        ),
+        get_default_enabled_retrieval_profile=AsyncMock(),
+    )
+
+    resolved = await resolve_retrieval_profile(
+        knowledge_base_id=knowledge_base_id,
+        requested_top_k=5,
+        settings=SimpleNamespace(retrieval_engine="native"),
+        knowledge_base_repository=knowledge_base_repository,
+        retrieval_profile_repository=retrieval_profile_repository,
+    )
+
+    assert resolved.engine_name == "llamaindex_pilot"
+    assert resolved.engine_version == "llamaindex_authorized_context_v1"
+    assert resolved.llamaindex_similarity_cutoff == 0.25
+    assert resolved.llamaindex_long_context_reorder_enabled is False
+    assert resolved.top_k == 5
+    assert resolved.profile_source == "knowledge_base"
 
 
 def test_run_llamaindex_pilot_postprocessing_uses_authorized_retriever_and_processors() -> None:

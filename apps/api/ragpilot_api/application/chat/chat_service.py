@@ -10,8 +10,11 @@ from ragpilot_api.application.chat.response_builder import build_suggested_conve
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.application.model_gateway.model_gateway import ModelGateway
 from ragpilot_api.application.model_gateway.runtime_binding_resolver import RuntimeBindingResolver
-from ragpilot_api.application.retrieval.retrieval_engines import normalize_retrieval_engine_name
-from ragpilot_api.application.retrieval.retrieval_runtime import execute_retrieval
+from ragpilot_api.application.retrieval.retrieval_engines import (
+    build_retrieval_engine,
+    normalize_retrieval_engine_name,
+)
+from ragpilot_api.application.retrieval.retrieval_runtime import resolve_retrieval_profile
 from ragpilot_api.contracts.http.chat_contracts import (
     ChatAskRequest,
     ChatAskResponse,
@@ -327,7 +330,21 @@ class ChatService:
                 assistant_message=build_message_response(assistant_message, []),
             )
 
-        retrieval_outcome = await execute_retrieval(
+        resolved_retrieval_profile = await resolve_retrieval_profile(
+            knowledge_base_id=request.knowledge_base_id,
+            requested_top_k=request.top_k,
+            settings=self.settings,
+            knowledge_base_repository=self.knowledge_base_repository,
+            retrieval_profile_repository=self.retrieval_profile_repository,
+        )
+        configured_retrieval_engine = normalize_retrieval_engine_name(
+            resolved_retrieval_profile.engine_name
+        )
+        retrieval_engine = build_retrieval_engine(
+            self.settings,
+            engine_name=configured_retrieval_engine,
+        )
+        retrieval_outcome = await retrieval_engine.execute(
             retrieval_repository=self.retrieval_repository,
             settings=self.settings,
             tenant_id=request.tenant_id,
@@ -338,6 +355,7 @@ class ChatService:
             acl_bypass=retrieval_acl_bypass,
             knowledge_base_repository=self.knowledge_base_repository,
             retrieval_profile_repository=self.retrieval_profile_repository,
+            resolved_profile=resolved_retrieval_profile,
         )
         retrieved_chunks = retrieval_outcome.results
         runtime_binding = (
@@ -366,9 +384,8 @@ class ChatService:
             usage_json={
                 **generation.usage_json,
                 "retrieval_result_count": len(retrieved_chunks),
-                "retrieval_engine": normalize_retrieval_engine_name(
-                    getattr(self.settings, "retrieval_engine", "native")
-                ),
+                "retrieval_engine": retrieval_outcome.engine_name,
+                "retrieval_engine_version": retrieval_outcome.engine_version,
                 "retrieval_mode": retrieval_outcome.retrieval_mode,
                 "retrieval_profile_id": str(retrieval_outcome.retrieval_profile_id) if retrieval_outcome.retrieval_profile_id else None,
                 "retrieval_profile_name": retrieval_outcome.retrieval_profile_name,

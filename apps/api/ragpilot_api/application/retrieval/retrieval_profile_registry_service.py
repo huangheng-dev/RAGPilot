@@ -10,6 +10,7 @@ from ragpilot_api.contracts.http.retrieval_profile_contracts import (
 )
 from ragpilot_api.infrastructure.database.models import RetrievalProfile
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
+from ragpilot_api.application.system.runtime_readiness import build_runtime_readiness_snapshot
 
 
 class RetrievalProfileRegistryService:
@@ -17,14 +18,23 @@ class RetrievalProfileRegistryService:
         self.retrieval_profile_repository = retrieval_profile_repository
 
     async def create_retrieval_profile(self, request: RetrievalProfileCreateRequest) -> RetrievalProfileResponse:
+        validate_retrieval_engine_policy(
+            engine_name=request.engine_name,
+            engine_version=request.engine_version,
+            is_enabled=request.is_enabled,
+        )
         retrieval_profile = await self.retrieval_profile_repository.create_retrieval_profile(
             name=request.name,
             slug=request.slug,
             retrieval_mode=request.retrieval_mode,
+            engine_name=request.engine_name,
+            engine_version=request.engine_version,
             top_k=request.top_k,
             vector_weight=Decimal(str(request.vector_weight)),
             lexical_weight=Decimal(str(request.lexical_weight)),
             hybrid_overlap_bonus=Decimal(str(request.hybrid_overlap_bonus)),
+            llamaindex_similarity_cutoff=Decimal(str(request.llamaindex_similarity_cutoff)),
+            llamaindex_long_context_reorder_enabled=request.llamaindex_long_context_reorder_enabled,
             is_enabled=request.is_enabled,
             is_default=request.is_default,
             notes=request.notes,
@@ -58,15 +68,49 @@ class RetrievalProfileRegistryService:
         retrieval_profile_id: UUID,
         request: RetrievalProfileUpdateRequest,
     ) -> RetrievalProfileResponse | None:
+        existing_retrieval_profile = await self.retrieval_profile_repository.get_retrieval_profile(
+            retrieval_profile_id=retrieval_profile_id
+        )
+        if existing_retrieval_profile is None:
+            return None
+        engine_name = request.engine_name or getattr(existing_retrieval_profile, "engine_name", "native")
+        engine_version = request.engine_version or getattr(
+            existing_retrieval_profile, "engine_version", "native_v1"
+        )
+        llamaindex_similarity_cutoff = (
+            request.llamaindex_similarity_cutoff
+            if request.llamaindex_similarity_cutoff is not None
+            else float(getattr(existing_retrieval_profile, "llamaindex_similarity_cutoff", 0.0))
+        )
+        llamaindex_long_context_reorder_enabled = (
+            request.llamaindex_long_context_reorder_enabled
+            if request.llamaindex_long_context_reorder_enabled is not None
+            else bool(
+                getattr(
+                    existing_retrieval_profile,
+                    "llamaindex_long_context_reorder_enabled",
+                    True,
+                )
+            )
+        )
+        validate_retrieval_engine_policy(
+            engine_name=engine_name,
+            engine_version=engine_version,
+            is_enabled=request.is_enabled,
+        )
         retrieval_profile = await self.retrieval_profile_repository.update_retrieval_profile(
             retrieval_profile_id=retrieval_profile_id,
             name=request.name,
             slug=request.slug,
             retrieval_mode=request.retrieval_mode,
+            engine_name=engine_name,
+            engine_version=engine_version,
             top_k=request.top_k,
             vector_weight=Decimal(str(request.vector_weight)),
             lexical_weight=Decimal(str(request.lexical_weight)),
             hybrid_overlap_bonus=Decimal(str(request.hybrid_overlap_bonus)),
+            llamaindex_similarity_cutoff=Decimal(str(llamaindex_similarity_cutoff)),
+            llamaindex_long_context_reorder_enabled=llamaindex_long_context_reorder_enabled,
             is_enabled=request.is_enabled,
             is_default=request.is_default,
             notes=request.notes,
@@ -135,15 +179,29 @@ class RetrievalProfileRegistryService:
         else:
             raise ResourceConflictError("Unsupported retrieval profile governance action.")
 
+        validate_retrieval_engine_policy(
+            engine_name=getattr(retrieval_profile, "engine_name", "native"),
+            engine_version=getattr(retrieval_profile, "engine_version", "native_v1"),
+            is_enabled=next_is_enabled,
+        )
+
         updated_retrieval_profile = await self.retrieval_profile_repository.update_retrieval_profile(
             retrieval_profile_id=retrieval_profile_id,
             name=retrieval_profile.name,
             slug=retrieval_profile.slug,
             retrieval_mode=retrieval_profile.retrieval_mode,
+            engine_name=getattr(retrieval_profile, "engine_name", "native"),
+            engine_version=getattr(retrieval_profile, "engine_version", "native_v1"),
             top_k=retrieval_profile.top_k,
             vector_weight=retrieval_profile.vector_weight,
             lexical_weight=retrieval_profile.lexical_weight,
             hybrid_overlap_bonus=retrieval_profile.hybrid_overlap_bonus,
+            llamaindex_similarity_cutoff=getattr(
+                retrieval_profile, "llamaindex_similarity_cutoff", Decimal("0")
+            ),
+            llamaindex_long_context_reorder_enabled=getattr(
+                retrieval_profile, "llamaindex_long_context_reorder_enabled", True
+            ),
             is_enabled=next_is_enabled,
             is_default=next_is_default,
             notes=retrieval_profile.notes,
@@ -169,15 +227,30 @@ def build_retrieval_profile_response(
     *,
     bound_knowledge_base_count: int = 0,
 ) -> RetrievalProfileResponse:
+    engine_name = getattr(retrieval_profile, "engine_name", "native")
+    runtime_ready = (
+        engine_name != "llamaindex_pilot"
+        or build_runtime_readiness_snapshot().llamaindex_pilot_ready
+    )
     return RetrievalProfileResponse(
         id=retrieval_profile.id,
         name=retrieval_profile.name,
         slug=retrieval_profile.slug,
         retrieval_mode=retrieval_profile.retrieval_mode,
+        engine_name=engine_name,
+        engine_version=getattr(retrieval_profile, "engine_version", "native_v1"),
+        runtime_ready=runtime_ready,
+        runtime_issue=None if runtime_ready else "engine_unavailable",
         top_k=retrieval_profile.top_k,
         vector_weight=float(retrieval_profile.vector_weight),
         lexical_weight=float(retrieval_profile.lexical_weight),
         hybrid_overlap_bonus=float(retrieval_profile.hybrid_overlap_bonus),
+        llamaindex_similarity_cutoff=float(
+            getattr(retrieval_profile, "llamaindex_similarity_cutoff", 0.0)
+        ),
+        llamaindex_long_context_reorder_enabled=bool(
+            getattr(retrieval_profile, "llamaindex_long_context_reorder_enabled", True)
+        ),
         is_enabled=retrieval_profile.is_enabled,
         is_default=retrieval_profile.is_default,
         notes=retrieval_profile.notes,
@@ -185,3 +258,26 @@ def build_retrieval_profile_response(
         created_at=retrieval_profile.created_at,
         updated_at=retrieval_profile.updated_at,
     )
+
+
+def validate_retrieval_engine_policy(
+    *, engine_name: str, engine_version: str, is_enabled: bool
+) -> None:
+    supported_versions = {
+        "native": "native_v1",
+        "llamaindex_pilot": "llamaindex_authorized_context_v1",
+    }
+    expected_version = supported_versions.get(engine_name)
+    if expected_version is None or engine_version != expected_version:
+        raise ResourceConflictError(
+            f"Retrieval engine '{engine_name}' requires engine version "
+            f"'{expected_version or 'a supported version'}'."
+        )
+    if (
+        engine_name == "llamaindex_pilot"
+        and is_enabled
+        and not build_runtime_readiness_snapshot().llamaindex_pilot_ready
+    ):
+        raise ResourceConflictError(
+            "Install the LlamaIndex retrieval deployment profile before enabling this policy."
+        )

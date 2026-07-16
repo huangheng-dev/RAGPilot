@@ -76,7 +76,8 @@ PostgreSQL remains the business source of truth. pgvector and Elasticsearch are 
 
 - pgvector semantic recall and Elasticsearch BM25/filter recall with PostgreSQL lexical fallback
 - governed fusion, native reranking, retrieval profiles, effective-profile resolution, and diagnostics
-- opt-in `llamaindex_pilot` comparison that wraps already-authorized native candidates with LlamaIndex's similarity and long-context processors, reauthorizes the resulting Chunk set in PostgreSQL, and records processor/version/count evidence
+- per-Retrieval-Profile `native` or opt-in `llamaindex_pilot` processor policy, including a persisted policy version, similarity cutoff, and long-context reorder setting
+- `llamaindex_pilot` wraps already-authorized native candidates, reauthorizes the resulting Chunk set in PostgreSQL, and records processor/version/count evidence for normal retrieval and comparison runs
 - persisted retrieval evaluation records, summaries, and operator follow-up queues
 - versioned contract datasets with ranking, latency, groundedness, citation, isolation, and cost gates in CI and release preflight
 - grounded conversations, Messages, Citations, feedback, history, search, metrics, rename, and deletion
@@ -104,7 +105,8 @@ The `packages/prompts` package remains the authored-asset/import-export boundary
 - standalone `stdio` MCP server with API-key-scoped knowledge search, document inspection, and workflow inspection tools
 - persisted Agent definitions, launches, durable executions, evaluation summaries, retry/cancel/replay lineage, replay fingerprints, and human approval decisions
 - immutable per-execution definition and allowed-Tool sandbox snapshots, deployment-capped tool/runtime/output budgets, and optional JSON Schema result validation
-- opt-in typed `langgraph_pilot` document-intake and workflow-recovery lanes with governed branch decisions, branch-specific actions, output validation, and operator-visible trace timing inside Temporal-owned durable execution
+- per-Agent `native` or opt-in typed `langgraph_pilot` runtime policy with a persisted version, deployment-readiness governance, and immutable execution snapshot
+- `langgraph_pilot` document-intake and workflow-recovery lanes provide governed branch decisions, branch-specific actions, output validation, and operator-visible trace timing inside Temporal-owned durable execution
 
 The standalone `apps/mcp-server` package is an active read-only outbound-server boundary. It remains separate from the MCP client/control-plane path and is not a top-level product destination.
 
@@ -131,8 +133,10 @@ The standalone `apps/mcp-server` package is an active read-only outbound-server 
 - PostgreSQL owns business truth and durable governance state.
 - pgvector owns semantic recall; Elasticsearch owns rebuildable lexical/search projection.
 - Temporal owns durable retries, timers, cancellation, waiting, and workflow history.
-- LangGraph, when selected through `AGENT_RUNTIME_ENGINE`, owns typed document-intake and workflow-recovery decisions, branch-specific plans, output validation, and node timing inside a Temporal-owned execution; it does not own durable business workflow state.
-- LlamaIndex, when selected through `RETRIEVAL_ENGINE`, owns optional authorized candidate post-processing and comparison evidence; PostgreSQL authorization and the application retrieval contract remain authoritative.
+- LangGraph, when selected on an Agent definition, owns typed document-intake and workflow-recovery decisions, branch-specific plans, output validation, and node timing inside a Temporal-owned execution; it does not own durable business workflow state.
+- LlamaIndex, when selected on the effective Retrieval Profile, owns optional authorized-candidate post-processing and comparison evidence; PostgreSQL authorization and the application retrieval contract remain authoritative.
+- `AGENT_RUNTIME_ENGINE`, `RETRIEVAL_ENGINE`, and the LlamaIndex environment settings are legacy/deployment fallbacks for records that predate persisted policies, not the primary governance interface.
+- Optional framework packages are aligned deployment profiles: core omits both, Agent installs LangGraph in the API and Agent Worker, and full development/evaluation installs both adapters in each execution service. Health and runtime-governance contracts expose missing selected dependencies.
 - Model-provider behavior stays behind the model gateway.
 - MCP and HTTP Tools remain explicitly registered, tenant-scoped, policy-checked, and auditable.
 - Browser pages consume backend-owned policy and governance contracts instead of recreating them locally.

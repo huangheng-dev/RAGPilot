@@ -20,10 +20,14 @@ class RetrievalProfileRepository:
         name: str,
         slug: str,
         retrieval_mode: str,
+        engine_name: str,
+        engine_version: str,
         top_k: int,
         vector_weight: Decimal,
         lexical_weight: Decimal,
         hybrid_overlap_bonus: Decimal,
+        llamaindex_similarity_cutoff: Decimal,
+        llamaindex_long_context_reorder_enabled: bool,
         is_enabled: bool,
         is_default: bool,
         notes: str | None,
@@ -35,10 +39,14 @@ class RetrievalProfileRepository:
             name=name,
             slug=slug,
             retrieval_mode=retrieval_mode,
+            engine_name=engine_name,
+            engine_version=engine_version,
             top_k=top_k,
             vector_weight=vector_weight,
             lexical_weight=lexical_weight,
             hybrid_overlap_bonus=hybrid_overlap_bonus,
+            llamaindex_similarity_cutoff=llamaindex_similarity_cutoff,
+            llamaindex_long_context_reorder_enabled=llamaindex_long_context_reorder_enabled,
             is_enabled=is_enabled,
             is_default=is_default,
             notes=notes,
@@ -118,10 +126,14 @@ class RetrievalProfileRepository:
         name: str,
         slug: str,
         retrieval_mode: str,
+        engine_name: str,
+        engine_version: str,
         top_k: int,
         vector_weight: Decimal,
         lexical_weight: Decimal,
         hybrid_overlap_bonus: Decimal,
+        llamaindex_similarity_cutoff: Decimal,
+        llamaindex_long_context_reorder_enabled: bool,
         is_enabled: bool,
         is_default: bool,
         notes: str | None,
@@ -136,10 +148,14 @@ class RetrievalProfileRepository:
         retrieval_profile.name = name
         retrieval_profile.slug = slug
         retrieval_profile.retrieval_mode = retrieval_mode
+        retrieval_profile.engine_name = engine_name
+        retrieval_profile.engine_version = engine_version
         retrieval_profile.top_k = top_k
         retrieval_profile.vector_weight = vector_weight
         retrieval_profile.lexical_weight = lexical_weight
         retrieval_profile.hybrid_overlap_bonus = hybrid_overlap_bonus
+        retrieval_profile.llamaindex_similarity_cutoff = llamaindex_similarity_cutoff
+        retrieval_profile.llamaindex_long_context_reorder_enabled = llamaindex_long_context_reorder_enabled
         retrieval_profile.is_enabled = is_enabled
         retrieval_profile.is_default = is_default
         retrieval_profile.notes = notes

@@ -21,6 +21,8 @@ class AgentRepository:
         slug: str,
         mode: str,
         status: str,
+        runtime_engine: str,
+        runtime_version: str,
         model_strategy: str,
         model_endpoint_id: UUID | None,
         objective: str,
@@ -35,6 +37,8 @@ class AgentRepository:
             slug=slug,
             agent_mode=mode,
             agent_status=status,
+            runtime_engine=runtime_engine,
+            runtime_version=runtime_version,
             model_strategy=model_strategy,
             model_endpoint_id=model_endpoint_id,
             objective=objective,
@@ -160,6 +164,8 @@ class AgentRepository:
         slug: str,
         mode: str,
         status: str,
+        runtime_engine: str,
+        runtime_version: str,
         model_strategy: str,
         model_endpoint_id: UUID | None,
         objective: str,
@@ -179,6 +185,8 @@ class AgentRepository:
         agent_definition.slug = slug
         agent_definition.agent_mode = mode
         agent_definition.agent_status = status
+        agent_definition.runtime_engine = runtime_engine
+        agent_definition.runtime_version = runtime_version
         agent_definition.model_strategy = model_strategy
         agent_definition.model_endpoint_id = model_endpoint_id
         agent_definition.objective = objective

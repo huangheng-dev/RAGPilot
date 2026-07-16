@@ -37,6 +37,10 @@ class ResolvedRetrievalProfile:
     lexical_weight: float
     hybrid_overlap_bonus: float
     profile_source: str
+    engine_name: str = "native"
+    engine_version: str = "native_v1"
+    llamaindex_similarity_cutoff: float = 0.0
+    llamaindex_long_context_reorder_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,10 @@ class RetrievalExecutionOutcome:
     rerank_metadata: dict[str, Any] = field(default_factory=dict)
     retrieval_plan_metadata: dict[str, Any] = field(default_factory=dict)
     evidence_validation_metadata: dict[str, Any] = field(default_factory=dict)
+    engine_name: str = "native"
+    engine_version: str = "native_v1"
+    llamaindex_similarity_cutoff: float = 0.0
+    llamaindex_long_context_reorder_enabled: bool = True
 
 
 async def execute_retrieval(
@@ -68,14 +76,16 @@ async def execute_retrieval(
     acl_bypass: bool = False,
     knowledge_base_repository: KnowledgeBaseRepository | None = None,
     retrieval_profile_repository: RetrievalProfileRepository | None = None,
+    resolved_profile: ResolvedRetrievalProfile | None = None,
 ) -> RetrievalExecutionOutcome:
-    resolved_profile = await resolve_retrieval_profile(
-        knowledge_base_id=knowledge_base_id,
-        requested_top_k=requested_top_k,
-        settings=settings,
-        knowledge_base_repository=knowledge_base_repository,
-        retrieval_profile_repository=retrieval_profile_repository,
-    )
+    if resolved_profile is None:
+        resolved_profile = await resolve_retrieval_profile(
+            knowledge_base_id=knowledge_base_id,
+            requested_top_k=requested_top_k,
+            settings=settings,
+            knowledge_base_repository=knowledge_base_repository,
+            retrieval_profile_repository=retrieval_profile_repository,
+        )
     rerank_strategy = resolve_rerank_strategy(settings)
     rerank_window = (
         resolve_rerank_window(
@@ -215,6 +225,8 @@ async def execute_retrieval(
         retrieval_profile_id=resolved_profile.retrieval_profile_id,
         retrieval_profile_name=resolved_profile.retrieval_profile_name,
         retrieval_profile_source=resolved_profile.profile_source,
+        engine_name=resolved_profile.engine_name,
+        engine_version=resolved_profile.engine_version,
         retrieval_mode=resolved_profile.retrieval_mode,
         embedding_model=settings.retrieval_embedding_model,
         effective_top_k=resolved_profile.top_k,
@@ -224,6 +236,8 @@ async def execute_retrieval(
         rerank_metadata=rerank_metadata,
         retrieval_plan_metadata=retrieval_plan.as_metadata(),
         evidence_validation_metadata=validation.metadata,
+        llamaindex_similarity_cutoff=resolved_profile.llamaindex_similarity_cutoff,
+        llamaindex_long_context_reorder_enabled=resolved_profile.llamaindex_long_context_reorder_enabled,
         results=results,
     )
 
@@ -270,11 +284,19 @@ async def resolve_retrieval_profile(
                 return ResolvedRetrievalProfile(
                     retrieval_profile_id=assigned_profile.id,
                     retrieval_profile_name=assigned_profile.name,
+                    engine_name=getattr(assigned_profile, "engine_name", "native"),
+                    engine_version=getattr(assigned_profile, "engine_version", "native_v1"),
                     retrieval_mode=assigned_profile.retrieval_mode,
                     top_k=max(1, min(requested_top_k, assigned_profile.top_k)),
                     vector_weight=float(assigned_profile.vector_weight),
                     lexical_weight=float(assigned_profile.lexical_weight),
                     hybrid_overlap_bonus=float(assigned_profile.hybrid_overlap_bonus),
+                    llamaindex_similarity_cutoff=float(
+                        getattr(assigned_profile, "llamaindex_similarity_cutoff", 0.0)
+                    ),
+                    llamaindex_long_context_reorder_enabled=bool(
+                        getattr(assigned_profile, "llamaindex_long_context_reorder_enabled", True)
+                    ),
                     profile_source="knowledge_base",
                 )
 
@@ -283,22 +305,46 @@ async def resolve_retrieval_profile(
             return ResolvedRetrievalProfile(
                 retrieval_profile_id=default_profile.id,
                 retrieval_profile_name=default_profile.name,
+                engine_name=getattr(default_profile, "engine_name", "native"),
+                engine_version=getattr(default_profile, "engine_version", "native_v1"),
                 retrieval_mode=default_profile.retrieval_mode,
                 top_k=max(1, min(requested_top_k, default_profile.top_k)),
                 vector_weight=float(default_profile.vector_weight),
                 lexical_weight=float(default_profile.lexical_weight),
                 hybrid_overlap_bonus=float(default_profile.hybrid_overlap_bonus),
+                llamaindex_similarity_cutoff=float(
+                    getattr(default_profile, "llamaindex_similarity_cutoff", 0.0)
+                ),
+                llamaindex_long_context_reorder_enabled=bool(
+                    getattr(default_profile, "llamaindex_long_context_reorder_enabled", True)
+                ),
                 profile_source="default",
             )
 
     return ResolvedRetrievalProfile(
         retrieval_profile_id=None,
         retrieval_profile_name=None,
+        engine_name=(
+            "llamaindex_pilot"
+            if str(getattr(settings, "retrieval_engine", "native") or "native").strip().lower()
+            in {"llamaindex_pilot", "llamaindex_reserved"}
+            else "native"
+        ),
+        engine_version=(
+            "llamaindex_authorized_context_v1"
+            if str(getattr(settings, "retrieval_engine", "native") or "native").strip().lower()
+            in {"llamaindex_pilot", "llamaindex_reserved"}
+            else "native_v1"
+        ),
         retrieval_mode="hybrid",
         top_k=max(1, requested_top_k),
         vector_weight=0.65,
         lexical_weight=0.35,
         hybrid_overlap_bonus=0.05,
+        llamaindex_similarity_cutoff=float(getattr(settings, "llamaindex_similarity_cutoff", 0.0)),
+        llamaindex_long_context_reorder_enabled=bool(
+            getattr(settings, "llamaindex_long_context_reorder_enabled", True)
+        ),
         profile_source="settings_fallback",
     )
 

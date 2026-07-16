@@ -165,16 +165,29 @@ For frontend-only iteration against an already-running API:
 npm run web:serve
 ```
 
-The API and Worker virtual environments live under their application directories. Prefer repository scripts because they install the optional LlamaIndex/LangGraph runtime extras and keep host-specific settings consistent. Installed dependencies are available for explicit comparison and Agent-runtime selection; they are not enabled automatically.
+The API and Worker virtual environments live under their application directories. Repository test and stable-mode scripts install both optional framework extras so comparison and runtime coverage remain available locally; installation does not select either framework.
 
-The default runtime posture is:
+Framework selection is persisted on Agent definitions and Retrieval Profiles. The environment values below remain deployment/legacy fallbacks for records without an explicit policy:
 
 ```dotenv
 RETRIEVAL_ENGINE=native
 AGENT_RUNTIME_ENGINE=native
 ```
 
-To exercise the governed framework lanes, select `llamaindex_pilot` for `RETRIEVAL_ENGINE` or `langgraph_pilot` for `AGENT_RUNTIME_ENGINE`, restart the affected API/Worker services, and confirm the effective engine in health and runtime diagnostics. `LLAMAINDEX_SIMILARITY_CUTOFF` and `LLAMAINDEX_LONG_CONTEXT_REORDER_ENABLED` configure the LlamaIndex processors; framework paths should remain non-default until versioned evaluations support promotion.
+Use the existing Retrieval Profile editor to select `llamaindex_pilot` and its bounded processor settings. Use the Agent editor to select `langgraph_pilot` for document-intake or workflow-recovery definitions. Confirm the persisted policy, dependency readiness, and effective version in governance and execution diagnostics.
+
+Container dependencies are explicit build profiles:
+
+```dotenv
+# Core profile: leave both values empty.
+RAGPILOT_API_OPTIONAL_EXTRAS=
+RAGPILOT_AGENT_WORKER_OPTIONAL_EXTRAS=
+# Agent profile: set both values to agent-langgraph.
+# Full development/evaluation profile: set both values to
+# retrieval-llamaindex,agent-langgraph.
+```
+
+The checked-in development template selects the full profile for both services; the production template starts from the core profile. Keep the API and Agent Worker extras aligned so API-side readiness governance reflects worker capability. Add LlamaIndex to every service that executes a Retrieval Profile selecting it.
 
 ## Runtime and Dependency Checks
 
@@ -182,7 +195,7 @@ After startup:
 
 1. confirm `npm run stable:mode:status` reports host API/Web processes and required Docker services;
 2. confirm `/api/v1/health` returns `status: ok`;
-3. confirm effective Chat model, retrieval engine, Agent runtime, and projection posture match the intended `.env` configuration;
+3. confirm health reports optional dependency readiness and the intended deployment fallbacks, then confirm each persisted Retrieval Profile and Agent runtime through its governance response;
 4. inspect `tmp/stable-mode/*.stderr.log` before treating a reachable port as a healthy service;
 5. verify migrations reached the current Alembic head.
 

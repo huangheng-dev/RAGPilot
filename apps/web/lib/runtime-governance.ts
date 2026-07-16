@@ -19,6 +19,8 @@ export type GovernanceActiveAgentDefinition = {
   slug: string;
   mode: "grounded_chat" | "document_intake" | "workflow_recovery";
   status: "draft" | "active" | "paused";
+  runtime_engine?: "native" | "langgraph_pilot";
+  runtime_version?: string;
   objective: string;
   knowledge_base_scope: string | null;
   tools: Array<"chat" | "documents" | "operations" | "admin">;
@@ -33,13 +35,15 @@ export type AgentRuntimeReadinessIssue =
   | "model_runtime_unconfigured"
   | "retrieval_profile_missing"
   | "retrieval_profile_disabled"
+  | "retrieval_engine_unavailable"
   | "scope_missing"
   | "scope_invalid"
   | "tools_missing"
   | "tool_registration_disabled"
   | "tool_approval_required"
   | "tool_mcp_reserved"
-  | "tool_mcp_integration_pending";
+  | "tool_mcp_integration_pending"
+  | "runtime_engine_unavailable";
 
 export type AgentRuntimeGovernanceItem = GovernanceActiveAgentDefinition & {
   is_ready: boolean;
@@ -121,6 +125,8 @@ export type AgentRuntimeGovernanceItem = GovernanceActiveAgentDefinition & {
     name: string;
     slug: string;
     retrieval_mode: string;
+    engine_name?: "native" | "llamaindex_pilot";
+    engine_version?: string;
     is_enabled: boolean;
     is_default: boolean;
     source: "knowledge_base" | "platform_default";
@@ -181,8 +187,10 @@ export type RuntimeGovernanceFocusState = Pick<
 const RUNTIME_GOVERNANCE_FOCUS_PRIORITY = [
   "model_disabled",
   "model_runtime_unconfigured",
+  "runtime_engine_unavailable",
   "tool_registration_disabled",
   "retrieval_profile_disabled",
+  "retrieval_engine_unavailable",
   "tool_approval_required",
   "tool_mcp_integration_pending",
   "tool_mcp_reserved"

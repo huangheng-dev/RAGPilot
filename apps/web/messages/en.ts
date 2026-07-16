@@ -363,6 +363,7 @@ const en = {
       mode: "Execution mode",
       status: "Draft status",
       modelStrategy: "Model strategy",
+      runtimeEngine: "Agent runtime",
       runtimeModel: "Runtime model endpoint",
       runtimeModelInherited: "Inherit from strategy",
       runtimeModelBound: "Model bound",
@@ -403,6 +404,10 @@ const en = {
       remote_reserved: "Remote model reserved",
       hybrid_reserved: "Hybrid routing reserved",
     },
+    runtimeEngines: {
+      native: "Native · native_v1",
+      langgraph_pilot: "LangGraph · langgraph_v1",
+    },
     tools: {
       chat: "Chat",
       documents: "Documents",
@@ -415,6 +420,7 @@ const en = {
         "The surfaces below already exist in RAGPilot and can serve as the operational base for future agent delivery.",
       enabled: "Enabled",
       disabled: "Disabled",
+      runtimeUnavailable: "Runtime unavailable",
       openSurface: "Open Surface",
       chatDescription:
         "Grounded chat for citation review, thread history, and scoped Q&A.",
@@ -907,6 +913,7 @@ const en = {
         model_runtime_unconfigured: "Unconfigured model runtime",
         retrieval_profile_missing: "Missing retrieval profile",
         retrieval_profile_disabled: "Disabled retrieval profile",
+        retrieval_engine_unavailable: "Retrieval processor unavailable",
         scope_missing: "Missing scope",
         scope_invalid: "Invalid scope",
         tools_missing: "Missing tools",
@@ -914,6 +921,7 @@ const en = {
         tool_approval_required: "Approval-bound tool",
         tool_mcp_reserved: "Reserved MCP tool",
         tool_mcp_integration_pending: "Pending MCP connector integration",
+        runtime_engine_unavailable: "Agent runtime unavailable",
       },
       issues: {
         model_missing: "No runtime model is available",
@@ -924,6 +932,8 @@ const en = {
           "No governed retrieval profile resolves for the scoped knowledge base",
         retrieval_profile_disabled:
           "The scoped knowledge base is bound to a disabled retrieval profile",
+        retrieval_engine_unavailable:
+          "The scoped retrieval profile needs a processor that is not installed in this deployment profile",
         scope_missing: "Knowledge scope is missing",
         scope_invalid: "Knowledge scope no longer resolves",
         tools_missing: "No connected tools are available",
@@ -935,6 +945,8 @@ const en = {
           "{count} bound reserved MCP tools still need a governed connector assignment",
         tool_mcp_integration_pending:
           "{count} bound reserved MCP tools are waiting for connector runtime closure",
+        runtime_engine_unavailable:
+          "The selected Agent runtime is not installed in this deployment profile",
       },
     },
     seed: {
@@ -2901,6 +2913,10 @@ const en = {
         connectorType: "Connector type",
         authMode: "Authentication mode",
         retrievalMode: "Retrieval mode",
+        retrievalEngine: "Retrieval processor",
+        engineVersion: "Processor policy version",
+        llamaindexSimilarityCutoff: "LlamaIndex similarity cutoff",
+        llamaindexLongContextReorder: "Enable long-context reorder",
         notes: "Notes / description",
         approval: "Requires administrator approval",
         top_k: "Top K",

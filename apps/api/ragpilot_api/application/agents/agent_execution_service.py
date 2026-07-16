@@ -24,8 +24,11 @@ from ragpilot_api.application.agents.agent_execution_validation import (
 from ragpilot_api.application.agents.agent_evaluation import evaluate_agent_executions
 from ragpilot_api.application.model_gateway.model_gateway import ModelGateway
 from ragpilot_api.application.model_gateway.runtime_binding_resolver import RuntimeBindingResolver
-from ragpilot_api.application.retrieval.retrieval_engines import normalize_retrieval_engine_name
-from ragpilot_api.application.retrieval.retrieval_runtime import execute_retrieval
+from ragpilot_api.application.retrieval.retrieval_engines import (
+    build_retrieval_engine,
+    normalize_retrieval_engine_name,
+)
+from ragpilot_api.application.retrieval.retrieval_runtime import resolve_retrieval_profile
 from ragpilot_api.application.tool_runtime.tool_runtime_service import ToolRuntimeService
 from ragpilot_api.contracts.http.agent_execution_contracts import (
     AgentExecutionCreateRequest,
@@ -133,10 +136,6 @@ class AgentExecutionService:
         self.agent_runtime_engine_name = normalize_agent_runtime_engine_name(
             getattr(settings, "agent_runtime_engine", "native") if settings is not None else "native"
         )
-        self.agent_runtime_engine = build_agent_runtime_engine(
-            settings,
-            engine_name=self.agent_runtime_engine_name,
-        )
         self.runtime_binding_resolver = (
             RuntimeBindingResolver(model_endpoint_repository, settings, runtime_credential_service)
             if model_endpoint_repository is not None and settings is not None
@@ -205,6 +204,17 @@ class AgentExecutionService:
 
         allowed_tool_registration_ids = list(
             (execution_policy.get("sandbox") or {}).get("allowed_tool_registration_ids") or []
+        )
+        configured_agent_runtime_engine = normalize_agent_runtime_engine_name(
+            getattr(agent_definition, "runtime_engine", None) or self.agent_runtime_engine_name
+        )
+        configured_agent_runtime_version = str(
+            getattr(agent_definition, "runtime_version", None)
+            or ("langgraph_v1" if configured_agent_runtime_engine == "langgraph_pilot" else "native_v1")
+        )
+        agent_runtime_engine = build_agent_runtime_engine(
+            self.settings,
+            engine_name=configured_agent_runtime_engine,
         )
         runtime_binding = (
             await self.runtime_binding_resolver.resolve_chat_runtime_binding(agent_definition=agent_definition)
@@ -286,7 +296,7 @@ class AgentExecutionService:
 
         try:
             summary, result_payload_json = await asyncio.wait_for(
-                self.agent_runtime_engine.execute(
+                agent_runtime_engine.execute(
                     service=self,
                     agent_definition=agent_definition,
                     resolved_scope=resolved_scope,
@@ -301,7 +311,7 @@ class AgentExecutionService:
                 if isinstance(result_payload_json.get("agent_runtime_resolution"), dict)
                 else {}
             )
-            configured_engine = self.agent_runtime_engine_name
+            configured_engine = configured_agent_runtime_engine
             payload_engine = result_payload_json.get("agent_runtime_engine")
             executed_engine = normalize_agent_runtime_engine_name(
                 payload_engine if isinstance(payload_engine, str) and payload_engine.strip() else configured_engine
@@ -316,6 +326,7 @@ class AgentExecutionService:
                 **result_payload_json,
                 "agent_runtime_engine": executed_engine,
                 "configured_agent_runtime_engine": configured_engine,
+                "configured_agent_runtime_version": configured_agent_runtime_version,
                 "agent_runtime_resolution": {
                     "configured_engine": configured_engine,
                     "executed_engine": executed_engine,
@@ -338,6 +349,12 @@ class AgentExecutionService:
                     ),
                 },
             }
+            graph_metadata = result_payload_json.get("agent_runtime_graph")
+            if isinstance(graph_metadata, dict):
+                result_payload_json["agent_runtime_graph"] = {
+                    **graph_metadata,
+                    "version": configured_agent_runtime_version,
+                }
             result_payload_json = self._ensure_recommended_action_specs(
                 result_payload_json,
                 execution_mode=agent_definition.agent_mode,
@@ -361,15 +378,16 @@ class AgentExecutionService:
                     "agent_status": agent_definition.agent_status,
                     "knowledge_base_scope": agent_definition.knowledge_base_scope,
                     "scope_issue": resolved_scope.scope_issue,
-                    "agent_runtime_engine": self.agent_runtime_engine_name,
-                    "configured_agent_runtime_engine": self.agent_runtime_engine_name,
+                    "agent_runtime_engine": configured_agent_runtime_engine,
+                    "configured_agent_runtime_engine": configured_agent_runtime_engine,
+                    "configured_agent_runtime_version": configured_agent_runtime_version,
                     "failure_classification": {
                         "category": failure.category,
                         "retryable": failure.retryable,
                     },
                     "agent_runtime_resolution": {
-                        "configured_engine": self.agent_runtime_engine_name,
-                        "executed_engine": self.agent_runtime_engine_name,
+                        "configured_engine": configured_agent_runtime_engine,
+                        "executed_engine": configured_agent_runtime_engine,
                         "fallback_applied": False,
                         "fallback_reason": None,
                     },
@@ -1035,7 +1053,21 @@ class AgentExecutionService:
         retrieval_outcome = None
         retrieval_results: list[dict] = []
         if self.retrieval_repository is not None and self.settings is not None and self.model_gateway is not None:
-            retrieval_outcome = await execute_retrieval(
+            resolved_retrieval_profile = await resolve_retrieval_profile(
+                knowledge_base_id=resolved_scope.knowledge_base_id,
+                requested_top_k=3,
+                settings=self.settings,
+                knowledge_base_repository=self.knowledge_base_repository,
+                retrieval_profile_repository=self.retrieval_profile_repository,
+            )
+            configured_retrieval_engine = normalize_retrieval_engine_name(
+                resolved_retrieval_profile.engine_name
+            )
+            retrieval_engine = build_retrieval_engine(
+                self.settings,
+                engine_name=configured_retrieval_engine,
+            )
+            retrieval_outcome = await retrieval_engine.execute(
                 retrieval_repository=self.retrieval_repository,
                 settings=self.settings,
                 tenant_id=agent_definition.tenant_id,
@@ -1044,6 +1076,7 @@ class AgentExecutionService:
                 requested_top_k=3,
                 knowledge_base_repository=self.knowledge_base_repository,
                 retrieval_profile_repository=self.retrieval_profile_repository,
+                resolved_profile=resolved_retrieval_profile,
             )
             retrieval_results = retrieval_outcome.results
             generation = await self.model_gateway.generate_grounded_answer(
@@ -1070,9 +1103,8 @@ class AgentExecutionService:
             "knowledge_base_scope": agent_definition.knowledge_base_scope,
             "runtime_binding": runtime_binding.to_usage_json() if runtime_binding is not None else None,
             "tool_runtime": tool_runtime_summary.model_dump() if tool_runtime_summary is not None else None,
-            "retrieval_engine": normalize_retrieval_engine_name(
-                getattr(self.settings, "retrieval_engine", "native") if self.settings is not None else "native"
-            ),
+            "retrieval_engine": retrieval_outcome.engine_name if retrieval_outcome else "native",
+            "retrieval_engine_version": retrieval_outcome.engine_version if retrieval_outcome else "native_v1",
             "retrieval_profile_id": str(retrieval_outcome.retrieval_profile_id) if retrieval_outcome and retrieval_outcome.retrieval_profile_id else None,
             "retrieval_profile_name": retrieval_outcome.retrieval_profile_name if retrieval_outcome else None,
             "retrieval_profile_source": retrieval_outcome.retrieval_profile_source if retrieval_outcome else None,
@@ -1240,13 +1272,15 @@ class AgentExecutionService:
 
 def build_agent_definition_snapshot(agent_definition: AgentDefinition) -> dict[str, Any]:
     return {
-        "version": "agent_definition_snapshot_v1",
+        "version": "agent_definition_snapshot_v2",
         "id": str(agent_definition.id),
         "tenant_id": str(agent_definition.tenant_id),
         "name": getattr(agent_definition, "name", "Agent"),
         "slug": getattr(agent_definition, "slug", "agent"),
         "agent_mode": getattr(agent_definition, "agent_mode", "grounded_chat"),
         "agent_status": getattr(agent_definition, "agent_status", "active"),
+        "runtime_engine": getattr(agent_definition, "runtime_engine", None),
+        "runtime_version": getattr(agent_definition, "runtime_version", None),
         "model_strategy": getattr(agent_definition, "model_strategy", "balanced"),
         "model_endpoint_id": (
             str(agent_definition.model_endpoint_id)
@@ -1272,6 +1306,8 @@ def materialize_agent_definition_snapshot(snapshot: dict[str, Any]) -> SimpleNam
         slug=str(snapshot.get("slug") or "agent"),
         agent_mode=str(snapshot.get("agent_mode") or "grounded_chat"),
         agent_status=str(snapshot.get("agent_status") or "active"),
+        runtime_engine=snapshot.get("runtime_engine"),
+        runtime_version=snapshot.get("runtime_version"),
         model_strategy=str(snapshot.get("model_strategy") or "balanced"),
         model_endpoint_id=UUID(str(model_endpoint_id)) if model_endpoint_id else None,
         objective=str(snapshot.get("objective") or ""),

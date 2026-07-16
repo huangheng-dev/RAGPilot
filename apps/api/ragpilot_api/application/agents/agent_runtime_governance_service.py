@@ -24,6 +24,7 @@ from ragpilot_api.application.model_registry.runtime_configuration import (
 from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import (
     build_recent_preview_activity_by_resource_id,
 )
+from ragpilot_api.application.system.runtime_readiness import build_runtime_readiness_snapshot
 from ragpilot_api.infrastructure.database.models import (
     AgentDefinition,
     KnowledgeBase,
@@ -73,6 +74,7 @@ class AgentRuntimeGovernanceService:
         self.knowledge_base_repository = knowledge_base_repository
         self.runtime_governance_event_repository = runtime_governance_event_repository
         self.settings = settings
+        self.runtime_readiness = build_runtime_readiness_snapshot()
 
     async def get_runtime_governance_posture(
         self,
@@ -450,6 +452,12 @@ class AgentRuntimeGovernanceService:
                 issues.append("retrieval_profile_missing")
             elif not resolved_retrieval_profile.is_enabled:
                 issues.append("retrieval_profile_disabled")
+            elif (
+                getattr(resolved_retrieval_profile, "engine_name", "native")
+                == "llamaindex_pilot"
+                and not self.runtime_readiness.llamaindex_pilot_ready
+            ):
+                issues.append("retrieval_engine_unavailable")
 
         if not has_connected_capabilities:
             issues.append("tools_missing")
@@ -463,6 +471,11 @@ class AgentRuntimeGovernanceService:
             issues.append("tool_mcp_reserved")
         if integration_pending_mcp_tool_count > 0:
             issues.append("tool_mcp_integration_pending")
+        if (
+            getattr(agent_definition, "runtime_engine", "native") == "langgraph_pilot"
+            and not self.runtime_readiness.langgraph_pilot_ready
+        ):
+            issues.append("runtime_engine_unavailable")
 
         blocking_issues = [issue for issue in issues if issue != "tool_approval_required"]
         return AgentRuntimeGovernanceItemResponse(
@@ -472,6 +485,8 @@ class AgentRuntimeGovernanceService:
             slug=agent_definition.slug,
             mode=agent_definition.agent_mode,
             status=agent_definition.agent_status,
+            runtime_engine=getattr(agent_definition, "runtime_engine", "native"),
+            runtime_version=getattr(agent_definition, "runtime_version", "native_v1"),
             objective=agent_definition.objective,
             knowledge_base_scope=agent_definition.knowledge_base_scope,
             model_endpoint_id=agent_definition.model_endpoint_id,
@@ -571,6 +586,8 @@ class AgentRuntimeGovernanceService:
                     name=resolved_retrieval_profile.name,
                     slug=resolved_retrieval_profile.slug,
                     retrieval_mode=resolved_retrieval_profile.retrieval_mode,
+                    engine_name=getattr(resolved_retrieval_profile, "engine_name", "native"),
+                    engine_version=getattr(resolved_retrieval_profile, "engine_version", "native_v1"),
                     is_enabled=resolved_retrieval_profile.is_enabled,
                     is_default=resolved_retrieval_profile.is_default,
                     source=retrieval_profile_source,

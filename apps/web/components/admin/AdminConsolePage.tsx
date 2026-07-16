@@ -469,6 +469,7 @@ const EMPTY_RUNTIME_GOVERNANCE_SUMMARY: AgentRuntimeGovernanceSummary = {
     model_runtime_unconfigured: 0,
     retrieval_profile_missing: 0,
     retrieval_profile_disabled: 0,
+    retrieval_engine_unavailable: 0,
     scope_missing: 0,
     scope_invalid: 0,
     tools_missing: 0,
@@ -476,6 +477,7 @@ const EMPTY_RUNTIME_GOVERNANCE_SUMMARY: AgentRuntimeGovernanceSummary = {
     tool_approval_required: 0,
     tool_mcp_reserved: 0,
     tool_mcp_integration_pending: 0,
+    runtime_engine_unavailable: 0,
   },
 };
 

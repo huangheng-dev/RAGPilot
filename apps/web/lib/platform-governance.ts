@@ -424,10 +424,16 @@ export type PlatformRetrievalProfile = {
   name: string;
   slug: string;
   retrieval_mode: RetrievalMode;
+  engine_name: "native" | "llamaindex_pilot";
+  engine_version: string;
+  runtime_ready: boolean;
+  runtime_issue: "engine_unavailable" | null;
   top_k: number;
   vector_weight: number;
   lexical_weight: number;
   hybrid_overlap_bonus: number;
+  llamaindex_similarity_cutoff: number;
+  llamaindex_long_context_reorder_enabled: boolean;
   is_enabled: boolean;
   is_default: boolean;
   notes: string | null;
@@ -464,7 +470,12 @@ export type ToolRegistrationPayload = Omit<
 
 export type RetrievalProfilePayload = Omit<
   PlatformRetrievalProfile,
-  "id" | "bound_knowledge_base_count" | "created_at" | "updated_at"
+  | "id"
+  | "runtime_ready"
+  | "runtime_issue"
+  | "bound_knowledge_base_count"
+  | "created_at"
+  | "updated_at"
 >;
 
 export type McpConnectorPayload = Omit<
@@ -505,10 +516,12 @@ export type RuntimeGovernanceAgentIssue =
   | "model_disabled"
   | "model_runtime_unconfigured"
   | "retrieval_profile_disabled"
+  | "retrieval_engine_unavailable"
   | "tool_registration_disabled"
   | "tool_approval_required"
   | "tool_mcp_reserved"
-  | "tool_mcp_integration_pending";
+  | "tool_mcp_integration_pending"
+  | "runtime_engine_unavailable";
 
 export type RuntimeGovernanceSettingsTarget = {
   runtime_resource: RuntimeGovernanceResourceType;

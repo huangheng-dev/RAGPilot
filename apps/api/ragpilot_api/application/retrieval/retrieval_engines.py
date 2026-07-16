@@ -6,7 +6,11 @@ from dataclasses import dataclass, replace
 from typing import Any, Protocol
 from uuid import UUID
 
-from ragpilot_api.application.retrieval.retrieval_runtime import RetrievalExecutionOutcome, execute_retrieval
+from ragpilot_api.application.retrieval.retrieval_runtime import (
+    ResolvedRetrievalProfile,
+    RetrievalExecutionOutcome,
+    execute_retrieval,
+)
 from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_repository import RetrievalRepository
@@ -27,6 +31,7 @@ class RetrievalEngine(Protocol):
         acl_bypass: bool = False,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
+        resolved_profile: ResolvedRetrievalProfile | None = None,
     ) -> RetrievalExecutionOutcome: ...
 
 
@@ -62,6 +67,7 @@ class NativeRetrievalEngine:
         acl_bypass: bool = False,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
+        resolved_profile: ResolvedRetrievalProfile | None = None,
     ) -> RetrievalExecutionOutcome:
         return await execute_retrieval(
             retrieval_repository=retrieval_repository,
@@ -74,6 +80,7 @@ class NativeRetrievalEngine:
             acl_bypass=acl_bypass,
             knowledge_base_repository=knowledge_base_repository,
             retrieval_profile_repository=retrieval_profile_repository,
+            resolved_profile=resolved_profile,
         )
 
 
@@ -92,6 +99,7 @@ class LlamaIndexPilotRetrievalEngine:
         acl_bypass: bool = False,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
+        resolved_profile: ResolvedRetrievalProfile | None = None,
     ) -> RetrievalExecutionOutcome:
         runtime = load_llamaindex_runtime()
         native_outcome = await execute_retrieval(
@@ -105,16 +113,15 @@ class LlamaIndexPilotRetrievalEngine:
             acl_bypass=acl_bypass,
             knowledge_base_repository=knowledge_base_repository,
             retrieval_profile_repository=retrieval_profile_repository,
+            resolved_profile=resolved_profile,
         )
         processed_results = run_llamaindex_pilot_postprocessing(
             runtime=runtime,
             query_text=query_text,
             results=native_outcome.results,
             top_k=native_outcome.effective_top_k,
-            similarity_cutoff=float(getattr(settings, "llamaindex_similarity_cutoff", 0.0)),
-            long_context_reorder_enabled=bool(
-                getattr(settings, "llamaindex_long_context_reorder_enabled", True)
-            ),
+            similarity_cutoff=native_outcome.llamaindex_similarity_cutoff,
+            long_context_reorder_enabled=native_outcome.llamaindex_long_context_reorder_enabled,
         )
         authorized_chunk_ids = await retrieval_repository.filter_authorized_document_chunk_ids(
             tenant_id=tenant_id,
@@ -137,6 +144,7 @@ class LlamaIndexPilotRetrievalEngine:
                 **native_outcome.rerank_metadata,
                 "llamaindex_adapter": {
                     **processed_results.metadata,
+                    "engine_policy_version": native_outcome.engine_version,
                     "reauthorized_result_count": len(authorized_results),
                 },
             },

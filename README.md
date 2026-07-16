@@ -103,12 +103,12 @@ Active integration paths:
 - Streamable HTTP MCP client discovery, Tool mapping, and Agent invocation
 - read-only `stdio` MCP server for scoped knowledge search, Document inspection, and Workflow inspection
 
-Framework integration lanes:
+Governed framework lanes:
 
 - `LlamaIndex` wraps already-authorized native candidates, applies official similarity and long-context processors, revalidates the final Chunk set against PostgreSQL policy, and records comparison evidence
 - `LangGraph` runs typed, bounded decision graphs for document intake and workflow recovery inside Temporal-owned durable Agent executions, including branch selection, validation, and trace timing
 
-The standard development and container profiles include both adapters, but availability does not imply activation. `native` remains the default retrieval and Agent runtime; framework lanes are selected explicitly through `RETRIEVAL_ENGINE` and `AGENT_RUNTIME_ENGINE` and are promoted only with evaluation evidence.
+`native` remains the default for both boundaries. Retrieval Profiles persist the selected processor, policy version, and LlamaIndex processor settings; Agent definitions persist their runtime engine and version. Every Agent execution snapshots the effective versions it used. Deployment profiles can be core-only, Agent (LangGraph), or full framework; API and Agent Worker capabilities stay aligned so runtime governance can mark a selected adapter unavailable before execution.
 
 ## Scope and Deployment Boundaries
 

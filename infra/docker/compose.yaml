@@ -148,7 +148,7 @@ services:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
       args:
-        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-retrieval-llamaindex,agent-langgraph}
+        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-}
     restart: unless-stopped
     environment:
       ENVIRONMENT: ${NODE_ENV:-development}
@@ -273,7 +273,7 @@ services:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
       args:
-        API_OPTIONAL_EXTRAS: ${RAGPILOT_API_OPTIONAL_EXTRAS:-retrieval-llamaindex,agent-langgraph}
+        API_OPTIONAL_EXTRAS: ${RAGPILOT_AGENT_WORKER_OPTIONAL_EXTRAS:-}
     restart: unless-stopped
     command: ["python", "-m", "ragpilot_api.workers.agent_execution_worker"]
     environment:

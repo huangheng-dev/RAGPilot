@@ -143,6 +143,8 @@ File and single-page URL intake use the same workflow-backed ingestion chain. So
 - `POST /retrieval-profiles/{retrieval_profile_id}/governance-action`
 - `DELETE /retrieval-profiles/{retrieval_profile_id}`
 
+Retrieval Profile create/update contracts persist the retrieval mode, fusion policy, selected `native` or `llamaindex_pilot` processor, processor-policy version, and bounded LlamaIndex similarity/reorder settings. An unavailable optional processor may be saved only on a disabled policy; enabling it requires the matching deployment profile. Responses include dependency readiness so installed capability can be distinguished from deployment drift.
+
 ### Retrieval execution and review
 
 - `POST /retrieve`
@@ -204,7 +206,7 @@ Workflow mutation is explicit and auditable. Retry creates lineage; cancel and o
 - `PATCH /agents/{agent_definition_id}`
 - `DELETE /agents/{agent_definition_id}`
 
-Agent Runs record operator handoff; Agent Executions own durable task state. Each queued execution snapshots its definition, allowed Tool registrations, deployment-capped tool/runtime/output budgets, optional JSON Schema output contract, and replay fingerprint. Approval decisions and replay lineage are persisted and tenant-scoped. Temporal owns durable retries, timers, waiting, and cancellation; optional LangGraph lanes remain bounded inside that durable boundary.
+Agent definitions persist a versioned `native` or `langgraph_pilot` runtime policy. Agent Runs record operator handoff; Agent Executions own durable task state. Each queued execution snapshots its definition and effective runtime version, allowed Tool registrations, deployment-capped tool/runtime/output budgets, optional JSON Schema output contract, and replay fingerprint. Approval decisions and replay lineage are persisted and tenant-scoped. Temporal owns durable retries, timers, waiting, and cancellation; optional LangGraph lanes remain bounded inside that durable boundary. Activation is rejected when the selected dependency is absent, while runtime-governance responses expose existing deployment drift instead of deferring it to execution.
 
 ## Runtime Governance
 

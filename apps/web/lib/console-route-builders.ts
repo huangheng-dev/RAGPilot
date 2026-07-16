@@ -23,6 +23,7 @@ export type AgentConsoleTarget = {
     | "model_runtime_unconfigured"
     | "retrieval_profile_missing"
     | "retrieval_profile_disabled"
+    | "retrieval_engine_unavailable"
     | "scope_missing"
     | "scope_invalid"
     | "tools_missing"
@@ -30,6 +31,7 @@ export type AgentConsoleTarget = {
     | "tool_approval_required"
     | "tool_mcp_reserved"
     | "tool_mcp_integration_pending"
+    | "runtime_engine_unavailable"
     | null;
   query?: string | null;
   agentId?: string | null;
@@ -146,13 +148,15 @@ export type RuntimeGovernanceIssueDefinitionsTarget = {
     | "model_runtime_unconfigured"
     | "retrieval_profile_missing"
     | "retrieval_profile_disabled"
+    | "retrieval_engine_unavailable"
     | "scope_missing"
     | "scope_invalid"
     | "tools_missing"
     | "tool_registration_disabled"
     | "tool_approval_required"
     | "tool_mcp_reserved"
-    | "tool_mcp_integration_pending";
+    | "tool_mcp_integration_pending"
+    | "runtime_engine_unavailable";
   modelEndpointId?: string | null;
   modelProviderType?: "deterministic" | "openai_compatible" | "ollama" | "vllm" | null;
   toolRegistrationId?: string | null;

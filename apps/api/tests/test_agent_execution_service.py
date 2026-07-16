@@ -62,6 +62,19 @@ def build_agent_definition(**overrides):
     return SimpleNamespace(**{**defaults, **overrides})
 
 
+def test_agent_definition_snapshot_binds_runtime_policy_version() -> None:
+    snapshot = build_agent_definition_snapshot(
+        build_agent_definition(
+            runtime_engine="langgraph_pilot",
+            runtime_version="langgraph_v1",
+        )
+    )
+
+    assert snapshot["version"] == "agent_definition_snapshot_v2"
+    assert snapshot["runtime_engine"] == "langgraph_pilot"
+    assert snapshot["runtime_version"] == "langgraph_v1"
+
+
 @pytest.mark.parametrize(
     ("branch", "expected_action_keys"),
     [

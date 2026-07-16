@@ -10,6 +10,8 @@ from ragpilot_api.application.agents.agent_runtime_engines import (
     build_agent_runtime_engine,
     normalize_agent_runtime_engine_name,
 )
+from ragpilot_api.application.agents.agent_service import validate_agent_runtime_policy
+from ragpilot_api.application.errors import ResourceConflictError
 
 
 def test_build_agent_runtime_engine_returns_native_engine_by_default() -> None:
@@ -46,6 +48,30 @@ def test_build_agent_runtime_engine_rejects_unknown_engine() -> None:
 
     with pytest.raises(ValueError, match="Unsupported agent runtime engine"):
         build_agent_runtime_engine(settings)
+
+
+def test_active_langgraph_agent_requires_deployment_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "ragpilot_api.application.agents.agent_service.build_runtime_readiness_snapshot",
+        lambda: SimpleNamespace(langgraph_pilot_ready=False),
+    )
+
+    with pytest.raises(ResourceConflictError, match="deployment profile"):
+        validate_agent_runtime_policy(
+            mode="workflow_recovery",
+            status="active",
+            runtime_engine="langgraph_pilot",
+            runtime_version="langgraph_v1",
+        )
+
+    validate_agent_runtime_policy(
+        mode="workflow_recovery",
+        status="draft",
+        runtime_engine="langgraph_pilot",
+        runtime_version="langgraph_v1",
+    )
 
 
 @pytest.mark.anyio

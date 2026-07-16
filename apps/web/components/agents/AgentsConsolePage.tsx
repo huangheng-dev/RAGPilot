@@ -143,6 +143,7 @@ import { buildWorkspaceHref } from "@/lib/workspace-navigation";
 type AgentMode = "grounded_chat" | "document_intake" | "workflow_recovery";
 type AgentStatus = "draft" | "active" | "paused";
 type ModelStrategy = "local_reserved" | "remote_reserved" | "hybrid_reserved";
+type AgentRuntimeEngine = "native" | "langgraph_pilot";
 type AgentTool = "chat" | "documents" | "operations" | "admin";
 type AgentStatusFilter = "all" | AgentStatus;
 type AgentModeFilter = "all" | AgentMode;
@@ -160,13 +161,15 @@ type AgentReadinessIssue =
   | "model_runtime_unconfigured"
   | "retrieval_profile_missing"
   | "retrieval_profile_disabled"
+  | "retrieval_engine_unavailable"
   | "scope_missing"
   | "scope_invalid"
   | "tools_missing"
   | "tool_registration_disabled"
   | "tool_approval_required"
   | "tool_mcp_reserved"
-  | "tool_mcp_integration_pending";
+  | "tool_mcp_integration_pending"
+  | "runtime_engine_unavailable";
 type ResolvedAgentModelEndpoint = {
   id: string;
   name: string;
@@ -188,6 +191,8 @@ type ResolvedAgentRetrievalProfile = {
   name: string;
   slug: string;
   retrieval_mode: string;
+  engine_name?: "native" | "llamaindex_pilot";
+  engine_version?: string;
   is_enabled: boolean;
   is_default: boolean;
   source?: "knowledge_base" | "platform_default";
@@ -236,6 +241,8 @@ type AgentDraft = {
   mode: AgentMode;
   status: AgentStatus;
   modelStrategy: ModelStrategy;
+  runtimeEngine: AgentRuntimeEngine;
+  runtimeVersion: string;
   modelEndpointId: string;
   objective: string;
   instructions: string;
@@ -253,6 +260,8 @@ type AgentDefinitionResponse = {
   mode: AgentMode;
   status: AgentStatus;
   model_strategy: ModelStrategy;
+  runtime_engine: AgentRuntimeEngine;
+  runtime_version: string;
   model_endpoint_id: string | null;
   objective: string;
   instructions: string;
@@ -412,6 +421,8 @@ async function createAgentDefinition(agent: AgentDraft) {
       mode: agent.mode,
       status: agent.status,
       model_strategy: agent.modelStrategy,
+      runtime_engine: agent.runtimeEngine,
+      runtime_version: agent.runtimeVersion,
       model_endpoint_id: agent.modelEndpointId || null,
       objective: agent.objective,
       instructions: agent.instructions,
@@ -433,6 +444,8 @@ async function updateAgentDefinition(agent: AgentDraft) {
         mode: agent.mode,
         status: agent.status,
         model_strategy: agent.modelStrategy,
+        runtime_engine: agent.runtimeEngine,
+        runtime_version: agent.runtimeVersion,
         model_endpoint_id: agent.modelEndpointId || null,
         objective: agent.objective,
         instructions: agent.instructions,
@@ -461,6 +474,8 @@ function mapAgentDefinitionToDraft(
     mode: agentDefinition.mode,
     status: agentDefinition.status,
     modelStrategy: agentDefinition.model_strategy,
+    runtimeEngine: agentDefinition.runtime_engine ?? "native",
+    runtimeVersion: agentDefinition.runtime_version ?? "native_v1",
     modelEndpointId: agentDefinition.model_endpoint_id ?? "",
     objective: agentDefinition.objective,
     instructions: agentDefinition.instructions,
@@ -583,13 +598,15 @@ function readAllowedAgentReadinessIssueFilter(
     value === "model_runtime_unconfigured" ||
     value === "retrieval_profile_missing" ||
     value === "retrieval_profile_disabled" ||
+    value === "retrieval_engine_unavailable" ||
     value === "scope_missing" ||
     value === "scope_invalid" ||
     value === "tools_missing" ||
     value === "tool_registration_disabled" ||
     value === "tool_approval_required" ||
     value === "tool_mcp_reserved" ||
-    value === "tool_mcp_integration_pending"
+    value === "tool_mcp_integration_pending" ||
+    value === "runtime_engine_unavailable"
   ) {
     return value;
   }
@@ -1480,6 +1497,7 @@ export default function AgentsConsolePage() {
         model_runtime_unconfigured: 0,
         retrieval_profile_missing: 0,
         retrieval_profile_disabled: 0,
+        retrieval_engine_unavailable: 0,
         scope_missing: 0,
         scope_invalid: 0,
         tools_missing: 0,
@@ -1487,6 +1505,7 @@ export default function AgentsConsolePage() {
         tool_approval_required: 0,
         tool_mcp_reserved: 0,
         tool_mcp_integration_pending: 0,
+        runtime_engine_unavailable: 0,
       },
     );
   }, [agents, readinessByAgentId]);
@@ -2138,6 +2157,8 @@ export default function AgentsConsolePage() {
       mode: "grounded_chat",
       status: "draft",
       modelStrategy: "remote_reserved",
+      runtimeEngine: "native",
+      runtimeVersion: "native_v1",
       modelEndpointId:
         enabledModelEndpoints.find((modelEndpoint) => modelEndpoint.is_default)
           ?.id ?? "",
@@ -3660,7 +3681,7 @@ export default function AgentsConsolePage() {
                   </div>
                 </div>
 
-                <DialogFormGrid className="xl:grid-cols-3">
+                <DialogFormGrid className="xl:grid-cols-4">
                   <DialogFormField label={t("agents.editor.mode")}>
                     <Select
                       disabled={!hasAgentWriteAccess}
@@ -3668,6 +3689,10 @@ export default function AgentsConsolePage() {
                         updateSelectedAgent((agent) => ({
                           ...agent,
                           mode: value as AgentMode,
+                          runtimeEngine:
+                            value === "grounded_chat" ? "native" : agent.runtimeEngine,
+                          runtimeVersion:
+                            value === "grounded_chat" ? "native_v1" : agent.runtimeVersion,
                         }));
                       }}
                       value={selectedAgent.mode}
@@ -3685,6 +3710,38 @@ export default function AgentsConsolePage() {
                         <SelectItem value="workflow_recovery">
                           {t("agents.modes.workflow_recovery")}
                         </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </DialogFormField>
+
+                  <DialogFormField label={t("agents.editor.runtimeEngine")}>
+                    <Select
+                      disabled={!hasAgentWriteAccess}
+                      onValueChange={(value) => {
+                        const runtimeEngine = value as AgentRuntimeEngine;
+                        updateSelectedAgent((agent) => ({
+                          ...agent,
+                          runtimeEngine,
+                          runtimeVersion:
+                            runtimeEngine === "langgraph_pilot"
+                              ? "langgraph_v1"
+                              : "native_v1",
+                        }));
+                      }}
+                      value={selectedAgent.runtimeEngine}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder={t("agents.editor.runtimeEngine")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="native">
+                          {t("agents.runtimeEngines.native")}
+                        </SelectItem>
+                        {selectedAgent.mode !== "grounded_chat" ? (
+                          <SelectItem value="langgraph_pilot">
+                            {t("agents.runtimeEngines.langgraph_pilot")}
+                          </SelectItem>
+                        ) : null}
                       </SelectContent>
                     </Select>
                   </DialogFormField>

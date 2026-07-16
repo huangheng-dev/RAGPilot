@@ -67,7 +67,7 @@ Assistant Messages retain model/runtime metadata, usage, retrieval evidence, Pro
 - `tool_registrations`
 - `mcp_connectors`
 
-Agent definitions own governed scope and runtime bindings. Runs record operator-facing launches; Executions own durable task state, result payloads, Prompt bindings, immutable execution-policy and Agent-definition snapshots, optional JSON Schema output contracts, retry/replay lineage, and replay fingerprints. Approval Requests persist human-wait decisions independently from transient API requests.
+Agent definitions own governed scope, model/Tool bindings, and the versioned `runtime_engine` / `runtime_version` policy. Runs record operator-facing launches; Executions own durable task state, result payloads, Prompt bindings, immutable execution-policy and Agent-definition snapshots (including the effective runtime policy), optional JSON Schema output contracts, retry/replay lineage, and replay fingerprints. Approval Requests persist human-wait decisions independently from transient API requests.
 
 ### Model, retrieval, Prompt, and runtime governance
 
@@ -79,7 +79,7 @@ Agent definitions own governed scope and runtime bindings. Runs record operator-
 - `runtime_credentials`
 - `runtime_governance_events`
 
-Model and MCP credentials are stored through the encrypted runtime-credential boundary. Runtime-governance events retain bounded health, rotation, preview, approval, and policy evidence. Prompt versions bind to Messages, Agent Runs, and Agent Executions through immutable identifiers and content hashes.
+Model and MCP credentials are stored through the encrypted runtime-credential boundary. Retrieval Profiles persist `engine_name`, `engine_version`, and the bounded LlamaIndex similarity/reorder policy in addition to fusion and Top-K settings. Runtime-governance events retain bounded health, rotation, preview, approval, and policy evidence. Prompt versions bind to Messages, Agent Runs, and Agent Executions through immutable identifiers and content hashes.
 
 ### Workflows and operations
 
