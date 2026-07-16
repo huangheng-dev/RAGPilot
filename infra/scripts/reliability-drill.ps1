@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $compose = Join-Path $root "infra\docker\compose.yaml"
-$health = "http://localhost:18000/api/v1/health"
+$health = "http://localhost:8000/api/v1/health"
 if ((Invoke-WebRequest -UseBasicParsing $health).StatusCode -ne 200) { throw "API baseline health failed" }
 docker compose -f $compose pause elasticsearch | Out-Null
 try {

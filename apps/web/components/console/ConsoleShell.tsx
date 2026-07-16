@@ -18,6 +18,7 @@ import {
   Sparkles,
   SunMedium,
   UserCircle2,
+  UsersRound,
   Waypoints
 } from "lucide-react";
 
@@ -39,7 +40,7 @@ import {
 } from "@/lib/tenant-scope";
 
 type ConsoleShellProps = {
-  activeHref?: "/" | "/workspace" | "/chat" | "/documents" | "/agents" | "/operations" | "/admin" | "/settings";
+  activeHref?: "/" | "/workspace" | "/chat" | "/documents" | "/agents" | "/operations" | "/admin" | "/access-control" | "/settings";
   children: React.ReactNode;
 };
 
@@ -185,7 +186,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
       return;
     }
 
-    const tenantAwarePaths = ["/", "/chat", "/documents", "/agents", "/operations", "/admin"];
+    const tenantAwarePaths = ["/", "/chat", "/documents", "/agents", "/operations", "/admin", "/access-control"];
     if (!tenantAwarePaths.includes(pathname)) {
       nextUrl.pathname = "/";
       nextUrl.search = "";
@@ -394,6 +395,15 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
                         >
                           <ShieldCheck className="h-4 w-4" />
                           {t("shell.userMenu.admin")}
+                        </Link>
+                      ) : null}
+                      {hasDirectoryCapability(session, "manage_admin_resources") ? (
+                        <Link
+                          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-50"
+                          href="/access-control"
+                        >
+                          <UsersRound className="h-4 w-4" />
+                          {t("shell.userMenu.accessControl")}
                         </Link>
                       ) : null}
                       <Link

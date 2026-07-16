@@ -23,6 +23,7 @@ from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository 
 from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_repository import RuntimeGovernanceEventRepository
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
 from ragpilot_api.infrastructure.mcp.client import McpProtocolError, McpStreamableHttpClient
+from ragpilot_api.infrastructure.observability import inject_trace_headers
 from ragpilot_api.shared.settings import Settings, get_settings
 from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
 
@@ -381,6 +382,7 @@ class McpConnectorRegistryService:
         credential = await self._resolve_credential(mcp_connector)
         if credential:
             request_headers["Authorization"] = f"Bearer {credential}"
+        request_headers = inject_trace_headers(request_headers)
         initialize_payload = {
             "jsonrpc": "2.0",
             "id": "ragpilot-preview",
@@ -439,6 +441,9 @@ class McpConnectorRegistryService:
                     requests_per_minute=int(getattr(self.settings, "mcp_runtime_requests_per_minute", 240)),
                     max_attempts=int(getattr(self.settings, "mcp_runtime_max_attempts", 2)),
                     retry_backoff_seconds=float(getattr(self.settings, "mcp_runtime_retry_backoff_seconds", 0.25)),
+                    redis_url=getattr(self.settings, "redis_url", None),
+                    redis_failure_mode=getattr(self.settings, "runtime_limit_redis_failure_mode", "local_fallback"),
+                    concurrency_lease_seconds=float(getattr(self.settings, "runtime_limit_concurrency_lease_seconds", 300)),
                 )
                 await runtime_client.initialize()
                 discovered_tools = await runtime_client.list_tools()
@@ -491,6 +496,9 @@ class McpConnectorRegistryService:
             requests_per_minute=int(getattr(self.settings, "mcp_runtime_requests_per_minute", 240)),
             max_attempts=int(getattr(self.settings, "mcp_runtime_max_attempts", 2)),
             retry_backoff_seconds=float(getattr(self.settings, "mcp_runtime_retry_backoff_seconds", 0.25)),
+            redis_url=getattr(self.settings, "redis_url", None),
+            redis_failure_mode=getattr(self.settings, "runtime_limit_redis_failure_mode", "local_fallback"),
+            concurrency_lease_seconds=float(getattr(self.settings, "runtime_limit_concurrency_lease_seconds", 300)),
         )
         try:
             initialization = await client.initialize()

@@ -6,12 +6,14 @@ from opentelemetry import context, metrics, trace
 from temporalio import activity
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.propagate import extract
+from opentelemetry.propagate import extract, inject
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+from ragpilot_worker.infrastructure.structured_logging import configure_otel_log_export, configure_structured_logging
 
 
 _meter = metrics.get_meter("ragpilot.worker")
@@ -23,12 +25,21 @@ _projection_chunks = _meter.create_counter("ragpilot.projection.chunks")
 
 
 def configure_worker_observability(settings) -> None:
+    configure_structured_logging(service_name="ragpilot-worker", environment=settings.environment)
     if not settings.otel_enabled:
         return
-    provider = TracerProvider(resource=Resource.create({"service.name": "ragpilot-worker", "deployment.environment": settings.environment}))
+    resource = Resource.create({"service.name": "ragpilot-worker", "deployment.environment": settings.environment})
+    configure_otel_log_export(endpoint=settings.otel_exporter_otlp_endpoint, resource=resource)
+    provider = TracerProvider(resource=resource)
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True)))
     trace.set_tracer_provider(provider)
     metrics.set_meter_provider(MeterProvider(resource=provider.resource, metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True))]))
+
+
+def inject_trace_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
+    carrier = dict(headers or {})
+    inject(carrier)
+    return carrier
 
 
 @contextmanager

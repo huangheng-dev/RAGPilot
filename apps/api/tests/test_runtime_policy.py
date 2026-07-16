@@ -3,6 +3,7 @@ import asyncio
 import httpx
 import pytest
 
+import ragpilot_api.infrastructure.runtime_policy as runtime_policy
 from ragpilot_api.infrastructure.runtime_policy import AsyncOutboundPolicy
 
 
@@ -92,3 +93,46 @@ async def test_outbound_policy_propagates_cancellation_without_retry() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert calls == 1
+
+
+@pytest.mark.anyio
+async def test_outbound_policy_uses_shared_distributed_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    shared_semaphore = asyncio.Semaphore(1)
+
+    class FakeDistributedLimiter:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def acquire_concurrency(self) -> str:
+            await shared_semaphore.acquire()
+            return "lease"
+
+        async def renew_concurrency(self, token: str) -> bool:
+            return True
+
+        async def release_concurrency(self, token: str) -> None:
+            shared_semaphore.release()
+
+        async def wait_for_rate_slot(self) -> None:
+            return None
+
+    monkeypatch.setattr(runtime_policy, "RedisRuntimeLimiter", FakeDistributedLimiter)
+    policies = [
+        AsyncOutboundPolicy(
+            lane="model:test", redis_url="redis://shared", concurrency_limit=10,
+            requests_per_minute=100, max_attempts=1, retryable_status_codes=set(),
+        )
+        for _ in range(2)
+    ]
+    active = 0
+    peak = 0
+
+    async def operation() -> None:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+
+    await asyncio.gather(*(policy.execute(operation) for policy in policies))
+    assert peak == 1

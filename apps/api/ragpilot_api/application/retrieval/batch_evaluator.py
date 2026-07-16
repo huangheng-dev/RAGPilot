@@ -13,6 +13,34 @@ from ragpilot_api.application.retrieval.evaluation_metrics import (
 Retriever = Callable[[dict[str, Any], int], Awaitable[Any]]
 
 
+def validate_evaluation_dataset(
+    dataset: dict[str, Any], *, require_fixture_observations: bool = False, require_queries: bool = False,
+) -> None:
+    required_root_fields = ("dataset_id", "version", "top_k", "gates", "cases")
+    missing_root_fields = [field for field in required_root_fields if field not in dataset]
+    if missing_root_fields:
+        raise ValueError(f"Evaluation dataset is missing required fields: {', '.join(missing_root_fields)}")
+    if dataset.get("schema_version") not in (None, "1"):
+        raise ValueError("Unsupported evaluation dataset schema_version.")
+    if not isinstance(dataset["cases"], list) or not dataset["cases"]:
+        raise ValueError("Evaluation dataset must contain at least one case.")
+    required_gate_fields = ("recall_at_k", "mrr", "ndcg_at_k", "max_p95_latency_ms")
+    missing_gate_fields = [field for field in required_gate_fields if field not in dataset["gates"]]
+    if missing_gate_fields:
+        raise ValueError(f"Evaluation dataset gates are missing required fields: {', '.join(missing_gate_fields)}")
+    seen_case_ids: set[str] = set()
+    for case in dataset["cases"]:
+        required_case_fields = ("case_id", "category", "relevant_chunk_ids") + (("query",) if require_queries else ())
+        missing_case_fields = [field for field in required_case_fields if field not in case]
+        if missing_case_fields:
+            raise ValueError(f"Evaluation case is missing required fields: {', '.join(missing_case_fields)}")
+        if case["case_id"] in seen_case_ids:
+            raise ValueError(f"Evaluation dataset contains duplicate case_id: {case['case_id']}")
+        seen_case_ids.add(case["case_id"])
+        if require_fixture_observations and "fixture_observation" not in case:
+            raise ValueError(f"Evaluation case {case['case_id']} is missing fixture_observation.")
+
+
 def percentile(values: list[float], percentile_value: float) -> float:
     if not values:
         return 0.0
@@ -22,6 +50,7 @@ def percentile(values: list[float], percentile_value: float) -> float:
 
 
 async def run_batch_evaluation(*, dataset: dict[str, Any], retriever: Retriever, gate_profile: str = "normal") -> dict[str, Any]:
+    validate_evaluation_dataset(dataset)
     top_k = int(dataset["top_k"])
     warmup_latencies: list[float] = []
     if dataset.get("cases"):

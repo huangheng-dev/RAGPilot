@@ -384,6 +384,9 @@ class ModelRegistryService:
                 max_attempts=int(getattr(self.settings, "model_runtime_max_attempts", 2)),
                 retryable_status_codes=getattr(self.settings, "model_runtime_retryable_status_code_set", {429, 502, 503, 504}),
                 retry_backoff_seconds=float(getattr(self.settings, "model_runtime_retry_backoff_seconds", 0.25)),
+                redis_url=getattr(self.settings, "redis_url", None),
+                redis_failure_mode=getattr(self.settings, "runtime_limit_redis_failure_mode", "local_fallback"),
+                concurrency_lease_seconds=float(getattr(self.settings, "runtime_limit_concurrency_lease_seconds", 300)),
             )
             try:
                 result = await provider.generate_chat_completion(messages=preview_messages)
@@ -446,6 +449,9 @@ class ModelRegistryService:
                 max_attempts=int(getattr(self.settings, "model_runtime_max_attempts", 2)),
                 retryable_status_codes=getattr(self.settings, "model_runtime_retryable_status_code_set", {429, 502, 503, 504}),
                 retry_backoff_seconds=float(getattr(self.settings, "model_runtime_retry_backoff_seconds", 0.25)),
+                redis_url=getattr(self.settings, "redis_url", None),
+                redis_failure_mode=getattr(self.settings, "runtime_limit_redis_failure_mode", "local_fallback"),
+                concurrency_lease_seconds=float(getattr(self.settings, "runtime_limit_concurrency_lease_seconds", 300)),
             )
             try:
                 result = await provider.generate_chat_completion(messages=preview_messages)

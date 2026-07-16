@@ -9,6 +9,7 @@ from typing import Protocol
 import httpx
 
 from ragpilot_worker.config import WorkerSettings
+from ragpilot_worker.infrastructure.observability import inject_trace_headers
 
 
 class EmbeddingProvider(Protocol):
@@ -74,6 +75,7 @@ class OpenAICompatibleEmbeddingProvider:
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = inject_trace_headers(headers)
 
         async with httpx.AsyncClient(timeout=self.request_timeout_seconds) as client:
             response = await client.post(

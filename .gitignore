@@ -36,6 +36,7 @@ work/
 .playwright-cli/
 test-results/
 playwright-report/
+# Keep the maintained documentation set versioned. Only explicitly private
+# documentation areas remain local-only.
 docs/internal/
 docs/private/
-docs/

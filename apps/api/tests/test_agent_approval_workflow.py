@@ -12,7 +12,7 @@ from ragpilot_api.workflows.agent_execution import AgentExecutionWorkflow
 
 activity_calls = 0
 activity_mode = "approval"
-temporal_test_address = os.getenv("TEMPORAL_TEST_ADDRESS", "localhost:7234")
+temporal_test_address = os.getenv("TEMPORAL_TEST_ADDRESS", "localhost:7233")
 
 
 @activity.defn(name="execute_agent_execution")

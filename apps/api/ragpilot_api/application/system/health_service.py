@@ -51,6 +51,7 @@ async def build_health_response(session: AsyncSession) -> HealthResponse:
         effective_chat_model_name=runtime_binding.model_name,
         effective_chat_model_source=runtime_binding.source,
         effective_chat_model_endpoint_name=runtime_binding.model_endpoint_name,
-        effective_chat_model_api_base_url=runtime_binding.api_base_url,
+        # Keep internal model endpoints out of the unauthenticated health contract.
+        effective_chat_model_api_base_url=None,
         search_projection=search_projection,
     )

@@ -16,11 +16,11 @@ export function buildApiBaseUrl() {
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname.toLowerCase();
     const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
-    const baseUrl = isLocalHost ? "http://127.0.0.1:18000" : window.location.origin;
+    const baseUrl = isLocalHost ? `${window.location.protocol}//${window.location.hostname}:8000` : window.location.origin;
     return `${baseUrl}/api/v1`;
   }
 
-  const fallbackBaseUrl = "http://127.0.0.1:18000";
+  const fallbackBaseUrl = "http://127.0.0.1:8000";
   const baseUrl = fallbackBaseUrl;
   return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
 }
@@ -41,6 +41,7 @@ async function handleApiFailure(response: Response): Promise<never> {
 export async function authenticatedFetch(path: string, init?: RequestInit) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
       ...init,
+      credentials: "include",
       headers: {
         ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...buildSessionAuthHeaders(init?.headers)
@@ -82,6 +83,7 @@ export function authenticatedUpload<T>(
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", `${apiBaseUrl}${path}`);
+    request.withCredentials = true;
     Object.entries(buildSessionAuthHeaders()).forEach(([key, value]) => request.setRequestHeader(key, value));
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && event.total > 0) {

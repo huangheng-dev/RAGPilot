@@ -25,8 +25,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit production Node dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Build web
         run: npm run web:build
+
+      - name: Build and test MCP server
+        run: npm run mcp:build && npm run mcp:test
 
       - name: Audit production delivery assets
         shell: pwsh
@@ -49,13 +55,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e './apps/api[retrieval-llamaindex,agent-langgraph]'
-          python -m pip install pytest
+          python -m pip install pytest pip-audit
+
+      - name: Audit API Python dependencies
+        run: python -m pip_audit
 
       - name: Start Temporal test dependency
         run: |
           docker compose -f infra/docker/compose.yaml up -d postgres temporal
           for attempt in {1..60}; do
-            if (echo > /dev/tcp/127.0.0.1/7234) 2>/dev/null; then
+            if (echo > /dev/tcp/127.0.0.1/7233) 2>/dev/null && docker compose -f infra/docker/compose.yaml exec -T postgres pg_isready -U ragpilot -d ragpilot; then
               exit 0
             fi
             sleep 2
@@ -65,9 +74,39 @@ jobs:
 
       - name: Run API tests
         env:
-          TEMPORAL_TEST_ADDRESS: localhost:7234
-        run: python -m pytest apps/api/tests
+          TEMPORAL_TEST_ADDRESS: localhost:7233
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+        run: |
+          (cd apps/api && python -m alembic upgrade head)
+          python -m ragpilot_api.commands.retrieval_contract_gate packages/evals/retrieval/core-contract-v1.json
+          python -m ragpilot_api.commands.retrieval_database_gate packages/evals/retrieval/database-contract-v1.json
+          python -m pytest apps/api/tests
 
       - name: Stop Temporal test dependency
         if: always()
         run: docker compose -f infra/docker/compose.yaml down --volumes
+
+  worker:
+    name: Worker tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Install Worker dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ./apps/worker pytest pip-audit
+
+      - name: Audit Worker Python dependencies
+        run: python -m pip_audit
+
+      - name: Run Worker tests
+        run: python -m pytest apps/worker/tests

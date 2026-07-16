@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from ragpilot_worker.infrastructure.observability import inject_trace_headers
+
 
 class ElasticsearchProjectionError(RuntimeError):
     """Raised when the Elasticsearch projection boundary rejects an operation."""
@@ -17,8 +19,15 @@ class ElasticsearchProjectionClient:
         self.base_url = base_url.rstrip("/")
         self.request_timeout_seconds = request_timeout_seconds
 
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.request_timeout_seconds,
+            headers=inject_trace_headers(),
+        )
+
     async def ensure_index(self, *, index_name: str, contract: dict[str, Any]) -> None:
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             response = await client.put(f"/{index_name}", json=contract)
         if response.status_code in (200, 201):
             return
@@ -33,7 +42,7 @@ class ElasticsearchProjectionClient:
         contract: dict[str, Any],
         write_alias: str,
     ) -> str:
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             alias_response = await client.get(f"/_alias/{write_alias}")
         if alias_response.status_code == 200:
             return write_alias
@@ -46,14 +55,14 @@ class ElasticsearchProjectionClient:
             for alias, settings in contract.get("aliases", {}).items()
         ]
         if alias_actions:
-            async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+            async with self._client() as client:
                 create_alias_response = await client.post("/_aliases", json={"actions": alias_actions})
             if create_alias_response.status_code != 200:
                 raise ElasticsearchProjectionError(_format_error("create bootstrap aliases", create_alias_response))
         return write_alias
 
     async def delete_index(self, *, index_name: str) -> None:
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             response = await client.delete(f"/{index_name}")
         if response.status_code in (200, 404):
             return
@@ -67,7 +76,7 @@ class ElasticsearchProjectionClient:
         write_alias: str,
     ) -> None:
         alias_indices: dict[str, set[str]] = {read_alias: set(), write_alias: set()}
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             for alias in (read_alias, write_alias):
                 response = await client.get(f"/_alias/{alias}")
                 if response.status_code == 404:
@@ -91,7 +100,7 @@ class ElasticsearchProjectionClient:
             raise ElasticsearchProjectionError(_format_error("promote read/write aliases", response))
 
     async def get_alias_indices(self, *, alias: str) -> set[str]:
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             response = await client.get(f"/_alias/{alias}")
         if response.status_code == 404:
             return set()
@@ -101,7 +110,7 @@ class ElasticsearchProjectionClient:
 
     async def list_index_document_ids(self, *, index_name: str, batch_size: int = 1000) -> set[str]:
         document_ids: set[str] = set()
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             response = await client.post(
                 f"/{index_name}/_search",
                 params={"scroll": "1m"},
@@ -154,7 +163,7 @@ class ElasticsearchProjectionClient:
                 }
             }
         }
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             delete_response = await client.post(
                 f"/{index_name}/_delete_by_query",
                 params={"conflicts": "proceed", "refresh": "true"},
@@ -202,7 +211,7 @@ class ElasticsearchProjectionClient:
                 }
             }
         }
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.request_timeout_seconds) as client:
+        async with self._client() as client:
             response = await client.post(
                 f"/{index_name}/_delete_by_query",
                 params={"conflicts": "proceed", "refresh": "true"},

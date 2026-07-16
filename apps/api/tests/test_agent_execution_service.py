@@ -8,6 +8,7 @@ import pytest
 from ragpilot_api.application.model_gateway.contracts import RuntimeModelBinding
 from ragpilot_api.application.agents.agent_execution_service import (
     AgentExecutionService,
+    build_agent_definition_snapshot,
     build_agent_execution_response,
 )
 from ragpilot_api.contracts.http.agent_execution_contracts import AgentExecutionCreateRequest
@@ -59,6 +60,73 @@ def build_agent_definition(**overrides):
         "updated_at": now,
     }
     return SimpleNamespace(**{**defaults, **overrides})
+
+
+@pytest.mark.anyio
+async def test_agent_replay_reuses_source_definition_and_sandbox_snapshot() -> None:
+    tenant_id = uuid4()
+    agent_definition = build_agent_definition(tenant_id=tenant_id)
+    definition_snapshot = build_agent_definition_snapshot(agent_definition)
+    source = build_agent_execution(
+        tenant_id=tenant_id,
+        agent_definition_id=agent_definition.id,
+        execution_policy_json={
+            "version": "agent_execution_policy_v1",
+            "max_tool_calls": 0,
+            "max_runtime_seconds": 60,
+            "max_output_bytes": 4096,
+            "sandbox": {
+                "shell_access": "none",
+                "filesystem_access": "none",
+                "network_access": "registered_tools_only",
+                "allowed_tool_registration_ids": [],
+            },
+            "agent_definition_snapshot": definition_snapshot,
+        },
+        output_schema_json={"type": "object"},
+    )
+    created = build_agent_execution(
+        tenant_id=tenant_id,
+        agent_definition_id=agent_definition.id,
+        execution_status="queued",
+        replay_of_execution_id=source.id,
+        execution_policy_json=source.execution_policy_json,
+        output_schema_json=source.output_schema_json,
+        completed_at=None,
+        started_at=None,
+    )
+    current_definition_lookup = AsyncMock()
+    execution_repository = SimpleNamespace(
+        get_agent_execution=AsyncMock(return_value=source),
+        create_agent_execution=AsyncMock(return_value=created),
+        attach_temporal_workflow=AsyncMock(return_value=created),
+    )
+    temporal = SimpleNamespace(
+        start_agent_execution_workflow=AsyncMock(return_value="agent-replay-workflow")
+    )
+    service = AgentExecutionService(
+        SimpleNamespace(get_agent_definition=current_definition_lookup),
+        execution_repository,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        temporal_workflow_client=temporal,
+    )
+
+    await service.replay_agent_execution(
+        execution_id=source.id,
+        tenant_id=tenant_id,
+        actor=SimpleNamespace(user_id=None, role="operator"),
+    )
+
+    current_definition_lookup.assert_not_awaited()
+    create_kwargs = execution_repository.create_agent_execution.await_args.kwargs
+    assert create_kwargs["replay_of_execution_id"] == source.id
+    assert create_kwargs["execution_policy_json"]["agent_definition_snapshot"] == definition_snapshot
+    assert create_kwargs["execution_policy_json"]["sandbox"]["allowed_tool_registration_ids"] == []
+    assert create_kwargs["output_schema_json"] == {"type": "object"}
 
 
 @pytest.mark.anyio

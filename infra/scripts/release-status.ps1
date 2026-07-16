@@ -10,7 +10,7 @@ Write-Host ""
 $gitDirectoryPresent = Test-Path ".git"
 $licensePresent = (Test-Path "LICENSE") -or (Test-Path "LICENSE.md")
 $releaseWorkflowUsesPreflight = $false
-$internalDocsExcluded = $false
+$privateDocsExcluded = $false
 $releaseValidationScripts = @(
   "infra/scripts/public-docs-audit.ps1",
   "infra/scripts/public-links-audit.ps1",
@@ -41,7 +41,10 @@ if (Test-Path ".github/workflows/release-readiness.yml") {
 
 if (Test-Path ".gitignore") {
   $gitignoreContent = Get-Content ".gitignore" -Raw
-  $internalDocsExcluded = $gitignoreContent -match "(?m)^docs/$"
+  $privateDocsExcluded = (
+    $gitignoreContent -match "(?m)^docs/internal/$" -and
+    $gitignoreContent -match "(?m)^docs/private/$"
+  )
 }
 
 foreach ($scriptPath in $releaseValidationScripts) {
@@ -66,7 +69,7 @@ Write-Host "Branch: $currentBranch"
 Write-Host "Baseline commit present: $hasCommit"
 Write-Host "License present: $licensePresent"
 Write-Host "Release workflow uses unified preflight: $releaseWorkflowUsesPreflight"
-Write-Host "Internal docs excluded from public push by default: $internalDocsExcluded"
+Write-Host "Maintained docs included; private docs excluded: $privateDocsExcluded"
 Write-Host "Release validation scripts present: $($missingReleaseValidationScripts.Count -eq 0)"
 Write-Host "Remotes: $([string]::Join(', ', $remoteNames))"
 Write-Host ""
@@ -96,8 +99,8 @@ if (-not $licensePresent) {
 if (-not $releaseWorkflowUsesPreflight) {
   Write-Host "- align release-readiness workflow with npm run release:preflight"
 }
-if (-not $internalDocsExcluded) {
-  Write-Host "- exclude internal docs from the public push set by default"
+if (-not $privateDocsExcluded) {
+  Write-Host "- keep maintained docs versioned and exclude only docs/internal and docs/private"
 }
 if ($missingReleaseValidationScripts.Count -gt 0) {
   Write-Host "- restore missing release validation scripts:"

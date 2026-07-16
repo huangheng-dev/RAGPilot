@@ -1027,7 +1027,7 @@ def test_document_list_route_exposes_paging_headers_to_browser_clients(monkeypat
     client = TestClient(app)
     response = client.get(
         "/api/v1/documents",
-        headers={"Origin": "http://127.0.0.1:3001", "X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
+        headers={"Origin": "http://127.0.0.1:3000", "X-RAGPilot-Role": "reviewer", "X-RAGPilot-Actor-Id": str(uuid4())},
         params={"knowledge_base_id": str(uuid4())},
     )
 

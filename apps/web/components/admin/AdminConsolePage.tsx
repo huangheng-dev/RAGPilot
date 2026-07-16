@@ -3559,6 +3559,9 @@ export default function AdminConsolePage() {
               accumulator.queued_executions + metrics.queued_executions,
             running_executions:
               accumulator.running_executions + metrics.running_executions,
+            awaiting_approval_executions:
+              accumulator.awaiting_approval_executions +
+              metrics.awaiting_approval_executions,
             completed_executions:
               accumulator.completed_executions + metrics.completed_executions,
             failed_executions:

@@ -36,6 +36,8 @@ class AgentRunResponse(BaseModel):
     run_status: AgentRunStatus
     trigger_source: AgentRunTriggerSource
     launch_prompt: str | None
+    prompt_version_id: UUID | None = None
+    prompt_snapshot_hash: str | None = None
     navigation_href: str | None
     launched_by_user_id: UUID | None
     completed_at: datetime | None

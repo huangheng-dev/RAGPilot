@@ -41,6 +41,34 @@ class User(Base, TimestampMixin):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ApiKey(Base, TimestampMixin):
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    name: Mapped[str] = mapped_column(String(160))
+    key_prefix: Mapped[str] = mapped_column(String(32), unique=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    role: Mapped[str] = mapped_column(String(40))
+    scopes_json: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ApiKeyEvent(Base):
+    __tablename__ = "api_key_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    api_key_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("api_keys.id"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    event_type: Mapped[str] = mapped_column(String(80))
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+
 class UserSession(Base, TimestampMixin):
     __tablename__ = "user_sessions"
 
@@ -64,11 +92,34 @@ class TenantMembership(Base, TimestampMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     membership_status: Mapped[str] = mapped_column(String(40), server_default=text("'active'"))
     invitation_token: Mapped[str | None] = mapped_column(String(80))
+    invitation_token_hash: Mapped[str | None] = mapped_column(String(64))
     invitation_issue_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     last_invitation_issued_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     invitation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AccessGroup(Base, TimestampMixin):
+    __tablename__ = "access_groups"
+    __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_access_groups_tenant_slug"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    name: Mapped[str] = mapped_column(String(160))
+    slug: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AccessGroupMembership(Base, TimestampMixin):
+    __tablename__ = "access_group_memberships"
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_access_group_memberships_group_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("access_groups.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
 
 
 class Role(Base, TimestampMixin):
@@ -132,6 +183,30 @@ class KnowledgeBase(Base, TimestampMixin):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class PromptTemplate(Base, TimestampMixin):
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    prompt_key: Mapped[str] = mapped_column(String(160), unique=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(Text)
+    active_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("prompt_versions.id", use_alter=True, name="fk_prompt_templates_active_version")
+    )
+
+
+class PromptVersion(Base, TimestampMixin):
+    __tablename__ = "prompt_versions"
+    __table_args__ = (UniqueConstraint("prompt_template_id", "version", name="uq_prompt_versions_template_version"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    prompt_template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("prompt_templates.id"))
+    version: Mapped[str] = mapped_column(String(80))
+    template_text: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(40), server_default=text("'active'"))
+
+
 class AgentDefinition(Base, TimestampMixin):
     __tablename__ = "agent_definitions"
     __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_agent_definitions_tenant_slug"),)
@@ -165,6 +240,8 @@ class AgentRun(Base, TimestampMixin):
     run_status: Mapped[str] = mapped_column(String(40), server_default=text("'launched'"))
     trigger_source: Mapped[str] = mapped_column(String(80), server_default=text("'agents_console'"))
     launch_prompt: Mapped[str | None] = mapped_column(Text)
+    prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("prompt_versions.id"))
+    prompt_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
     navigation_href: Mapped[str | None] = mapped_column(String(2000))
     launched_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -185,14 +262,20 @@ class AgentExecution(Base, TimestampMixin):
     model_endpoint_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("model_endpoints.id"))
     tool_registration_ids_json: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
     execution_input: Mapped[str | None] = mapped_column(Text)
+    prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("prompt_versions.id"))
+    prompt_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
     summary: Mapped[str | None] = mapped_column(Text)
     result_payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    execution_policy_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    output_schema_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    replay_fingerprint: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
     launched_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     temporal_workflow_id: Mapped[str | None] = mapped_column(String(240), unique=True)
     retry_of_execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id"))
+    replay_of_execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_executions.id", name="fk_agent_executions_replay_of"))
     cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -345,17 +428,93 @@ class RuntimeGovernanceEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 
+class DataSource(Base, TimestampMixin):
+    __tablename__ = "data_sources"
+    __table_args__ = (UniqueConstraint("knowledge_base_id", "identity_key", name="uq_data_sources_kb_identity"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    knowledge_base_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_bases.id"))
+    name: Mapped[str] = mapped_column(String(240))
+    source_type: Mapped[str] = mapped_column(String(40))
+    source_uri: Mapped[str | None] = mapped_column(Text)
+    identity_key: Mapped[str] = mapped_column(String(128))
+    connection_status: Mapped[str] = mapped_column(String(40), server_default=text("'connected'"))
+    sync_status: Mapped[str] = mapped_column(String(40), server_default=text("'never_synced'"))
+    sync_cursor: Mapped[str | None] = mapped_column(String(512))
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sync_error: Mapped[str | None] = mapped_column(Text)
+    sync_lease_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    sync_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DataSourceSyncRun(Base):
+    __tablename__ = "data_source_sync_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    data_source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("data_sources.id"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    run_status: Mapped[str] = mapped_column(String(40), server_default=text("'running'"))
+    cursor_before: Mapped[str | None] = mapped_column(String(512))
+    cursor_after: Mapped[str | None] = mapped_column(String(512))
+    documents_discovered: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    documents_changed: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    documents_unchanged: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    documents_deleted: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    temporal_workflow_id: Mapped[str | None] = mapped_column(String(240))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DataSourceItem(Base, TimestampMixin):
+    __tablename__ = "data_source_items"
+    __table_args__ = (UniqueConstraint("data_source_id", "external_id", name="uq_data_source_items_source_external"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    data_source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("data_sources.id"))
+    external_id: Mapped[str] = mapped_column(String(512))
+    document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", use_alter=True, name="fk_data_source_items_document"))
+    version_token: Mapped[str] = mapped_column(String(512))
+    content_hash: Mapped[str | None] = mapped_column(String(128))
+    source_uri: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(240))
+    item_status: Mapped[str] = mapped_column(String(40), server_default=text("'active'"))
+    last_seen_sync_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("data_source_sync_runs.id"))
+    last_changed_sync_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("data_source_sync_runs.id"))
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+
+
 class Document(Base, TimestampMixin):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
     knowledge_base_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_bases.id"))
+    data_source_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("data_sources.id"))
     title: Mapped[str] = mapped_column(String(240))
     source_uri: Mapped[str | None] = mapped_column(Text)
     ingestion_status: Mapped[str] = mapped_column(String(40), server_default=text("'pending'"))
     indexing_status: Mapped[str] = mapped_column(String(40), server_default=text("'pending'"))
+    access_scope: Mapped[str] = mapped_column(String(40), server_default=text("'tenant'"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DocumentAccessGrant(Base, TimestampMixin):
+    __tablename__ = "document_access_grants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    group_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("access_groups.id"))
+    permission: Mapped[str] = mapped_column(String(40), server_default=text("'read'"))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 
 
 class DocumentVersion(Base, TimestampMixin):
@@ -396,7 +555,20 @@ class DocumentChunk(Base):
     content: Mapped[str] = mapped_column(Text)
     token_count: Mapped[int | None] = mapped_column(Integer)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    access_scope: Mapped[str] = mapped_column(String(40), server_default=text("'inherit'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+
+class DocumentChunkAccessGrant(Base, TimestampMixin):
+    __tablename__ = "document_chunk_access_grants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    document_chunk_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_chunks.id"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    group_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("access_groups.id"))
+    permission: Mapped[str] = mapped_column(String(40), server_default=text("'read'"))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
 
 
 class DocumentChunkEmbedding(Base):
@@ -453,6 +625,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     model_name: Mapped[str | None] = mapped_column(String(160))
     usage_json: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("prompt_versions.id"))
+    prompt_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 

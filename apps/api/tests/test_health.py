@@ -9,6 +9,17 @@ from ragpilot_api.application.system.health_service import build_health_response
 @pytest.mark.anyio
 async def test_health_builder(monkeypatch) -> None:
     monkeypatch.setattr(
+        "ragpilot_api.application.system.health_service.get_settings",
+        lambda: SimpleNamespace(
+            service_name="ragpilot-api",
+            environment="test",
+            retrieval_engine="native",
+            agent_runtime_engine="native",
+            chat_model_provider="deterministic",
+            chat_model_name="ragpilot-grounded-template",
+        ),
+    )
+    monkeypatch.setattr(
         "ragpilot_api.application.system.health_service.build_runtime_readiness_snapshot",
         lambda: type(
             "RuntimeReadinessSnapshot",
@@ -46,7 +57,7 @@ async def test_health_builder(monkeypatch) -> None:
     assert response.effective_chat_model_name == "llama3.1"
     assert response.effective_chat_model_source == "model_endpoint"
     assert response.effective_chat_model_endpoint_name == "Local Ollama Chat"
-    assert response.effective_chat_model_api_base_url == "http://127.0.0.1:11434"
+    assert response.effective_chat_model_api_base_url is None
 
 
 @pytest.mark.anyio

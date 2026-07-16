@@ -19,6 +19,7 @@ const zhCN = {
       workspace: "工作台",
       operations: "运行中心",
       admin: "管理后台",
+      accessControl: "访问控制",
       settings: "系统设置",
       signIn: "登录",
       signOut: "退出登录",
@@ -30,6 +31,21 @@ const zhCN = {
     actions: {
       openRepository: "打开 GitHub 仓库",
     },
+  },
+  accessControl: {
+    title: "检索访问控制",
+    description: "管理租户用户组，并在真实检索链路中强制执行文档与 Chunk 可见性。",
+    fields: {
+      tenant: "租户", groupName: "用户组名称", groupSlug: "用户组标识", description: "说明",
+      member: "选择有效租户成员", document: "文档", chunk: "Chunk", resourceId: "资源 UUID",
+      group: "用户组", user: "用户", grantSubject: "选择授权对象"
+    },
+    groups: { title: "访问用户组", description: "用于检索 ACL 的租户级读者组。", empty: "还没有访问用户组。" },
+    members: { title: "用户组成员", description: "只能添加当前租户的有效成员。", selectGroup: "请选择一个用户组管理成员。", empty: "这个用户组还没有成员。" },
+    policy: { title: "资源策略", description: "载入文档或 Chunk UUID，并替换服务端强制执行的读取策略。", noGrants: "没有显式读取授权。" },
+    scope: { tenant: "租户内可读", inherit: "继承文档策略", restricted: "受限" },
+    actions: { createGroup: "创建用户组", add: "添加", remove: "移除", loadPolicy: "载入策略", addGrant: "添加授权", savePolicy: "保存策略" },
+    status: { loadFailed: "无法加载访问控制数据。", saveFailed: "访问控制变更失败。", groupCreated: "访问用户组已创建。", memberAdded: "用户组成员已添加。", memberRemoved: "用户组成员已移除。", policyLoadFailed: "无法加载资源策略。", policySaved: "资源策略已保存并对检索生效。" }
   },
   agents: {
     access: {
@@ -585,6 +601,10 @@ const zhCN = {
       refresh: "刷新执行任务",
       retry: "重试执行",
       retrying: "重试中...",
+      replay: "审计重放",
+      replaying: "重放中...",
+      replayQueued: "已创建一条受治理的重放执行。",
+      replayFailed: "无法重放这条执行记录。",
       cancel: "取消执行",
       cancelling: "取消中...",
       latestTitle: "最近执行",
@@ -595,6 +615,26 @@ const zhCN = {
       pendingSummary: "执行仍在处理中，或还没有产出最终结果。",
       executionInput: "执行输入",
       answerPreview: "回答预览",
+      policy: {
+        title: "高级执行约束",
+        description:
+          "可选地收紧部署级预算，并用 JSON Schema 校验完整结果载荷；留空则继承服务端默认值。",
+        maxToolCalls: "最大工具调用数",
+        maxRuntimeSeconds: "最大运行时间（秒）",
+        maxOutputBytes: "最大结果字节数",
+        deploymentDefault: "继承部署默认值",
+        outputSchema: "结果 JSON Schema（可选）",
+        outputSchemaPlaceholder:
+          '{"type":"object","required":["answer_preview"]}',
+        invalidSchema: "结果 Schema 必须是有效的 JSON 对象。",
+        sandboxBoundary:
+          "沙箱边界：禁止 Shell 与文件系统访问；出站访问仅限本次执行快照中登记的工具。",
+        toolBudget: "工具调用 ≤ {value}",
+        runtimeBudget: "运行时间 ≤ {value} 秒",
+        outputBudget: "结果 ≤ {value} 字节",
+        schemaBound: "已绑定 Schema",
+        replayOf: "重放自 {value}",
+      },
       latestPacket: {
         title: "最近执行包",
         emptyDetail:
@@ -607,6 +647,8 @@ const zhCN = {
           "最近一次执行失败了。请通过下方后续动作回到运行时、证据面或下游交接链路继续处理。",
         runningDetail:
           "最近一次执行仍在进行中。建议沿着这条正式结果链继续观察，直到产出与后续动作稳定下来。",
+        awaitingApprovalDetail:
+          "最近一次执行停在受治理的工具审批边界，等待授权决策。",
         queuedDetail:
           "最近一次执行仍在排队中。等运行真正开始产出结果后，再回到正式后续页面继续处理。",
         cancelledDetail:
@@ -655,6 +697,7 @@ const zhCN = {
       stageLabels: {
         queued_for_execution: "等待执行",
         running_execution: "执行中",
+        waiting_for_approval: "等待审批",
         grounded_answer_ready: "知识回答已生成",
         intake_review_ready: "摄取审查已就绪",
         recovery_brief_ready: "恢复摘要已就绪",
@@ -703,6 +746,7 @@ const zhCN = {
         total: "执行总数",
         queued: "排队中",
         running: "执行中",
+        awaitingApproval: "等待审批",
         completed: "已完成",
         failed: "失败",
       },
@@ -713,6 +757,7 @@ const zhCN = {
       statuses: {
         queued: "排队中",
         running: "执行中",
+        awaiting_approval: "等待审批",
         completed: "已完成",
         failed: "失败",
         cancelled: "已取消",
@@ -4449,6 +4494,31 @@ const zhCN = {
       workflowRuns: "工作流运行",
     },
     documentsView: {
+      dataSources: {
+        title: "数据源",
+        description: "管理当前知识库的持久化连接器身份、增量游标与最近同步状态。",
+        add: "添加网页源",
+        create: "创建数据源",
+        createTitle: "添加公网网页数据源",
+        refresh: "刷新",
+        empty: "当前知识库还没有连接持久化数据源。",
+        name: "数据源名称",
+        url: "公网 URL",
+        urlHint: "仅接受公网 HTTP(S) 页面；私网、本地、带凭证地址及不安全重定向会被阻止。",
+        sync: "立即同步",
+        syncing: "同步中...",
+        neverRun: "尚未执行同步",
+        runSummary: "{changed} 个变更 · {unchanged} 个未变 · {deleted} 个删除",
+        loadFailed: "数据源加载失败。",
+        createFailed: "数据源创建失败。",
+        syncFailed: "数据源同步启动失败。",
+        status: {
+          never_synced: "尚未同步",
+          syncing: "同步中",
+          completed: "已完成",
+          failed: "失败"
+        }
+      },
       documents: "文档",
       documentDetails: "文档详情",
       closeDocumentDetails: "关闭文档详情",

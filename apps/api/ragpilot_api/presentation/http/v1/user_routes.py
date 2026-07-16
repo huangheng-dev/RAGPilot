@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
@@ -38,6 +38,7 @@ from ragpilot_api.infrastructure.database.repositories.user_repository import Us
 from ragpilot_api.infrastructure.database.repositories.user_session_repository import UserSessionRepository
 from ragpilot_api.infrastructure.database.session import get_database_session
 from ragpilot_api.presentation.http.request_actor import (
+    SESSION_COOKIE_NAME,
     RequestActor,
     require_authenticated_actor,
     require_actor_membership_access,
@@ -192,13 +193,16 @@ async def get_authentication_mode(
 async def login_user(
     request: UserLoginRequest,
     http_request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_database_session),
 ) -> UserAuthenticatedSessionResponse:
     try:
-        return await build_user_service(session).login_user(
+        authenticated = await build_user_service(session).login_user(
             request,
             session_telemetry=build_user_session_telemetry(http_request),
         )
+        _set_browser_session_cookie(response, _resolve_authenticated_session_token(authenticated))
+        return authenticated
     except ResourceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ResourceNotFoundError as error:
@@ -217,13 +221,16 @@ async def assess_login_user(
 async def activate_user_invitations(
     request: UserInvitationActivationRequest,
     http_request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_database_session),
 ) -> UserAuthenticatedSessionResponse:
     try:
-        return await build_user_service(session).activate_user_invitations(
+        authenticated = await build_user_service(session).activate_user_invitations(
             request,
             session_telemetry=build_user_session_telemetry(http_request),
         )
+        _set_browser_session_cookie(response, _resolve_authenticated_session_token(authenticated))
+        return authenticated
     except ResourceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ResourceNotFoundError as error:
@@ -232,6 +239,7 @@ async def activate_user_invitations(
 
 @router.post("/me/sign-out", status_code=status.HTTP_204_NO_CONTENT)
 async def sign_out_current_user(
+    response: Response,
     request: UserSessionRevokeRequest | None = None,
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
@@ -250,8 +258,35 @@ async def sign_out_current_user(
             actor_user_id=actor.user_id,
             reason=request.reason if request is not None else None,
         )
+        settings = get_settings()
+        response.delete_cookie(
+            key=SESSION_COOKIE_NAME,
+            path="/",
+            secure=settings.environment.strip().lower() == "production",
+            httponly=True,
+            samesite="lax",
+        )
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+def _set_browser_session_cookie(response: Response, session_token: str) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_token,
+        max_age=14 * 24 * 60 * 60,
+        path="/",
+        secure=settings.environment.strip().lower() == "production",
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def _resolve_authenticated_session_token(authenticated: UserAuthenticatedSessionResponse | dict) -> str:
+    if isinstance(authenticated, dict):
+        return str(authenticated["session"]["session_token"])
+    return authenticated.session.session_token
 
 
 @router.get("", response_model=list[UserDirectoryResponse])

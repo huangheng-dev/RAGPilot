@@ -4,7 +4,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from ragpilot_api.infrastructure.observability import traced
+from ragpilot_api.infrastructure.observability import inject_trace_headers, traced
 
 
 class ElasticsearchRetrievalError(RuntimeError):
@@ -65,6 +65,7 @@ class ElasticsearchRetrievalRepository:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
                     f"{self.base_url}/{self.read_alias}/_search",
+                    headers=inject_trace_headers(),
                     json=payload,
                 )
                 response.raise_for_status()

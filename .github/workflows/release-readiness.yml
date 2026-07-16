@@ -37,52 +37,9 @@ jobs:
       - name: Install web dependencies
         run: npm ci
 
-      - name: Audit public documentation
-        shell: pwsh
-        run: ./infra/scripts/public-docs-audit.ps1
+      - name: Run the release preflight gate
+        run: npm run release:preflight
 
-      - name: Audit public markdown links
-        shell: pwsh
-        run: ./infra/scripts/public-links-audit.ps1
-
-      - name: Build web
-        run: npm run web:build
-
-      - name: Install API dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e './apps/api[retrieval-llamaindex,agent-langgraph]'
-          python -m pip install pytest
-
-      - name: Start Temporal test dependency
-        run: |
-          docker compose -f infra/docker/compose.yaml up -d postgres temporal
-          for attempt in {1..60}; do
-            if (echo > /dev/tcp/127.0.0.1/7234) 2>/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker compose -f infra/docker/compose.yaml logs temporal
-          exit 1
-
-      - name: Run API tests
-        env:
-          TEMPORAL_TEST_ADDRESS: localhost:7234
-        run: python -m pytest apps/api/tests
-
-      - name: Stop Temporal test dependency
+      - name: Clean up test dependencies
         if: always()
         run: docker compose -f infra/docker/compose.yaml down --volumes
-
-      - name: Audit public release candidate files
-        shell: pwsh
-        run: ./infra/scripts/release-candidate-audit.ps1
-
-      - name: Audit production delivery assets
-        shell: pwsh
-        run: ./infra/scripts/production-delivery-audit.ps1
-
-      - name: Run secret scan
-        shell: pwsh
-        run: ./infra/scripts/secret-scan.ps1

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, RotateCcw, Trash2 } from "lucide-react";
 import { DocumentRegistryPanel } from "@/components/workspace/DocumentRegistryPanel";
 import { DocumentDetailsDrawerPanel } from "@/components/workspace/DocumentDetailsDrawerPanel";
+import { DataSourceRegistryPanel } from "@/components/workspace/DataSourceRegistryPanel";
 import { SelectedWorkflowRunPanel } from "@/components/workspace/SelectedWorkflowRunPanel";
 import { Button } from "@/components/ui/button";
 import { DialogFormActions, FormDialog } from "@/components/ui/form-dialog";
@@ -26,6 +27,8 @@ type WorkspaceDocumentsViewProps = {
   documentLifecycleFilter: DocumentLifecycleFilter;
   documentTotalCount: number;
   documents: DocumentRecord[];
+  tenantId: string | null;
+  knowledgeBaseId: string | null;
   focusedChunkId: string | null;
   canManageDocuments: boolean;
   canManageWorkflowRuns: boolean;
@@ -76,6 +79,8 @@ export function WorkspaceDocumentsView({
   documentLifecycleFilter,
   documentTotalCount,
   documents,
+  tenantId,
+  knowledgeBaseId,
   focusedChunkId,
   canManageDocuments,
   canManageWorkflowRuns,
@@ -127,6 +132,11 @@ export function WorkspaceDocumentsView({
     <>
       <div className="console-split-content console-split-content-padding flex-1">
         <div className="flex w-full flex-col gap-3">
+          <DataSourceRegistryPanel
+            canManageDocuments={canManageDocuments}
+            knowledgeBaseId={knowledgeBaseId}
+            tenantId={tenantId}
+          />
           <DocumentRegistryPanel
             activeAgentContext={activeAgentContext}
             documentPage={documentPage}

@@ -7,6 +7,28 @@ from ragpilot_api.application.retrieval.evaluation_metrics import (
 )
 
 
+def test_promotion_gate_enforces_groundedness_citations_and_cost() -> None:
+    passed, failures = evaluate_promotion_gates(
+        metrics={"recall_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0},
+        p95_latency_ms=10,
+        gates={
+            "recall_at_k": 1.0,
+            "mrr": 1.0,
+            "ndcg_at_k": 1.0,
+            "max_p95_latency_ms": 100,
+            "min_groundedness": 0.9,
+            "min_citation_coverage": 0.9,
+            "max_total_cost_usd": 0.01,
+        },
+        groundedness=0.5,
+        citation_coverage=0.5,
+        total_cost_usd=0.02,
+    )
+
+    assert passed is False
+    assert len(failures) == 3
+
+
 def test_quality_metrics_calculate_recall_mrr_and_ndcg() -> None:
     metrics = evaluate_ranked_ids(ranked_ids=["noise", "b", "a"], relevant_ids={"a", "b"}, k=3)
     assert metrics.recall_at_k == 1.0

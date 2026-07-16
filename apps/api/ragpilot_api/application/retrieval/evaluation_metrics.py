@@ -46,10 +46,10 @@ def evaluate_promotion_gates(
             failures.append(f"{key}={metrics.get(key, 0.0):.4f} < {gates[key]:.4f}")
     if p95_latency_ms > gates["max_p95_latency_ms"]:
         failures.append(f"p95_latency_ms={p95_latency_ms:.2f} > {gates['max_p95_latency_ms']:.2f}")
-    return not failures, failures
     if groundedness < gates.get("min_groundedness", 0.0):
         failures.append(f"groundedness={groundedness:.4f} < {gates['min_groundedness']:.4f}")
     if citation_coverage < gates.get("min_citation_coverage", 0.0):
         failures.append(f"citation_coverage={citation_coverage:.4f} < {gates['min_citation_coverage']:.4f}")
     if total_cost_usd > gates.get("max_total_cost_usd", float("inf")):
         failures.append(f"total_cost_usd={total_cost_usd:.6f} > {gates['max_total_cost_usd']:.6f}")
+    return not failures, failures

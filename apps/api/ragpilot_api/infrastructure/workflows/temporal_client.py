@@ -59,6 +59,30 @@ class TemporalWorkflowClient:
         )
         return temporal_workflow_id
 
+    async def start_data_source_sync_workflow(
+        self,
+        *,
+        temporal_workflow_id: str,
+        data_source_id: str,
+        sync_run_id: str,
+        lease_token: str,
+    ) -> str:
+        client = await Client.connect(
+            self.settings.temporal_address,
+            namespace=self.settings.temporal_namespace,
+        )
+        await client.start_workflow(
+            "DataSourceSyncWorkflow",
+            with_current_trace_context({
+                "data_source_id": data_source_id,
+                "sync_run_id": sync_run_id,
+                "lease_token": lease_token,
+            }),
+            id=temporal_workflow_id,
+            task_queue=self.settings.temporal_task_queue,
+        )
+        return temporal_workflow_id
+
     async def cancel_workflow(
         self,
         *,
@@ -82,6 +106,7 @@ class TemporalWorkflowClient:
         tenant_id: str,
         actor_user_id: str | None,
         actor_role: str,
+        max_runtime_seconds: int = 900,
     ) -> str:
         client = await Client.connect(
             self.settings.temporal_address,
@@ -95,6 +120,7 @@ class TemporalWorkflowClient:
                 "tenant_id": tenant_id,
                 "actor_user_id": actor_user_id,
                 "actor_role": actor_role,
+                "max_runtime_seconds": str(max_runtime_seconds),
             }),
             id=temporal_workflow_id,
             task_queue=self.settings.agent_temporal_task_queue,

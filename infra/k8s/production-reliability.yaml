@@ -5,6 +5,27 @@ spec:
   minAvailable: 1
   selector: { matchLabels: { app: ragpilot-api } }
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-web, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-web } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-worker, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-worker } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-agent-worker, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-agent-worker } }
+---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata: { name: ragpilot-api, namespace: ragpilot }
@@ -39,8 +60,23 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
       ports: [{ protocol: TCP, port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ragpilot-web-ingress, namespace: ragpilot }
+spec:
+  podSelector: { matchLabels: { app: ragpilot-web } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports: [{ protocol: TCP, port: 3000 }]
 ---
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret

@@ -69,10 +69,7 @@ async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
                         "chunk_index": chunk.chunk_index,
                         "content": chunk.content,
                         "token_count": chunk.token_count,
-                        "metadata_json": {
-                            "start_char": chunk.metadata_json["start_char"],
-                            "end_char": chunk.metadata_json["end_char"],
-                        },
+                        "metadata_json": dict(chunk.metadata_json),
                     }
                     for chunk in chunks
                 ],

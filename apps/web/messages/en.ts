@@ -19,6 +19,7 @@ const en = {
       workspace: "Workspace",
       operations: "Operations",
       admin: "Admin Console",
+      accessControl: "Access Control",
       settings: "System Settings",
       signIn: "Sign In",
       signOut: "Sign Out",
@@ -30,6 +31,21 @@ const en = {
     actions: {
       openRepository: "Open GitHub repository",
     },
+  },
+  accessControl: {
+    title: "Retrieval Access Control",
+    description: "Manage tenant groups and enforce document or Chunk visibility in the retrieval path.",
+    fields: {
+      tenant: "Tenant", groupName: "Group name", groupSlug: "Group slug", description: "Description",
+      member: "Select an active tenant member", document: "Document", chunk: "Chunk", resourceId: "Resource UUID",
+      group: "Group", user: "User", grantSubject: "Select a grant subject"
+    },
+    groups: { title: "Access groups", description: "Tenant-scoped reader groups used by retrieval ACLs.", empty: "No access groups yet." },
+    members: { title: "Group members", description: "Only active tenant members can be added.", selectGroup: "Select a group to manage members.", empty: "This group has no members." },
+    policy: { title: "Resource policy", description: "Load a document or Chunk UUID and replace its server-enforced read policy.", noGrants: "No explicit read grants." },
+    scope: { tenant: "Tenant readable", inherit: "Inherit document policy", restricted: "Restricted" },
+    actions: { createGroup: "Create group", add: "Add", remove: "Remove", loadPolicy: "Load policy", addGrant: "Add grant", savePolicy: "Save policy" },
+    status: { loadFailed: "Access control data could not be loaded.", saveFailed: "Access control change failed.", groupCreated: "Access group created.", memberAdded: "Group member added.", memberRemoved: "Group member removed.", policyLoadFailed: "Resource policy could not be loaded.", policySaved: "Resource policy saved and is active for retrieval." }
   },
   agents: {
     access: {
@@ -628,6 +644,10 @@ const en = {
       refresh: "Refresh executions",
       retry: "Retry execution",
       retrying: "Retrying...",
+      replay: "Replay execution",
+      replaying: "Replaying...",
+      replayQueued: "A governed replay was queued.",
+      replayFailed: "The execution could not be replayed.",
       cancel: "Cancel execution",
       cancelling: "Cancelling...",
       latestTitle: "Latest execution",
@@ -639,6 +659,26 @@ const en = {
         "Execution is still processing or waiting for a terminal result.",
       executionInput: "Execution input",
       answerPreview: "Answer preview",
+      policy: {
+        title: "Advanced execution constraints",
+        description:
+          "Optionally narrow deployment-owned limits and validate the complete result payload against a JSON Schema. Blank values inherit service defaults.",
+        maxToolCalls: "Maximum tool calls",
+        maxRuntimeSeconds: "Maximum runtime (seconds)",
+        maxOutputBytes: "Maximum result bytes",
+        deploymentDefault: "Deployment default",
+        outputSchema: "Result JSON Schema (optional)",
+        outputSchemaPlaceholder:
+          '{"type":"object","required":["answer_preview"]}',
+        invalidSchema: "The result schema must be a valid JSON object.",
+        sandboxBoundary:
+          "Sandbox: no shell or filesystem access; outbound access is limited to the tools snapshotted for this execution.",
+        toolBudget: "≤ {value} tool calls",
+        runtimeBudget: "≤ {value}s runtime",
+        outputBudget: "≤ {value} bytes",
+        schemaBound: "Schema validated",
+        replayOf: "Replay of {value}",
+      },
       latestPacket: {
         title: "Latest execution packet",
         emptyDetail:
@@ -652,6 +692,8 @@ const en = {
           "The latest execution failed. Use the follow-up actions below to recover runtime, evidence, or downstream handoff.",
         runningDetail:
           "The latest execution is still running. Stay on the governed result trail until the output and follow-up posture settle.",
+        awaitingApprovalDetail:
+          "The latest execution is paused at a governed tool approval boundary.",
         queuedDetail:
           "The latest execution is queued. Re-open the governed follow-up surface once runtime starts producing output.",
         cancelledDetail:
@@ -703,6 +745,7 @@ const en = {
       stageLabels: {
         queued_for_execution: "Queued for execution",
         running_execution: "Execution in progress",
+        waiting_for_approval: "Waiting for approval",
         grounded_answer_ready: "Grounded answer ready",
         intake_review_ready: "Intake review ready",
         recovery_brief_ready: "Recovery brief ready",
@@ -751,6 +794,7 @@ const en = {
         total: "Total executions",
         queued: "Queued",
         running: "Running",
+        awaitingApproval: "Awaiting approval",
         completed: "Completed",
         failed: "Failed",
       },
@@ -761,6 +805,7 @@ const en = {
       statuses: {
         queued: "Queued",
         running: "Running",
+        awaiting_approval: "Awaiting approval",
         completed: "Completed",
         failed: "Failed",
         cancelled: "Cancelled",
@@ -4801,6 +4846,31 @@ const en = {
       workflowRuns: "Workflow Runs",
     },
     documentsView: {
+      dataSources: {
+        title: "Data sources",
+        description: "Durable connector identities, incremental cursors, and recent synchronization state for this knowledge base.",
+        add: "Add web source",
+        create: "Create source",
+        createTitle: "Add public web data source",
+        refresh: "Refresh",
+        empty: "No durable data sources are connected to this knowledge base.",
+        name: "Source name",
+        url: "Public URL",
+        urlHint: "Only public HTTP(S) pages are accepted. Private, local, credentialed, and unsafe redirect destinations are blocked.",
+        sync: "Sync now",
+        syncing: "Syncing...",
+        neverRun: "No synchronization run yet",
+        runSummary: "{changed} changed · {unchanged} unchanged · {deleted} deleted",
+        loadFailed: "Data sources could not be loaded.",
+        createFailed: "Data source could not be created.",
+        syncFailed: "Data-source synchronization could not be started.",
+        status: {
+          never_synced: "Never synced",
+          syncing: "Syncing",
+          completed: "Completed",
+          failed: "Failed"
+        }
+      },
       documents: "Documents",
       documentDetails: "Document details",
       closeDocumentDetails: "Close document details",

@@ -2,39 +2,41 @@
 
 ## Supported Baseline
 
-Please treat the latest mainline repository state as the supported baseline for security reporting.
+Until a stable-version support matrix is published, security fixes target the latest state of the repository's default branch. Historical commits, abandoned branches, and private deployment forks are not maintained as separate security baselines.
+
+Reports against an older revision are still useful when the issue is reproducible on the supported baseline. Deployment-specific misconfiguration may require remediation by the deployment owner rather than a source-code change.
 
 ## Reporting a Vulnerability
 
-Do not open a public issue for suspected:
+Do not open a public issue, discussion, or pull request for a suspected vulnerability.
 
-- secrets exposure
-- authentication or authorization bypass
-- privilege escalation
-- tenant isolation failure
-- workflow runtime abuse
-- model or tool runtime credential leakage
+Use GitHub private vulnerability reporting when it is enabled for this repository. If that channel is unavailable, contact a repository maintainer through a private channel and wait for confirmation before sending credentials, private documents, or exploit material.
 
-Instead, prepare a private report that includes:
+Include:
 
-1. the affected area
-2. reproduction steps
-3. impact
-4. suggested mitigation, if available
+1. affected component and revision;
+2. prerequisites and reproduction steps;
+3. expected and observed behavior;
+4. security impact and affected scope;
+5. suggested mitigation, if available.
 
-If GitHub private vulnerability reporting is enabled for the repository, use that channel first. Otherwise, contact the repository owners through a private channel instead of the public issue tracker.
+Remove or replace live Secrets, access tokens, personal information, and private document content from the report whenever they are not required to reproduce the issue.
 
-## Sensitive Areas
+## Security-Relevant Areas
 
 Higher-sensitivity areas include:
 
-- authentication and session handling
-- tenant and membership authorization
-- document ingestion and stored asset access
-- model endpoint configuration
-- tool runtime execution
-- MCP-facing integration boundaries
+- authentication, session, invitation, password, and API-key handling;
+- tenant membership, role capabilities, Workspace/Knowledge Base scope, and Document/Chunk authorization;
+- document upload, parsing, OCR, object storage, and outbound URL handling;
+- retrieval candidate isolation and Elasticsearch reauthorization;
+- model, Tool, MCP, connector, and runtime credential boundaries;
+- Agent Tool policy, execution budgets, approval, replay, and sandbox snapshots;
+- workflow cancellation, retry, and cross-service trace or log redaction;
+- deployment templates, Secret integration, and release automation.
 
-## Disclosure Guidance
+## Coordinated Disclosure
 
-Please avoid publishing exploit details, proof-of-concept secrets, or live credentials in issues, discussions, pull requests, screenshots, or logs.
+Allow maintainers reasonable time to reproduce, assess, fix, and release a remediation before public disclosure. Do not publish exploit details, proof-of-concept Secrets, live credentials, private data, or unredacted logs while a report is being coordinated.
+
+This policy describes the reporting process and supported source baseline; it does not promise a fixed response or remediation time.

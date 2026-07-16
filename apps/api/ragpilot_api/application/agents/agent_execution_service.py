@@ -1,8 +1,11 @@
 from __future__ import annotations
+import asyncio
+import hashlib
 from ragpilot_api.infrastructure.observability import traced
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +16,8 @@ from ragpilot_api.application.agents.agent_runtime_engines import (
 )
 from ragpilot_api.application.agents.agent_execution_validation import (
     classify_agent_failure,
+    build_execution_policy,
+    build_replay_fingerprint,
     validate_agent_execution_input,
     validate_agent_result_payload,
 )
@@ -147,15 +152,60 @@ class AgentExecutionService:
         existing_execution_id: UUID | None = None,
         approved_tool_registration_ids: set[UUID] | None = None,
     ) -> AgentExecutionResponse:
-        normalized_execution_input = validate_agent_execution_input(request.execution_input)
-        agent_definition = await self.agent_repository.get_agent_definition(
-            agent_definition_id=request.agent_definition_id,
-            tenant_id=request.tenant_id,
-        )
-        if agent_definition is None:
-            raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
+        agent_execution = None
+        if existing_execution_id is not None:
+            agent_execution = await self.agent_execution_repository.get_agent_execution(
+                agent_execution_id=existing_execution_id,
+                tenant_id=request.tenant_id,
+            )
+            if agent_execution is None:
+                raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
+            if agent_execution.execution_status == "cancelled":
+                return build_agent_execution_response(agent_execution)
+            normalized_execution_input = validate_agent_execution_input(agent_execution.execution_input)
+            execution_policy = dict(agent_execution.execution_policy_json or {})
+            definition_snapshot = execution_policy.get("agent_definition_snapshot")
+            if isinstance(definition_snapshot, dict) and definition_snapshot:
+                agent_definition = materialize_agent_definition_snapshot(definition_snapshot)
+            else:
+                agent_definition = await self.agent_repository.get_agent_definition(
+                    agent_definition_id=agent_execution.agent_definition_id,
+                    tenant_id=request.tenant_id,
+                )
+                if agent_definition is None:
+                    raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
+                execution_policy = build_execution_policy(
+                    request=request,
+                    settings=self.settings,
+                    tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
+                    agent_definition_snapshot=build_agent_definition_snapshot(agent_definition),
+                )
+            resolved_scope = ResolvedAgentScope(
+                workspace_id=agent_execution.workspace_id,
+                knowledge_base_id=agent_execution.knowledge_base_id,
+                scope_issue=None,
+            )
+            output_schema_json = agent_execution.output_schema_json
+        else:
+            normalized_execution_input = validate_agent_execution_input(request.execution_input)
+            agent_definition = await self.agent_repository.get_agent_definition(
+                agent_definition_id=request.agent_definition_id,
+                tenant_id=request.tenant_id,
+            )
+            if agent_definition is None:
+                raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
+            resolved_scope = await self._resolve_agent_scope(agent_definition)
+            execution_policy = build_execution_policy(
+                request=request,
+                settings=self.settings,
+                tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
+                agent_definition_snapshot=build_agent_definition_snapshot(agent_definition),
+            )
+            output_schema_json = request.output_schema_json
 
-        resolved_scope = await self._resolve_agent_scope(agent_definition)
+        allowed_tool_registration_ids = list(
+            (execution_policy.get("sandbox") or {}).get("allowed_tool_registration_ids") or []
+        )
         runtime_binding = (
             await self.runtime_binding_resolver.resolve_chat_runtime_binding(agent_definition=agent_definition)
             if self.runtime_binding_resolver is not None
@@ -170,20 +220,12 @@ class AgentExecutionService:
                 execution_input=normalized_execution_input,
                 actor=actor,
                 approved_tool_registration_ids=approved_tool_registration_ids,
+                allowed_tool_registration_ids=allowed_tool_registration_ids,
             )
             if self.tool_runtime_service is not None
             else None
         )
-        if existing_execution_id is not None:
-            agent_execution = await self.agent_execution_repository.get_agent_execution(
-                agent_execution_id=existing_execution_id,
-                tenant_id=request.tenant_id,
-            )
-            if agent_execution is None:
-                raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
-            if agent_execution.execution_status == "cancelled":
-                return build_agent_execution_response(agent_execution)
-        else:
+        if agent_execution is None:
             agent_execution = await self.agent_execution_repository.create_agent_execution(
                 tenant_id=request.tenant_id,
                 agent_definition_id=request.agent_definition_id,
@@ -197,6 +239,13 @@ class AgentExecutionService:
                 tool_registration_ids=list(agent_definition.tool_registration_ids_json or []),
                 execution_input=normalized_execution_input,
                 launched_by_user_id=actor.user_id,
+                execution_policy_json=execution_policy,
+                output_schema_json=output_schema_json,
+                replay_fingerprint=build_replay_fingerprint(
+                    agent_definition_id=str(agent_definition.id), execution_input=normalized_execution_input,
+                    prompt_snapshot_hash=hashlib.sha256((normalized_execution_input or "").encode("utf-8")).hexdigest(), execution_policy=execution_policy,
+                    output_schema=output_schema_json,
+                ),
             )
 
         approval_trace = None
@@ -236,13 +285,16 @@ class AgentExecutionService:
         )
 
         try:
-            summary, result_payload_json = await self.agent_runtime_engine.execute(
-                service=self,
-                agent_definition=agent_definition,
-                resolved_scope=resolved_scope,
-                execution_input=normalized_execution_input,
-                runtime_binding=runtime_binding,
-                tool_runtime_summary=tool_runtime_summary,
+            summary, result_payload_json = await asyncio.wait_for(
+                self.agent_runtime_engine.execute(
+                    service=self,
+                    agent_definition=agent_definition,
+                    resolved_scope=resolved_scope,
+                    execution_input=normalized_execution_input,
+                    runtime_binding=runtime_binding,
+                    tool_runtime_summary=tool_runtime_summary,
+                ),
+                timeout=float(execution_policy["max_runtime_seconds"]),
             )
             runtime_resolution = (
                 result_payload_json.get("agent_runtime_resolution")
@@ -290,7 +342,11 @@ class AgentExecutionService:
                 result_payload_json,
                 execution_mode=agent_definition.agent_mode,
             )
-            result_payload_json = validate_agent_result_payload(result_payload_json)
+            result_payload_json = validate_agent_result_payload(
+                result_payload_json,
+                max_result_bytes=int(execution_policy["max_output_bytes"]),
+                output_schema_json=output_schema_json,
+            )
             agent_execution = await self.agent_execution_repository.complete_agent_execution(
                 agent_execution=agent_execution,
                 summary=summary,
@@ -328,17 +384,45 @@ class AgentExecutionService:
         *,
         actor: RequestActor,
         retry_of_execution_id: UUID | None = None,
+        replay_of_execution_id: UUID | None = None,
+        source_execution: AgentExecution | None = None,
     ) -> AgentExecutionResponse:
         if self.temporal_workflow_client is None:
             raise RuntimeError("Agent execution Temporal client is not configured.")
-        agent_definition = await self.agent_repository.get_agent_definition(
-            agent_definition_id=request.agent_definition_id,
-            tenant_id=request.tenant_id,
+        source_policy = dict(source_execution.execution_policy_json or {}) if source_execution else {}
+        source_snapshot = source_policy.get("agent_definition_snapshot")
+        if source_execution is not None and isinstance(source_snapshot, dict) and source_snapshot:
+            agent_definition = materialize_agent_definition_snapshot(source_snapshot)
+            resolved_scope = ResolvedAgentScope(
+                workspace_id=source_execution.workspace_id,
+                knowledge_base_id=source_execution.knowledge_base_id,
+                scope_issue=None,
+            )
+            normalized_execution_input = validate_agent_execution_input(source_execution.execution_input)
+            tool_registration_ids = list(
+                (source_policy.get("sandbox") or {}).get("allowed_tool_registration_ids")
+                or source_execution.tool_registration_ids_json
+                or []
+            )
+            output_schema_json = source_execution.output_schema_json
+        else:
+            agent_definition = await self.agent_repository.get_agent_definition(
+                agent_definition_id=request.agent_definition_id,
+                tenant_id=request.tenant_id,
+            )
+            if agent_definition is None:
+                raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
+            resolved_scope = await self._resolve_agent_scope(agent_definition)
+            normalized_execution_input = validate_agent_execution_input(request.execution_input)
+            tool_registration_ids = list(agent_definition.tool_registration_ids_json or [])
+            source_snapshot = build_agent_definition_snapshot(agent_definition)
+            output_schema_json = request.output_schema_json
+        execution_policy = build_execution_policy(
+            request=request,
+            settings=self.settings,
+            tool_registration_ids=tool_registration_ids,
+            agent_definition_snapshot=source_snapshot,
         )
-        if agent_definition is None:
-            raise ResourceNotFoundError("Agent definition not found in the current tenant scope.")
-        resolved_scope = await self._resolve_agent_scope(agent_definition)
-        normalized_execution_input = validate_agent_execution_input(request.execution_input)
         execution = await self.agent_execution_repository.create_agent_execution(
             tenant_id=request.tenant_id,
             agent_definition_id=request.agent_definition_id,
@@ -353,10 +437,19 @@ class AgentExecutionService:
             execution_input=normalized_execution_input,
             launched_by_user_id=actor.user_id,
             retry_of_execution_id=retry_of_execution_id,
+            replay_of_execution_id=replay_of_execution_id,
+            execution_policy_json=execution_policy,
+            output_schema_json=output_schema_json,
+            replay_fingerprint=build_replay_fingerprint(
+                agent_definition_id=str(agent_definition.id), execution_input=normalized_execution_input,
+                prompt_snapshot_hash=hashlib.sha256((normalized_execution_input or "").encode("utf-8")).hexdigest(), execution_policy=execution_policy,
+                output_schema=output_schema_json,
+            ),
         )
         workflow_id = await self.temporal_workflow_client.start_agent_execution_workflow(
             agent_execution_id=str(execution.id), tenant_id=str(request.tenant_id),
             actor_user_id=str(actor.user_id) if actor.user_id else None, actor_role=actor.role or "member",
+            max_runtime_seconds=int(execution_policy["max_runtime_seconds"]),
         )
         execution = await self.agent_execution_repository.attach_temporal_workflow(
             agent_execution=execution, temporal_workflow_id=workflow_id,
@@ -475,7 +568,39 @@ class AgentExecutionService:
             AgentExecutionCreateRequest(
                 tenant_id=tenant_id, agent_definition_id=execution.agent_definition_id,
                 execution_input=execution.execution_input, trigger_source=execution.trigger_source,
-            ), actor=actor, retry_of_execution_id=execution.id,
+                max_tool_calls=(execution.execution_policy_json or {}).get("max_tool_calls"),
+                max_runtime_seconds=(execution.execution_policy_json or {}).get("max_runtime_seconds"),
+                max_output_bytes=(execution.execution_policy_json or {}).get("max_output_bytes"),
+                output_schema_json=execution.output_schema_json,
+            ),
+            actor=actor,
+            retry_of_execution_id=execution.id,
+            source_execution=execution,
+        )
+
+    async def replay_agent_execution(
+        self, *, execution_id: UUID, tenant_id: UUID, actor: RequestActor,
+    ) -> AgentExecutionResponse:
+        source = await self.agent_execution_repository.get_agent_execution(
+            agent_execution_id=execution_id, tenant_id=tenant_id,
+        )
+        if source is None:
+            raise ResourceNotFoundError("Agent execution not found in the current tenant scope.")
+        if source.execution_status not in {"completed", "failed", "cancelled"}:
+            raise RuntimeError("Only terminal agent executions can be replayed.")
+        request = AgentExecutionCreateRequest(
+            tenant_id=tenant_id, agent_definition_id=source.agent_definition_id,
+            execution_input=source.execution_input, trigger_source=source.trigger_source,
+            max_tool_calls=(source.execution_policy_json or {}).get("max_tool_calls"),
+            max_runtime_seconds=(source.execution_policy_json or {}).get("max_runtime_seconds"),
+            max_output_bytes=(source.execution_policy_json or {}).get("max_output_bytes"),
+            output_schema_json=source.output_schema_json,
+        )
+        return await self.queue_agent_execution(
+            request,
+            actor=actor,
+            replay_of_execution_id=source.id,
+            source_execution=source,
         )
 
     def _build_mode_recommended_action_specs(
@@ -1084,6 +1209,50 @@ class AgentExecutionService:
         return summary, payload
 
 
+def build_agent_definition_snapshot(agent_definition: AgentDefinition) -> dict[str, Any]:
+    return {
+        "version": "agent_definition_snapshot_v1",
+        "id": str(agent_definition.id),
+        "tenant_id": str(agent_definition.tenant_id),
+        "name": getattr(agent_definition, "name", "Agent"),
+        "slug": getattr(agent_definition, "slug", "agent"),
+        "agent_mode": getattr(agent_definition, "agent_mode", "grounded_chat"),
+        "agent_status": getattr(agent_definition, "agent_status", "active"),
+        "model_strategy": getattr(agent_definition, "model_strategy", "balanced"),
+        "model_endpoint_id": (
+            str(agent_definition.model_endpoint_id)
+            if getattr(agent_definition, "model_endpoint_id", None)
+            else None
+        ),
+        "objective": getattr(agent_definition, "objective", ""),
+        "instructions": getattr(agent_definition, "instructions", ""),
+        "knowledge_base_scope": getattr(agent_definition, "knowledge_base_scope", None),
+        "tool_bindings_json": list(getattr(agent_definition, "tool_bindings_json", []) or []),
+        "tool_registration_ids_json": list(
+            getattr(agent_definition, "tool_registration_ids_json", []) or []
+        ),
+    }
+
+
+def materialize_agent_definition_snapshot(snapshot: dict[str, Any]) -> SimpleNamespace:
+    model_endpoint_id = snapshot.get("model_endpoint_id")
+    return SimpleNamespace(
+        id=UUID(str(snapshot["id"])),
+        tenant_id=UUID(str(snapshot["tenant_id"])),
+        name=str(snapshot.get("name") or "Agent"),
+        slug=str(snapshot.get("slug") or "agent"),
+        agent_mode=str(snapshot.get("agent_mode") or "grounded_chat"),
+        agent_status=str(snapshot.get("agent_status") or "active"),
+        model_strategy=str(snapshot.get("model_strategy") or "balanced"),
+        model_endpoint_id=UUID(str(model_endpoint_id)) if model_endpoint_id else None,
+        objective=str(snapshot.get("objective") or ""),
+        instructions=str(snapshot.get("instructions") or ""),
+        knowledge_base_scope=snapshot.get("knowledge_base_scope"),
+        tool_bindings_json=list(snapshot.get("tool_bindings_json") or []),
+        tool_registration_ids_json=list(snapshot.get("tool_registration_ids_json") or []),
+    )
+
+
 def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExecutionResponse:
     generated_outputs = build_agent_execution_outputs(agent_execution)
     return AgentExecutionResponse(
@@ -1099,6 +1268,8 @@ def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExec
         model_endpoint_id=agent_execution.model_endpoint_id,
         tool_registration_ids=[UUID(tool_registration_id) for tool_registration_id in list(agent_execution.tool_registration_ids_json or [])],
         execution_input=agent_execution.execution_input,
+        prompt_version_id=getattr(agent_execution, "prompt_version_id", None),
+        prompt_snapshot_hash=getattr(agent_execution, "prompt_snapshot_hash", None),
         summary=agent_execution.summary,
         result_payload_json=dict(agent_execution.result_payload_json or {}),
         task_state=build_agent_execution_task_state(agent_execution, output_count=len(generated_outputs)),
@@ -1109,6 +1280,10 @@ def build_agent_execution_response(agent_execution: AgentExecution) -> AgentExec
         completed_at=agent_execution.completed_at,
         temporal_workflow_id=getattr(agent_execution, "temporal_workflow_id", None),
         retry_of_execution_id=getattr(agent_execution, "retry_of_execution_id", None),
+        replay_of_execution_id=getattr(agent_execution, "replay_of_execution_id", None),
+        replay_fingerprint=getattr(agent_execution, "replay_fingerprint", None),
+        execution_policy_json=dict(getattr(agent_execution, "execution_policy_json", {}) or {}),
+        output_schema_json=getattr(agent_execution, "output_schema_json", None),
         cancellation_requested_at=getattr(agent_execution, "cancellation_requested_at", None),
         cancelled_at=getattr(agent_execution, "cancelled_at", None),
         created_at=agent_execution.created_at,

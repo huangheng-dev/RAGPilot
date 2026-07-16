@@ -1,8 +1,8 @@
 param(
-    [string]$ApiBaseUrl = "http://localhost:18000",
-    [string]$TempoBaseUrl = "http://localhost:13200",
-    [string]$PrometheusBaseUrl = "http://localhost:19090",
-    [string]$GrafanaBaseUrl = "http://localhost:13000",
+    [string]$ApiBaseUrl = "http://localhost:8000",
+    [string]$TempoBaseUrl = "http://localhost:3200",
+    [string]$PrometheusBaseUrl = "http://localhost:9090",
+    [string]$GrafanaBaseUrl = "http://localhost:3001",
     [string]$GrafanaUser = "admin",
     [string]$GrafanaPassword = "ragpilot-observability"
 )

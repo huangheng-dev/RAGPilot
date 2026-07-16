@@ -9,7 +9,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-ragpilot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpilot}
     ports:
-      - "${RAGPILOT_POSTGRES_PORT:-5433}:5432"
+      - "${RAGPILOT_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ragpilot} -d ${POSTGRES_DB:-ragpilot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -17,7 +23,12 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "${RAGPILOT_REDIS_PORT:-6380}:6379"
+      - "${RAGPILOT_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   minio:
     image: minio/minio:latest
@@ -27,8 +38,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ragpilot123}
     command: server /data --console-address ":9001"
     ports:
-      - "${RAGPILOT_MINIO_API_PORT:-9002}:9000"
-      - "${RAGPILOT_MINIO_CONSOLE_PORT:-9003}:9001"
+      - "${RAGPILOT_MINIO_API_PORT:-9000}:9000"
+      - "${RAGPILOT_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
 
@@ -40,7 +51,7 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: -Xms1g -Xmx1g
     ports:
-      - "${RAGPILOT_ELASTICSEARCH_PORT:-9201}:9200"
+      - "${RAGPILOT_ELASTICSEARCH_PORT:-9200}:9200"
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
 
@@ -54,20 +65,28 @@ services:
       POSTGRES_PWD: ${POSTGRES_PASSWORD:-ragpilot}
       POSTGRES_SEEDS: postgres
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
-      - "${RAGPILOT_TEMPORAL_PORT:-7234}:7233"
+      - "${RAGPILOT_TEMPORAL_PORT:-7233}:7233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   temporal-ui:
     image: temporalio/ui:2.31.2
     restart: unless-stopped
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:${RAGPILOT_WEB_PORT:-3001}
+      TEMPORAL_CORS_ORIGINS: http://localhost:${RAGPILOT_WEB_PORT:-3000}
     depends_on:
-      - temporal
+      temporal:
+        condition: service_healthy
     ports:
-      - "${RAGPILOT_TEMPORAL_UI_PORT:-8081}:8080"
+      - "${RAGPILOT_TEMPORAL_UI_PORT:-8080}:8080"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.109.0
@@ -76,9 +95,9 @@ services:
     volumes:
       - ../otel/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-      - "${RAGPILOT_OTEL_GRPC_PORT:-14317}:4317"
-      - "${RAGPILOT_OTEL_HTTP_PORT:-14318}:4318"
-      - "${RAGPILOT_OTEL_METRICS_PORT:-19464}:9464"
+      - "${RAGPILOT_OTEL_GRPC_PORT:-4317}:4317"
+      - "${RAGPILOT_OTEL_HTTP_PORT:-4318}:4318"
+      - "${RAGPILOT_OTEL_METRICS_PORT:-9464}:9464"
     depends_on:
       - tempo
 
@@ -90,7 +109,7 @@ services:
       - ../observability/tempo.yaml:/etc/tempo/config.yaml:ro
       - tempo-data:/var/tempo
     ports:
-      - "${RAGPILOT_TEMPO_PORT:-13200}:3200"
+      - "${RAGPILOT_TEMPO_PORT:-3200}:3200"
 
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -103,7 +122,7 @@ services:
       - ../observability/alerts.yaml:/etc/prometheus/alerts.yaml:ro
       - prometheus-data:/prometheus
     ports:
-      - "${RAGPILOT_PROMETHEUS_PORT:-19090}:9090"
+      - "${RAGPILOT_PROMETHEUS_PORT:-9090}:9090"
     depends_on:
       - otel-collector
 
@@ -119,7 +138,7 @@ services:
       - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "${RAGPILOT_GRAFANA_PORT:-13000}:3000"
+      - "${RAGPILOT_GRAFANA_PORT:-3001}:3000"
     depends_on:
       - prometheus
       - tempo
@@ -144,6 +163,9 @@ services:
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
       AGENT_TEMPORAL_TASK_QUEUE: ${AGENT_TEMPORAL_TASK_QUEUE:-ragpilot-agent-execution}
       AGENT_APPROVAL_TIMEOUT_HOURS: ${AGENT_APPROVAL_TIMEOUT_HOURS:-24}
+      AGENT_EXECUTION_MAX_TOOL_CALLS: ${AGENT_EXECUTION_MAX_TOOL_CALLS:-8}
+      AGENT_EXECUTION_MAX_RUNTIME_SECONDS: ${AGENT_EXECUTION_MAX_RUNTIME_SECONDS:-900}
+      AGENT_EXECUTION_MAX_OUTPUT_BYTES: ${AGENT_EXECUTION_MAX_OUTPUT_BYTES:-256000}
       AGENT_RUNTIME_ENGINE: ${AGENT_RUNTIME_ENGINE:-langgraph_pilot}
       RETRIEVAL_ENGINE: ${RETRIEVAL_ENGINE:-native}
       RETRIEVAL_SCORE_NORMALIZATION_STRATEGY: ${RETRIEVAL_SCORE_NORMALIZATION_STRATEGY:-rank_percentile_v1}
@@ -176,13 +198,28 @@ services:
       AUTH_PROVIDER_SIGN_IN_URL: ${AUTH_PROVIDER_SIGN_IN_URL:-}
       ALLOW_LEGACY_ACTOR_HEADERS: ${ALLOW_LEGACY_ACTOR_HEADERS:-false}
     depends_on:
-      - postgres
-      - redis
-      - temporal
-      - elasticsearch
-      - otel-collector
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+      otel-collector:
+        condition: service_started
     ports:
-      - "${RAGPILOT_API_PORT:-18000}:8000"
+      - "${RAGPILOT_API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   worker:
     build:
@@ -218,11 +255,16 @@ services:
       OTEL_ENABLED: ${OTEL_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
     depends_on:
-      - temporal
-      - postgres
-      - minio
-      - elasticsearch
-      - otel-collector
+      temporal:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+      otel-collector:
+        condition: service_started
 
   agent-worker:
     build:
@@ -245,6 +287,9 @@ services:
       TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-ragpilot-ingestion}
       AGENT_TEMPORAL_TASK_QUEUE: ${AGENT_TEMPORAL_TASK_QUEUE:-ragpilot-agent-execution}
       AGENT_APPROVAL_TIMEOUT_HOURS: ${AGENT_APPROVAL_TIMEOUT_HOURS:-24}
+      AGENT_EXECUTION_MAX_TOOL_CALLS: ${AGENT_EXECUTION_MAX_TOOL_CALLS:-8}
+      AGENT_EXECUTION_MAX_RUNTIME_SECONDS: ${AGENT_EXECUTION_MAX_RUNTIME_SECONDS:-900}
+      AGENT_EXECUTION_MAX_OUTPUT_BYTES: ${AGENT_EXECUTION_MAX_OUTPUT_BYTES:-256000}
       AGENT_RUNTIME_ENGINE: ${AGENT_RUNTIME_ENGINE:-langgraph_pilot}
       RETRIEVAL_ENGINE: ${RETRIEVAL_ENGINE:-native}
       CHAT_MODEL_PROVIDER: ${CHAT_MODEL_PROVIDER:-deterministic}
@@ -264,8 +309,10 @@ services:
       MCP_RUNTIME_MAX_ATTEMPTS: ${MCP_RUNTIME_MAX_ATTEMPTS:-2}
       MCP_RUNTIME_RETRY_BACKOFF_SECONDS: ${MCP_RUNTIME_RETRY_BACKOFF_SECONDS:-0.25}
     depends_on:
-      - temporal
-      - postgres
+      temporal:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   web:
     build:
@@ -273,11 +320,12 @@ services:
       dockerfile: infra/docker/web.Dockerfile
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:${RAGPILOT_API_PORT:-18000}
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${RAGPILOT_API_PORT:-8000}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "${RAGPILOT_WEB_PORT:-3001}:3000"
+      - "${RAGPILOT_WEB_PORT:-3000}:3000"
 
 volumes:
   postgres-data:

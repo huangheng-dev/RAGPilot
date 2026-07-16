@@ -22,6 +22,8 @@ from ragpilot_api.infrastructure.search.elasticsearch_retrieval_repository impor
 )
 from ragpilot_api.shared.settings import Settings
 from ragpilot_api.application.retrieval.reranker import NativeReranker, run_reranker
+from ragpilot_api.application.retrieval.evidence_validator import validate_retrieval_evidence
+from ragpilot_api.application.retrieval.query_planner import build_retrieval_plan
 from opentelemetry import trace
 
 
@@ -50,6 +52,8 @@ class RetrievalExecutionOutcome:
     rerank_window: int | None
     results: list[dict[str, Any]]
     rerank_metadata: dict[str, Any] = field(default_factory=dict)
+    retrieval_plan_metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_validation_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 async def execute_retrieval(
@@ -60,6 +64,8 @@ async def execute_retrieval(
     knowledge_base_id: UUID,
     query_text: str,
     requested_top_k: int,
+    principal_user_id: UUID | None = None,
+    acl_bypass: bool = False,
     knowledge_base_repository: KnowledgeBaseRepository | None = None,
     retrieval_profile_repository: RetrievalProfileRepository | None = None,
 ) -> RetrievalExecutionOutcome:
@@ -79,7 +85,14 @@ async def execute_retrieval(
         if rerank_strategy is not None
         else None
     )
-    candidate_top_k = rerank_window or resolved_profile.top_k
+    retrieval_plan = build_retrieval_plan(
+        query_text=query_text,
+        retrieval_mode=resolved_profile.retrieval_mode,
+        top_k=resolved_profile.top_k,
+        rerank_window=rerank_window,
+        candidate_limit=int(getattr(settings, "retrieval_candidate_limit", 50)),
+    )
+    candidate_top_k = retrieval_plan.candidate_top_k
 
     vector_task = None
     if resolved_profile.retrieval_mode in {"hybrid", "vector"}:
@@ -93,6 +106,8 @@ async def execute_retrieval(
             query_embedding=format_vector_literal(query_embedding),
             embedding_model=settings.retrieval_embedding_model,
             top_k=candidate_top_k,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
         ))
 
     lexical_rows: list[dict[str, Any]] = []
@@ -112,6 +127,23 @@ async def execute_retrieval(
                     query_text=query_text,
                     top_k=candidate_top_k,
                 )
+                if not acl_bypass and lexical_rows:
+                    # Elasticsearch is a rebuildable recall projection, not an
+                    # authorization source. Finish the shared-session vector query,
+                    # then re-authorize every ES candidate against PostgreSQL ACL truth.
+                    if vector_task is not None:
+                        await vector_task
+                    authorized_chunk_ids = await retrieval_repository.filter_authorized_document_chunk_ids(
+                        tenant_id=tenant_id,
+                        knowledge_base_id=knowledge_base_id,
+                        document_chunk_ids=[UUID(str(row["document_chunk_id"])) for row in lexical_rows],
+                        principal_user_id=principal_user_id,
+                        acl_bypass=False,
+                    )
+                    lexical_rows = [
+                        row for row in lexical_rows
+                        if UUID(str(row["document_chunk_id"])) in authorized_chunk_ids
+                    ]
             except ElasticsearchRetrievalError:
                 # AsyncSession does not support concurrent PostgreSQL operations.
                 # Finish the vector query before using the PostgreSQL lexical fallback.
@@ -124,8 +156,14 @@ async def execute_retrieval(
                     normalized_query=normalized_query,
                     query_terms=query_terms,
                     top_k=candidate_top_k,
+                    principal_user_id=principal_user_id,
+                    acl_bypass=acl_bypass,
                 )
         else:
+            # AsyncSession/asyncpg cannot run two PostgreSQL operations concurrently
+            # on the same connection. Complete vector search before the local lexical query.
+            if vector_task is not None:
+                await vector_task
             lexical_rows = await _search_postgresql_lexical(
                 retrieval_repository=retrieval_repository,
                 tenant_id=tenant_id,
@@ -133,6 +171,8 @@ async def execute_retrieval(
                 normalized_query=normalized_query,
                 query_terms=query_terms,
                 top_k=candidate_top_k,
+                principal_user_id=principal_user_id,
+                acl_bypass=acl_bypass,
             )
 
     vector_rows = await vector_task if vector_task is not None else []
@@ -162,6 +202,15 @@ async def execute_retrieval(
     else:
         results = results[: resolved_profile.top_k]
 
+    validation = validate_retrieval_evidence(
+        rows=results,
+        query_text=query_text,
+        minimum_term_coverage=float(getattr(settings, "retrieval_evidence_minimum_term_coverage", 0.05)),
+        minimum_vector_score=float(getattr(settings, "retrieval_evidence_minimum_vector_score", 0.72)),
+        enabled=bool(getattr(settings, "retrieval_evidence_validation_enabled", True)),
+    )
+    results = validation.rows
+
     return RetrievalExecutionOutcome(
         retrieval_profile_id=resolved_profile.retrieval_profile_id,
         retrieval_profile_name=resolved_profile.retrieval_profile_name,
@@ -173,6 +222,8 @@ async def execute_retrieval(
         rerank_strategy=rerank_strategy,
         rerank_window=rerank_window,
         rerank_metadata=rerank_metadata,
+        retrieval_plan_metadata=retrieval_plan.as_metadata(),
+        evidence_validation_metadata=validation.metadata,
         results=results,
     )
 
@@ -185,6 +236,8 @@ async def _search_postgresql_lexical(
     normalized_query: str,
     query_terms: list[str],
     top_k: int,
+    principal_user_id: UUID | None,
+    acl_bypass: bool,
 ) -> list[dict[str, Any]]:
     return await retrieval_repository.search_lexical_document_chunks(
         tenant_id=tenant_id,
@@ -192,6 +245,8 @@ async def _search_postgresql_lexical(
         normalized_query=normalized_query,
         query_terms_text=" ".join(query_terms),
         top_k=top_k,
+        principal_user_id=principal_user_id,
+        acl_bypass=acl_bypass,
     )
 
 

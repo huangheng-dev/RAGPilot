@@ -36,7 +36,15 @@ export type AgentConsoleTarget = {
   runTargetSurface?: "all" | "chat" | "documents" | "operations" | "admin" | null;
   runTriggerSource?: "all" | "agents_console" | "workspace" | "home" | "admin" | "operations" | null;
   runStatus?: "all" | "launched" | "completed" | "failed" | "cancelled" | null;
-  executionStatus?: "all" | "queued" | "running" | "completed" | "failed" | "cancelled" | null;
+  executionStatus?:
+    | "all"
+    | "queued"
+    | "running"
+    | "awaiting_approval"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
   modelEndpointId?: string | null;
   modelProviderType?: "deterministic" | "openai_compatible" | "ollama" | "vllm" | null;
   toolRegistrationId?: string | null;

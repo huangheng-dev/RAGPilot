@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -5,6 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ragpilot_api.infrastructure.database.models import AgentExecution
+
+
+AGENT_EXECUTION_PROMPT_VERSION_ID = UUID("10000000-0000-0000-0000-000000000002")
 
 
 class AgentExecutionRepository:
@@ -27,6 +31,10 @@ class AgentExecutionRepository:
         execution_input: str | None,
         launched_by_user_id: UUID | None,
         retry_of_execution_id: UUID | None = None,
+        replay_of_execution_id: UUID | None = None,
+        execution_policy_json: dict | None = None,
+        output_schema_json: dict | None = None,
+        replay_fingerprint: str | None = None,
     ) -> AgentExecution:
         agent_execution = AgentExecution(
             tenant_id=tenant_id,
@@ -40,8 +48,14 @@ class AgentExecutionRepository:
             model_endpoint_id=model_endpoint_id,
             tool_registration_ids_json=tool_registration_ids,
             execution_input=execution_input,
+            prompt_version_id=AGENT_EXECUTION_PROMPT_VERSION_ID,
+            prompt_snapshot_hash=hashlib.sha256((execution_input or "").encode("utf-8")).hexdigest(),
             launched_by_user_id=launched_by_user_id,
             retry_of_execution_id=retry_of_execution_id,
+            replay_of_execution_id=replay_of_execution_id,
+            execution_policy_json=execution_policy_json or {},
+            output_schema_json=output_schema_json,
+            replay_fingerprint=replay_fingerprint,
         )
         self.session.add(agent_execution)
         await self.session.commit()
@@ -81,6 +95,15 @@ class AgentExecutionRepository:
         temporal_workflow_id: str,
     ) -> AgentExecution:
         agent_execution.temporal_workflow_id = temporal_workflow_id
+        agent_execution.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(agent_execution)
+        return agent_execution
+
+    async def attach_replay_source(
+        self, *, agent_execution: AgentExecution, replay_of_execution_id: UUID,
+    ) -> AgentExecution:
+        agent_execution.replay_of_execution_id = replay_of_execution_id
         agent_execution.updated_at = datetime.now(timezone.utc)
         await self.session.commit()
         await self.session.refresh(agent_execution)

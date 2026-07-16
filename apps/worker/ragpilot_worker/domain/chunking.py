@@ -18,7 +18,7 @@ class TextChunk:
     chunk_index: int
     content: str
     token_count: int
-    metadata_json: dict[str, int | str]
+    metadata_json: dict[str, int | str | bool]
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,9 @@ JSON_CONTENT_TYPES = {"application/json", "text/json"}
 PDF_CONTENT_TYPES = {"application/pdf"}
 DOCX_CONTENT_TYPES = {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 XLSX_CONTENT_TYPES = {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/tiff", "image/bmp"}
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp")
+MAX_OCR_IMAGE_PIXELS = 40_000_000
 
 
 def normalize_text(content: bytes, *, content_type: str | None, file_name: str) -> ParsedDocument:
@@ -57,6 +60,8 @@ def normalize_text(content: bytes, *, content_type: str | None, file_name: str) 
         return ParsedDocument(parser_name="docx_parser", text=_normalize_docx_text(content))
     if normalized_content_type in XLSX_CONTENT_TYPES or lower_name.endswith(".xlsx"):
         return ParsedDocument(parser_name="xlsx_parser", text=_normalize_xlsx_text(content))
+    if normalized_content_type in IMAGE_CONTENT_TYPES or lower_name.endswith(IMAGE_EXTENSIONS):
+        return ParsedDocument(parser_name="image_ocr_parser", text=_normalize_image_ocr_text(content))
 
     raise ValueError(f"Unsupported document type for initial ingestion: {content_type or file_name}")
 
@@ -139,6 +144,28 @@ def _normalize_pdf_ocr_text(content: bytes) -> str:
     return "\n\n".join(sections).strip()
 
 
+def _normalize_image_ocr_text(content: bytes) -> str:
+    try:
+        import pytesseract
+        from PIL import Image, UnidentifiedImageError
+    except ImportError as error:
+        raise ValueError("Image OCR requires the governed OCR runtime dependencies.") from error
+
+    try:
+        with Image.open(io.BytesIO(content)) as source_image:
+            width, height = source_image.size
+            if width <= 0 or height <= 0 or width * height > MAX_OCR_IMAGE_PIXELS:
+                raise ValueError("Image dimensions exceed the governed OCR safety limit.")
+            image = source_image.convert("RGB")
+            image.load()
+    except (UnidentifiedImageError, OSError) as error:
+        raise ValueError("Image content is invalid or unsupported by the OCR runtime.") from error
+
+    text = pytesseract.image_to_string(image, lang="chi_sim+eng")
+    normalized = _normalize_multiline_text(text)
+    return f"Image [OCR]\n{normalized}" if normalized else ""
+
+
 def _normalize_docx_text(content: bytes) -> str:
     document = DocxDocument(io.BytesIO(content))
     sections: list[str] = []
@@ -207,9 +234,17 @@ def build_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int) -> list
     chunks: list[TextChunk] = []
     current_content = ""
     current_start = 0
+    current_locator: dict[str, int | str | bool] = {}
     cursor = 0
 
     for paragraph in paragraphs:
+        paragraph_locator = _extract_source_locator(paragraph)
+        if paragraph_locator and current_content:
+            chunks.append(_build_chunk(len(chunks), current_content, current_start, current_locator))
+            current_content = ""
+            current_locator = {}
+        if not current_content and paragraph_locator:
+            current_locator = paragraph_locator
         paragraph_text = paragraph if not current_content else f"{current_content}\n\n{paragraph}"
         if len(paragraph_text) <= chunk_size:
             if not current_content:
@@ -219,7 +254,7 @@ def build_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int) -> list
             continue
 
         if current_content:
-            chunks.append(_build_chunk(len(chunks), current_content, current_start))
+            chunks.append(_build_chunk(len(chunks), current_content, current_start, current_locator))
             overlap_text = current_content[-chunk_overlap:] if chunk_overlap > 0 else ""
             current_content = overlap_text.strip()
             current_start = max(current_start, cursor - len(current_content))
@@ -227,21 +262,24 @@ def build_text_chunks(text: str, *, chunk_size: int, chunk_overlap: int) -> list
         remaining = paragraph
         while len(remaining) > chunk_size:
             piece = remaining[:chunk_size]
-            chunks.append(_build_chunk(len(chunks), piece, cursor))
+            chunks.append(_build_chunk(len(chunks), piece, cursor, paragraph_locator or current_locator))
             remaining = remaining[max(chunk_size - chunk_overlap, 1):]
             cursor += max(chunk_size - chunk_overlap, 1)
 
         current_content = remaining
+        current_locator = paragraph_locator or current_locator
         current_start = cursor
         cursor += len(paragraph) + 2
 
     if current_content:
-        chunks.append(_build_chunk(len(chunks), current_content, current_start))
+        chunks.append(_build_chunk(len(chunks), current_content, current_start, current_locator))
 
     return chunks
 
 
-def _build_chunk(chunk_index: int, content: str, start_char: int) -> TextChunk:
+def _build_chunk(
+    chunk_index: int, content: str, start_char: int, locator: dict[str, int | str | bool] | None = None,
+) -> TextChunk:
     normalized_content = content.strip()
     token_count = len(normalized_content.split())
     return TextChunk(
@@ -251,5 +289,43 @@ def _build_chunk(chunk_index: int, content: str, start_char: int) -> TextChunk:
         metadata_json={
             "start_char": start_char,
             "end_char": start_char + len(normalized_content),
+            **(locator or {}),
         },
     )
+
+
+def _extract_source_locator(paragraph: str) -> dict[str, int | str | bool]:
+    first_line = paragraph.splitlines()[0].strip() if paragraph else ""
+    page_match = re.fullmatch(r"Page (\d+)( \[OCR\])?", first_line, flags=re.IGNORECASE)
+    if page_match:
+        page_number = int(page_match.group(1))
+        is_ocr = bool(page_match.group(2))
+        return {
+            "source_location_type": "page",
+            "source_location_label": f"Page {page_number}" + (" (OCR)" if is_ocr else ""),
+            "source_page_number": page_number,
+            "source_is_ocr": is_ocr,
+        }
+    sheet_match = re.fullmatch(r"Sheet: (.+)", first_line, flags=re.IGNORECASE)
+    if sheet_match:
+        sheet_name = sheet_match.group(1).strip()
+        return {
+            "source_location_type": "sheet",
+            "source_location_label": f"Sheet: {sheet_name}",
+            "source_sheet_name": sheet_name,
+        }
+    table_match = re.fullmatch(r"Table (\d+)", first_line, flags=re.IGNORECASE)
+    if table_match:
+        table_number = int(table_match.group(1))
+        return {
+            "source_location_type": "table",
+            "source_location_label": f"Table {table_number}",
+            "source_table_number": table_number,
+        }
+    if first_line.lower() == "image [ocr]":
+        return {
+            "source_location_type": "image",
+            "source_location_label": "Image (OCR)",
+            "source_is_ocr": True,
+        }
+    return {}

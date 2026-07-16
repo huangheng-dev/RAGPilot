@@ -1,0 +1,90 @@
+{
+  "schema_version": "1",
+  "dataset_id": "ragpilot-retrieval-database-contract",
+  "version": "1.1.0",
+  "top_k": 3,
+  "warmup_runs": 1,
+  "gates": {
+    "recall_at_k": 1.0,
+    "mrr": 0.75,
+    "ndcg_at_k": 0.9,
+    "max_p95_latency_ms": 1500.0,
+    "min_groundedness": 1.0,
+    "min_citation_coverage": 1.0,
+    "max_total_cost_usd": 0.0
+  },
+  "cases": [
+    {
+      "case_id": "database-hybrid-ranking-001",
+      "category": "hybrid_retrieval",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "query": "governed retrieval contract tenant isolation versioned evaluation gates",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001001"],
+      "forbidden_chunk_ids": ["00000000-0000-0000-0000-000000001008"],
+      "expected_facts": ["governed retrieval contract"]
+    },
+    {
+      "case_id": "database-knowledge-base-isolation-001",
+      "category": "scope_isolation",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "query": "approved recovery policy tested backups restore drills",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001003"],
+      "forbidden_chunk_ids": ["00000000-0000-0000-0000-000000001007", "00000000-0000-0000-0000-000000001008"],
+      "expected_facts": ["approved recovery policy"]
+    },
+    {
+      "case_id": "database-lifecycle-isolation-001",
+      "category": "lifecycle_isolation",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "query": "active indexing lifecycle latest completed document version",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001005"],
+      "forbidden_chunk_ids": ["00000000-0000-0000-0000-000000001004", "00000000-0000-0000-0000-000000001006"],
+      "expected_facts": ["active indexing lifecycle"]
+    },
+    {
+      "case_id": "database-group-acl-allow-001",
+      "category": "access_control",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "principal_user_id": "00000000-0000-0000-0000-000000000a01",
+      "query": "restricted group policy approved readers group",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001009"],
+      "expected_facts": ["restricted group policy"]
+    },
+    {
+      "case_id": "database-group-acl-deny-001",
+      "category": "access_control",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "principal_user_id": "00000000-0000-0000-0000-000000000a02",
+      "query": "public access fallback restricted evidence unavailable",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001011"],
+      "forbidden_chunk_ids": ["00000000-0000-0000-0000-000000001009"],
+      "expected_facts": ["public access fallback"]
+    },
+    {
+      "case_id": "database-chunk-acl-allow-001",
+      "category": "access_control",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "principal_user_id": "00000000-0000-0000-0000-000000000a01",
+      "query": "restricted chunk policy direct user grant",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001010"],
+      "expected_facts": ["restricted chunk policy"]
+    },
+    {
+      "case_id": "database-chunk-acl-deny-001",
+      "category": "access_control",
+      "tenant_id": "00000000-0000-0000-0000-000000000001",
+      "knowledge_base_id": "00000000-0000-0000-0000-000000000101",
+      "principal_user_id": "00000000-0000-0000-0000-000000000a02",
+      "query": "public access fallback restricted evidence unavailable",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000001011"],
+      "forbidden_chunk_ids": ["00000000-0000-0000-0000-000000001010"],
+      "expected_facts": ["public access fallback"]
+    }
+  ]
+}

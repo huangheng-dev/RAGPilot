@@ -851,6 +851,7 @@ export function WorkspaceChatView({
                                       t("workspace.chatView.sourceRank", {
                                         rank: String(citation.rank),
                                       })}
+                                    {citation.source_location_label ? ` · ${citation.source_location_label}` : ""}
                                   </div>
                                   {citation.quote ? (
                                     <p className="mt-1 truncate text-xs leading-5 text-slate-600">
@@ -1369,7 +1370,7 @@ export function WorkspaceChatView({
                       type="button"
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{citation.document_title ?? `Chunk ${citation.document_chunk_id.slice(0, 8)}`}</span>
+                        <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{citation.document_title ?? `Chunk ${citation.document_chunk_id.slice(0, 8)}`}{citation.source_location_label ? ` · ${citation.source_location_label}` : ""}</span>
                         <span className="shrink-0 text-xs text-slate-500">{hasNumericScore(citation.score) ? formatNumericScore(citation.score) : t("workspace.chatView.unscored")}</span>
                       </div>
                       {citation.quote ? <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{citation.quote}</p> : null}

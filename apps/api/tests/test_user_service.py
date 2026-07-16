@@ -15,6 +15,7 @@ from ragpilot_api.contracts.http.user_contracts import (
     UserPasswordResetRequest,
 )
 from ragpilot_api.infrastructure.database.repositories.user_repository import (
+    UserRepository,
     UserAccessEventRecord,
     UserDirectoryRecord,
     UserMembershipDirectoryRecord,
@@ -799,6 +800,81 @@ async def test_activate_user_invitations_rejects_invalid_token_when_no_active_me
 
     assert user_repository.access_events[-1].event_type == "invitation_activation_failed"
     assert user_repository.access_events[-1].detail_json["reason_code"] == "invalid_token"
+
+
+def test_invitation_tokens_are_high_entropy_and_only_match_their_hash() -> None:
+    token = UserRepository.generate_invitation_token()
+    membership = SimpleNamespace(
+        invitation_token=None,
+        invitation_token_hash=UserRepository.hash_invitation_token(token),
+    )
+    different_token = f"{token[:-1]}{'0' if token[-1] != '0' else '1'}"
+
+    assert token.startswith("RP-")
+    assert len(token) == 67
+    assert UserRepository.invitation_token_matches(membership, token.lower()) is True
+    assert UserRepository.invitation_token_matches(membership, different_token) is False
+
+
+@pytest.mark.anyio
+async def test_activate_user_invitations_rate_limits_repeated_invalid_tokens() -> None:
+    now = datetime.now(timezone.utc)
+    user = SimpleNamespace(
+        id=uuid4(),
+        email="operator@ragpilot.local",
+        display_name="RAGPilot Operator",
+        is_active=False,
+        role="operator",
+        last_signed_in_at=None,
+        created_at=now,
+        updated_at=now,
+        deleted_at=None,
+    )
+    invited_membership = build_membership(
+        user_id=user.id,
+        status="invited",
+        invitation_token="RP-VALID123",
+        invited_at=now,
+    )
+    user_repository = FakeUserRepository(
+        user_count=1,
+        user=user,
+        memberships=[
+            UserMembershipDirectoryRecord(
+                membership=invited_membership,
+                tenant=build_tenant(
+                    tenant_id=invited_membership.tenant_id,
+                    name="RAGPilot Demo",
+                    slug="ragpilot-demo",
+                ),
+            )
+        ],
+    )
+    service = UserService(
+        user_repository=user_repository,
+        user_session_repository=FakeUserSessionRepository(),
+        tenant_repository=FakeTenantRepository(),
+        settings=Settings(
+            auth_failed_sign_in_max_attempts=2,
+            auth_failed_sign_in_window_minutes=15,
+            auth_failed_sign_in_lockout_minutes=5,
+        ),
+    )
+
+    with pytest.raises(ResourceConflictError, match="Invitation token is not valid"):
+        await service.activate_user_invitations(
+            UserInvitationActivationRequest(email=user.email, invitation_token="RP-WRONG001")
+        )
+    with pytest.raises(ResourceConflictError, match="Too many failed invitation activation attempts"):
+        await service.activate_user_invitations(
+            UserInvitationActivationRequest(email=user.email, invitation_token="RP-WRONG002")
+        )
+    with pytest.raises(ResourceConflictError, match="Too many failed invitation activation attempts"):
+        await service.activate_user_invitations(
+            UserInvitationActivationRequest(email=user.email, invitation_token="RP-WRONG003")
+        )
+
+    assert len(user_repository.access_events) == 2
 
 
 @pytest.mark.anyio

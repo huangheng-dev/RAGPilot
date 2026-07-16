@@ -19,7 +19,7 @@ class AgentExecutionWorkflow:
         result = await workflow.execute_activity(
             "execute_agent_execution",
             payload,
-            start_to_close_timeout=timedelta(minutes=30),
+            start_to_close_timeout=timedelta(seconds=int(payload.get("max_runtime_seconds") or "900")),
         )
         if result.get("execution_status") != "awaiting_approval":
             return result
@@ -39,7 +39,7 @@ class AgentExecutionWorkflow:
             return await workflow.execute_activity(
                 "execute_agent_execution",
                 resumed_payload,
-                start_to_close_timeout=timedelta(minutes=30),
+                start_to_close_timeout=timedelta(seconds=int(payload.get("max_runtime_seconds") or "900")),
             )
         return await workflow.execute_activity(
             "finalize_agent_approval",

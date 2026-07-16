@@ -1,194 +1,53 @@
 # RAGPilot API
 
-This service acts as the API gateway and business boundary for RAGPilot.
+This FastAPI service is RAGPilot's tenant-aware business gateway and policy enforcement boundary.
 
 ## API Scope
 
-The API supports:
+The API owns:
 
-- health checks
-- shared runtime configuration
-- database migration foundation
-- tenant APIs
-- workspace APIs
-- knowledge base APIs
-- document APIs
-- retrieval API
-- chat APIs
-- workflow APIs
-- agent definition APIs
-- user and directory session APIs
-- model endpoint governance APIs
-- tool registration governance APIs
-- runtime governance and audit worklist APIs
+- authentication, sessions, invitations, access policy, tenant membership, and scoped platform API keys
+- tenants, workspaces, knowledge bases, durable Data Sources and sync leases, documents, access-group/document/Chunk ACL policy, ingestion, and search projection diagnostics
+- hybrid retrieval, retrieval profiles, evaluation records, provider-native/fallback SSE Chat, citations, feedback, and Prompt bindings
+- workflow inspection, recovery, cancellation, and operator events
+- Agent definitions, durable runs and executions, approvals, retry/cancel/replay lineage, immutable execution-policy snapshots, JSON Schema output contracts, and evaluation summaries
+- model endpoints, runtime credentials, Tool registrations, MCP connectors, health history, and governance worklists
+- trace propagation, audit evidence, structured logging, and bounded runtime telemetry
 
-## Resource APIs
+The exact current route inventory is generated and audited against FastAPI in [`docs/api/api-outline.md`](../../docs/api/api-outline.md). Do not maintain a second hand-written endpoint list here.
 
-- `GET /api/v1/health`
-- `GET /api/v1/tenants`
-- `POST /api/v1/tenants`
-- `PATCH /api/v1/tenants/{tenant_id}`
-- `GET /api/v1/workspaces?tenant_id={tenant_id}`
-- `GET /api/v1/workspaces?tenant_id={tenant_id}&is_archived={true|false}`
-- `POST /api/v1/workspaces`
-- `PATCH /api/v1/workspaces/{workspace_id}?tenant_id={tenant_id}`
-- `POST /api/v1/workspaces/{workspace_id}/lifecycle?tenant_id={tenant_id}`
-- `GET /api/v1/knowledge-bases?workspace_id={workspace_id}`
-- `GET /api/v1/knowledge-bases?workspace_id={workspace_id}&publication_status={draft|published}`
-- `POST /api/v1/knowledge-bases`
-- `PATCH /api/v1/knowledge-bases/{knowledge_base_id}?workspace_id={workspace_id}`
-- `POST /api/v1/knowledge-bases/{knowledge_base_id}/publication?workspace_id={workspace_id}`
-- `GET /api/v1/documents?knowledge_base_id={knowledge_base_id}`
-- `GET /api/v1/documents/metrics?knowledge_base_id={knowledge_base_id}`
-- `GET /api/v1/documents/{document_id}?knowledge_base_id={knowledge_base_id}`
-- `POST /api/v1/documents/upload`
-- `POST /api/v1/documents/import-webpage`
-- `POST /api/v1/documents/{document_id}/reindex?knowledge_base_id={knowledge_base_id}`
-- `DELETE /api/v1/documents/{document_id}?knowledge_base_id={knowledge_base_id}`
-- `POST /api/v1/retrieve`
-- `POST /api/v1/retrieve/compare`
-- `GET /api/v1/chat/conversations?tenant_id={tenant_id}&workspace_id={workspace_id}`
-- `GET /api/v1/chat/conversations?tenant_id={tenant_id}&workspace_id={workspace_id}&query={title_fragment}`
-- `GET /api/v1/chat/conversations?tenant_id={tenant_id}&workspace_id={workspace_id}&limit={count}`
-- `GET /api/v1/chat/conversations/metrics?tenant_id={tenant_id}&workspace_id={workspace_id}`
-- `POST /api/v1/chat/conversations`
-- `PATCH /api/v1/chat/conversations/{conversation_id}?tenant_id={tenant_id}`
-- `DELETE /api/v1/chat/conversations/{conversation_id}?tenant_id={tenant_id}`
-- `GET /api/v1/chat/messages?tenant_id={tenant_id}&conversation_id={conversation_id}`
-- `POST /api/v1/chat/messages`
-- `GET /api/v1/workflow-runs?tenant_id={tenant_id}`
-- `GET /api/v1/workflow-runs/metrics?tenant_id={tenant_id}`
-- `GET /api/v1/workflow-runs/{workflow_run_id}?tenant_id={tenant_id}`
-- `POST /api/v1/workflow-runs/{workflow_run_id}/retry?tenant_id={tenant_id}`
-- `GET /api/v1/agents?tenant_id={tenant_id}`
-- `POST /api/v1/agents`
-- `PATCH /api/v1/agents/{agent_definition_id}?tenant_id={tenant_id}`
-- `DELETE /api/v1/agents/{agent_definition_id}?tenant_id={tenant_id}`
-- `GET /api/v1/model-endpoints`
-- `POST /api/v1/model-endpoints`
-- `PATCH /api/v1/model-endpoints/{model_endpoint_id}`
-- `DELETE /api/v1/model-endpoints/{model_endpoint_id}`
-- `GET /api/v1/tool-registrations`
-- `POST /api/v1/tool-registrations`
-- `PATCH /api/v1/tool-registrations/{tool_registration_id}`
-- `DELETE /api/v1/tool-registrations/{tool_registration_id}`
+## Security Boundary
 
-## API Behaviors
+Routes resolve an authenticated actor from a bearer session or tenant-scoped platform API key. Authorization remains backend-owned and covers role capabilities, API-key scopes, active tenant membership, workspace access, knowledge-base access, and resource ownership where applicable. Legacy actor headers are development-only and disabled unless explicitly configured.
 
-Document list supports:
-
-- search
-- status filtering
-- sorting
-- pagination
-
-Workflow list supports:
-
-- search
-- status filtering
-- workflow type filtering
-- retry-mode filtering for original runs versus retry runs
-- sorting
-- pagination
-
-Workflow metrics expose:
-
-- `queued_runs`
-- `running_runs`
-- `retry_runs`
-
-Chat conversation APIs expose a summary metrics endpoint so the web console can render tenant-level and workspace-level conversation activity without scraping conversation lists client-side.
-
-Conversation deletion is handled through the chat API and removes the persisted conversation together with its stored messages and citations inside the tenant scope.
-
-Conversation listing supports title search, limit controls, and recent-activity ordering so operator surfaces can keep active threads at the top.
-
-Conversation list payloads include:
-
-- `message_count`
-- `latest_activity_at`
-
-Implicit chat-created conversations receive default titles derived from the first user prompt, which keeps workspace history easier to scan.
-
-Both list endpoints expose browser-readable paging headers:
-
-- `X-Total-Count`
-- `X-Limit`
-- `X-Offset`
-- `X-Result-Count`
-
-The web console uses the single-document reindex and delete endpoints to drive batch document operations client-side.
-
-Uploaded documents create a database workflow run and attempt to start a Temporal `document_ingestion` workflow path.
-
-Single-page web imports reuse that same ingestion path through `POST /api/v1/documents/import-webpage`, preserving the fetched source URL on the managed document record instead of treating the page as a separate ingestion subsystem.
-
-The retrieval API supports structured engine comparison through `POST /api/v1/retrieve/compare`, which compares a baseline engine such as `native` against a candidate such as `llamaindex_pilot` and returns overlap diagnostics, per-engine method breakdowns, and top-result agreement.
-
-The health API also reports runtime readiness for `llamaindex_pilot` and `langgraph_pilot`, together with the effective chat-model binding resolved from governed runtime configuration.
-
-The authentication-mode API exposes a final-boundary contract for local versus provider-managed sign-in, including invitation-activation availability, initial-bootstrap eligibility, provider protocol, and optional provider post-sign-out routing.
-
-Model-endpoint governance APIs persist:
-
-- provider type
-- provider base URL
-- model name
-- credential delivery posture
-- chat and embedding capability flags
-- default-route designation
-
-Tool-registration governance APIs persist:
-
-- transport type
-- surface ownership
-- callable endpoint reference
-- free-form capability tags
-- admin-approval requirement
-- enabled posture
-
-Agent-definition APIs persist:
-
-- execution mode and activation state
-- scoped knowledge-base boundary
-- page-surface tool bindings
-- governed model-endpoint binding
-- governed tool-registration bindings
+API-key secrets are displayed once, stored as hashes, and support scope, expiry, revocation, usage tracking, and audit events. Runtime provider and MCP credentials use the encrypted credential boundary rather than plaintext model records.
 
 ## Database Migrations
 
-Alembic migrations live in `migrations/`.
-
-Run migrations from `apps/api`:
-
-```bash
-alembic upgrade head
-```
-
-When running Alembic from the host machine against the Docker Compose database, override the database host and port:
+Alembic migrations live in `migrations/`. From the repository root, the supported local command is:
 
 ```powershell
-$env:POSTGRES_HOST='localhost'
-$env:POSTGRES_PORT='5433'
-alembic upgrade head
+npm run api:migrate
 ```
 
-## Naming Direction
+When invoking Alembic directly from `apps/api` against the Docker Compose database, set `POSTGRES_HOST=localhost` and `POSTGRES_PORT=5432` first.
 
-The API uses English-first, domain-oriented naming:
+## Verification
+
+From the repository root:
+
+```powershell
+npm run api:test
+```
+
+The repository release preflight also runs the versioned retrieval regression gate and validates the migration head, public documentation, delivery assets, and other release contracts.
+
+## Naming and Layering
 
 - package root: `ragpilot_api`
 - route modules: `*_routes.py`
 - DTO contracts: `*_contracts.py`
 - application services: `*_service.py`
-- shared runtime configuration: `shared/settings.py`
+- runtime settings: `shared/settings.py`
 
-## Service Boundary
-
-The API owns:
-
-- local directory and password-local sign-in
-- provider-managed authentication contracts for `OIDC` and `SAML`
-- tenant, workspace, knowledge-base, document, chat, workflow, and agent resource contracts
-- runtime governance for model endpoints, retrieval profiles, tool registrations, and MCP-compatible connectors
-- audit-ready session, access, and runtime review surfaces
+Keep business policy in application/domain services and repositories rather than HTTP route handlers.

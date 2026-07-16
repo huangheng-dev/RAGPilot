@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from uuid import UUID
 
-from ragpilot_api.application.retrieval.batch_evaluator import run_batch_evaluation
+from ragpilot_api.application.retrieval.batch_evaluator import run_batch_evaluation, validate_evaluation_dataset
 from ragpilot_api.application.retrieval.retrieval_runtime import execute_retrieval
 from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
@@ -17,6 +17,7 @@ from ragpilot_api.application.chat.response_builder import build_grounded_answer
 
 
 async def evaluate(dataset: dict, *, gate_profile: str) -> dict:
+    validate_evaluation_dataset(dataset, require_queries=True)
     settings = get_settings()
     async with async_session_factory() as session:
         repository = RetrievalRepository(session)

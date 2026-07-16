@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.application.identity.access_policy import build_session_capabilities, build_session_capabilities_from_grants
-from ragpilot_api.application.identity.passwords import hash_password, verify_password
+from ragpilot_api.application.identity.passwords import hash_password, password_needs_rehash, verify_password
 from ragpilot_api.contracts.http.user_contracts import (
     UserAccessEventResponse,
     UserAccessGovernanceEventCountResponse,
@@ -154,6 +154,10 @@ class UserService:
 
     async def bootstrap_user(self, request: UserBootstrapRequest) -> UserDirectoryResponse:
         self._require_local_form_auth_mode("Bootstrap is unavailable for the current authentication mode.")
+
+        acquire_bootstrap_lock = getattr(self.user_repository, "acquire_bootstrap_lock", None)
+        if acquire_bootstrap_lock is not None:
+            await acquire_bootstrap_lock()
 
         existing_user = await self.user_repository.get_user_by_email(email=request.email)
         if existing_user is not None:
@@ -343,13 +347,18 @@ class UserService:
 
         user = await self.user_repository.get_user_by_email(email=request.email)
         if user is None:
-            directory_user = await self.bootstrap_user(
-                UserBootstrapRequest(
-                    email=request.email,
-                    display_name=request.display_name,
-                    password=request.password,
+            if await self.user_repository.count_users() > 0:
+                raise ResourceConflictError("Email or password is incorrect.")
+            try:
+                directory_user = await self.bootstrap_user(
+                    UserBootstrapRequest(
+                        email=request.email,
+                        display_name=request.display_name,
+                        password=request.password,
+                    )
                 )
-            )
+            except ResourceConflictError as error:
+                raise ResourceConflictError("Email or password is incorrect.") from error
             return await self._issue_authenticated_session(
                 user_id=directory_user.id,
                 login_mode="bootstrap",
@@ -373,6 +382,8 @@ class UserService:
                         session_telemetry=session_telemetry,
                     )
                 )
+            if password_needs_rehash(getattr(user, "password_hash", None)):
+                await self.user_repository.set_user_password(user_id=user.id, password_hash=hash_password(password))
 
         directory_user = await self.get_user_directory_entry(user.id)
         try:
@@ -407,15 +418,15 @@ class UserService:
         if user is None:
             raise ResourceNotFoundError("User not found.")
 
+        await self._ensure_invitation_activation_not_rate_limited(user_id=user.id)
         memberships = await self.user_repository.list_tenant_memberships_for_user(user_id=user.id)
-        normalized_token = request.invitation_token.strip().upper()
         available_invited_memberships = [
             membership for membership in memberships if membership.membership_status == "invited"
         ]
         invited_memberships = [
             membership
             for membership in available_invited_memberships
-            if (membership.invitation_token or "").strip().upper() == normalized_token
+            if UserRepository.invitation_token_matches(membership, request.invitation_token)
         ]
         has_active_membership = any(membership.membership_status == "active" for membership in memberships)
 
@@ -1622,11 +1633,19 @@ class UserService:
         if tenant is None:
             raise ResourceNotFoundError("Tenant not found.")
 
-        membership = await self.user_repository.refresh_tenant_membership_invitation(
+        invitation_credential = await self.user_repository.refresh_tenant_membership_invitation(
             membership_id=membership_id,
             invitation_issued_by_user_id=actor_user_id,
         )
-        if membership is None or membership.invitation_token is None:
+        if invitation_credential is None:
+            raise ResourceConflictError("Unable to issue invitation credentials for this membership.")
+        if hasattr(invitation_credential, "membership"):
+            membership = invitation_credential.membership
+            invitation_token = invitation_credential.invitation_token
+        else:
+            membership = invitation_credential
+            invitation_token = getattr(membership, "invitation_token", None)
+        if not invitation_token:
             raise ResourceConflictError("Unable to issue invitation credentials for this membership.")
 
         invitation_issuer = (
@@ -1654,7 +1673,7 @@ class UserService:
             tenant_name=tenant.name,
             tenant_slug=tenant.slug,
             membership_status=membership.membership_status,
-            invitation_token=membership.invitation_token,
+            invitation_token=invitation_token,
             invitation_issue_count=membership.invitation_issue_count,
             last_invitation_issued_by_user_id=membership.last_invitation_issued_by_user_id,
             last_invitation_issued_by_display_name=invitation_issuer.display_name if invitation_issuer is not None else None,
@@ -1797,6 +1816,16 @@ class UserService:
         remaining_seconds = max(int((lockout_until - current_time).total_seconds()), 1)
         raise ResourceConflictError(self._build_sign_in_rate_limit_message(remaining_seconds))
 
+    async def _ensure_invitation_activation_not_rate_limited(self, *, user_id: UUID) -> None:
+        recent_failures = await self._list_recent_failed_invitation_activation_events(user_id=user_id)
+        lockout_until = self._resolve_sign_in_lockout_until(recent_failures)
+        if lockout_until is None:
+            return
+
+        current_time = datetime.now(timezone.utc)
+        remaining_seconds = max(int((lockout_until - current_time).total_seconds()), 1)
+        raise ResourceConflictError(self._build_invitation_activation_rate_limit_message(remaining_seconds))
+
     async def _record_failed_sign_in_attempt(
         self,
         *,
@@ -1837,6 +1866,8 @@ class UserService:
         membership_id: UUID | None = None,
         tenant_id: UUID | None = None,
     ) -> str:
+        recent_failures = await self._list_recent_failed_invitation_activation_events(user_id=user_id)
+        attempt_count = len(recent_failures) + 1
         await self.user_repository.create_user_access_event(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -1847,10 +1878,17 @@ class UserService:
                 "reason": fallback_message,
                 "reason_code": reason_code,
                 "authentication_mode": self.settings.auth_primary_mode,
+                "failed_window_attempts": attempt_count,
+                "failed_window_minutes": max(self.settings.auth_failed_sign_in_window_minutes, 1),
+                "lockout_minutes": max(self.settings.auth_failed_sign_in_lockout_minutes, 1),
                 "ip_address": session_telemetry.ip_address if session_telemetry is not None else None,
                 "device_label": session_telemetry.device_label if session_telemetry is not None else None,
             },
         )
+        if attempt_count >= max(self.settings.auth_failed_sign_in_max_attempts, 1):
+            return self._build_invitation_activation_rate_limit_message(
+                max(self.settings.auth_failed_sign_in_lockout_minutes, 1) * 60
+            )
         return fallback_message
 
     async def _list_recent_failed_sign_in_events(self, *, user_id: UUID) -> list[UserAccessEventRecord]:
@@ -1977,6 +2015,11 @@ class UserService:
     def _build_sign_in_rate_limit_message(remaining_seconds: int) -> str:
         remaining_minutes = max(1, (remaining_seconds + 59) // 60)
         return f"Too many failed sign-in attempts. Try again in about {remaining_minutes} minute(s)."
+
+    @staticmethod
+    def _build_invitation_activation_rate_limit_message(remaining_seconds: int) -> str:
+        remaining_minutes = max(1, (remaining_seconds + 59) // 60)
+        return f"Too many failed invitation activation attempts. Try again in about {remaining_minutes} minute(s)."
 
     @staticmethod
     def _resolve_sign_in_failure_reason_code(user: UserDirectoryResponse) -> str:

@@ -5,7 +5,7 @@ from docx import Document as DocxDocument
 from openpyxl import Workbook
 
 from ragpilot_worker.domain import chunking
-from ragpilot_worker.domain.chunking import normalize_text
+from ragpilot_worker.domain.chunking import build_text_chunks, normalize_text
 
 
 def test_normalize_text_supports_plain_text() -> None:
@@ -143,10 +143,47 @@ def test_normalize_text_supports_xlsx() -> None:
     assert parsed_document.text == "Sheet: Summary\nMetric | Value\nIndexed documents | 12\nFailed workflows | 2"
 
 
+def test_normalize_text_supports_governed_image_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(chunking, "_normalize_image_ocr_text", lambda content: "Image [OCR]\n设备运行状态正常")
+
+    parsed_document = normalize_text(
+        b"\x89PNG\r\n",
+        content_type="image/png",
+        file_name="status-board.png",
+    )
+
+    assert parsed_document.parser_name == "image_ocr_parser"
+    assert parsed_document.text == "Image [OCR]\n设备运行状态正常"
+
+
 def test_normalize_text_rejects_unsupported_types() -> None:
     with pytest.raises(ValueError, match="Unsupported document type for initial ingestion"):
         normalize_text(
-            b"\x89PNG\r\n",
-            content_type="image/png",
-            file_name="diagram.png",
+            b"MZ",
+            content_type="application/x-msdownload",
+            file_name="unsafe.exe",
         )
+
+
+def test_chunking_preserves_pdf_page_locators_without_crossing_page_boundaries() -> None:
+    chunks = build_text_chunks(
+        "Page 1\nFirst page policy.\n\nPage 2 [OCR]\nSecond page evidence.",
+        chunk_size=1200,
+        chunk_overlap=100,
+    )
+    assert len(chunks) == 2
+    assert chunks[0].metadata_json["source_page_number"] == 1
+    assert chunks[0].metadata_json["source_location_label"] == "Page 1"
+    assert chunks[1].metadata_json["source_page_number"] == 2
+    assert chunks[1].metadata_json["source_is_ocr"] is True
+
+
+def test_chunking_preserves_sheet_and_table_locators() -> None:
+    chunks = build_text_chunks(
+        "Sheet: Summary\nMetric | Value\nIndexed | 12\n\nTable 1\nOwner | Platform",
+        chunk_size=1200,
+        chunk_overlap=100,
+    )
+    assert [chunk.metadata_json["source_location_type"] for chunk in chunks] == ["sheet", "table"]
+    assert chunks[0].metadata_json["source_sheet_name"] == "Summary"
+    assert chunks[1].metadata_json["source_table_number"] == 1

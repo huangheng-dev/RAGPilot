@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from urllib.parse import urlparse
 
 from minio import Minio
@@ -27,3 +28,16 @@ class DocumentObjectStorage:
         finally:
             response.close()
             response.release_conn()
+
+    def store_document_object(self, *, storage_key: str, content: bytes, content_type: str) -> tuple[str, str]:
+        bucket = self.settings.minio_bucket
+        if not self.client.bucket_exists(bucket):
+            self.client.make_bucket(bucket)
+        self.client.put_object(
+            bucket_name=bucket,
+            object_name=storage_key,
+            data=BytesIO(content),
+            length=len(content),
+            content_type=content_type,
+        )
+        return bucket, storage_key

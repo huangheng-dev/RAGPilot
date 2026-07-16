@@ -82,6 +82,9 @@ class MessageRepository:
         model_name: str | None,
         usage_json: dict,
     ) -> Message:
+        prompt_binding = usage_json.get("prompt_binding") if isinstance(usage_json, dict) else None
+        prompt_version_id = _parse_uuid_value(prompt_binding.get("prompt_version_id")) if isinstance(prompt_binding, dict) else None
+        prompt_snapshot_hash = prompt_binding.get("rendered_snapshot_hash") if isinstance(prompt_binding, dict) else None
         message = Message(
             tenant_id=tenant_id,
             conversation_id=conversation_id,
@@ -89,6 +92,8 @@ class MessageRepository:
             content=content,
             model_name=model_name,
             usage_json=usage_json,
+            prompt_version_id=prompt_version_id,
+            prompt_snapshot_hash=prompt_snapshot_hash,
         )
         self.session.add(message)
         await self.session.commit()

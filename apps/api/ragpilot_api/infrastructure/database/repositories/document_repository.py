@@ -21,12 +21,14 @@ class DocumentRepository:
         knowledge_base_id: UUID,
         title: str,
         source_uri: str | None,
+        data_source_id: UUID | None = None,
     ) -> Document:
         document = Document(
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
             source_uri=source_uri,
+            data_source_id=data_source_id,
         )
         self.session.add(document)
 
@@ -657,12 +659,14 @@ class DocumentRepository:
         file_name: str,
         content_type: str | None,
         file_size_bytes: int,
+        data_source_id: UUID | None = None,
     ) -> tuple[Document, DocumentVersion, DocumentAsset, WorkflowRun]:
         document = Document(
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
             source_uri=source_uri,
+            data_source_id=data_source_id,
         )
         self.session.add(document)
 

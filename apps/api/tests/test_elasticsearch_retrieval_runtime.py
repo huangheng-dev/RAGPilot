@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -42,6 +42,7 @@ async def test_execute_retrieval_uses_elasticsearch_bm25(monkeypatch) -> None:
     repository = SimpleNamespace(
         search_vector_document_chunks=AsyncMock(return_value=[]),
         search_lexical_document_chunks=AsyncMock(return_value=[]),
+        filter_authorized_document_chunk_ids=AsyncMock(return_value={UUID(lexical_row["document_chunk_id"])}),
     )
 
     outcome = await execute_retrieval(
@@ -56,6 +57,7 @@ async def test_execute_retrieval_uses_elasticsearch_bm25(monkeypatch) -> None:
     assert outcome.results[0]["document_chunk_id"] == lexical_row["document_chunk_id"]
     elasticsearch_search.assert_awaited_once()
     repository.search_lexical_document_chunks.assert_not_awaited()
+    repository.filter_authorized_document_chunk_ids.assert_awaited_once()
 
 
 @pytest.mark.anyio
@@ -77,6 +79,7 @@ async def test_execute_retrieval_falls_back_to_postgresql_when_elasticsearch_fai
     repository = SimpleNamespace(
         search_vector_document_chunks=AsyncMock(return_value=[]),
         search_lexical_document_chunks=AsyncMock(return_value=[fallback_row]),
+        filter_authorized_document_chunk_ids=AsyncMock(),
     )
 
     outcome = await execute_retrieval(
@@ -90,3 +93,29 @@ async def test_execute_retrieval_falls_back_to_postgresql_when_elasticsearch_fai
 
     assert outcome.results[0]["document_chunk_id"] == fallback_row["document_chunk_id"]
     repository.search_lexical_document_chunks.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_execute_retrieval_drops_elasticsearch_candidates_denied_by_postgresql_acl(monkeypatch) -> None:
+    lexical_row = {
+        "document_chunk_id": str(uuid4()), "document_id": str(uuid4()),
+        "document_version_id": str(uuid4()), "knowledge_base_id": str(uuid4()),
+        "document_title": "Restricted", "chunk_index": 0,
+        "content": "restricted incident policy", "lexical_score": 8.0,
+    }
+    monkeypatch.setattr(
+        "ragpilot_api.application.retrieval.retrieval_runtime.ElasticsearchRetrievalRepository.search_lexical_document_chunks",
+        AsyncMock(return_value=[lexical_row]),
+    )
+    repository = SimpleNamespace(
+        search_vector_document_chunks=AsyncMock(return_value=[]),
+        search_lexical_document_chunks=AsyncMock(return_value=[]),
+        filter_authorized_document_chunk_ids=AsyncMock(return_value=set()),
+    )
+    outcome = await execute_retrieval(
+        retrieval_repository=repository, settings=build_settings(), tenant_id=uuid4(),
+        knowledge_base_id=uuid4(), query_text="incident policy", requested_top_k=3,
+        principal_user_id=uuid4(),
+    )
+    assert outcome.results == []
+    assert outcome.evidence_validation_metadata["status"] == "empty"

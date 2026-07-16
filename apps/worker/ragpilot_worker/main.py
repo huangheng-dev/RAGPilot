@@ -4,12 +4,14 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from ragpilot_worker.activities.document_ingestion import ingest_document
+from ragpilot_worker.activities.data_source_sync import fail_data_source_sync, finalize_data_source_sync, prepare_data_source_sync
 from ragpilot_worker.activities.search_projection import project_document_version_to_elasticsearch
 from ragpilot_worker.config import get_settings
 from ragpilot_worker.workflows.document_ingestion import (
     DocumentIngestionWorkflow,
     LegacyDocumentIngestionWorkflow,
 )
+from ragpilot_worker.workflows.data_source_sync import DataSourceSyncWorkflow
 from ragpilot_worker.workflows.search_projection import SearchProjectionWorkflow
 from ragpilot_worker.infrastructure.observability import configure_worker_observability
 
@@ -43,8 +45,19 @@ async def run_worker() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[DocumentIngestionWorkflow, LegacyDocumentIngestionWorkflow, SearchProjectionWorkflow],
-        activities=[ingest_document, project_document_version_to_elasticsearch],
+        workflows=[
+            DocumentIngestionWorkflow,
+            LegacyDocumentIngestionWorkflow,
+            SearchProjectionWorkflow,
+            DataSourceSyncWorkflow,
+        ],
+        activities=[
+            ingest_document,
+            project_document_version_to_elasticsearch,
+            prepare_data_source_sync,
+            finalize_data_source_sync,
+            fail_data_source_sync,
+        ],
     )
     await worker.run()
 

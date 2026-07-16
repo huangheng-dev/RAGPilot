@@ -1,11 +1,18 @@
 import { authenticatedApiRequest } from "@/lib/authenticated-api";
 
 export type AgentExecutionMode = "grounded_chat" | "document_intake" | "workflow_recovery";
-export type AgentExecutionStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type AgentExecutionStatus =
+  | "queued"
+  | "running"
+  | "awaiting_approval"
+  | "completed"
+  | "failed"
+  | "cancelled";
 export type AgentExecutionTriggerSource = "agents_console" | "workspace" | "home" | "admin" | "operations";
 export type AgentExecutionTaskStage =
   | "queued_for_execution"
   | "running_execution"
+  | "waiting_for_approval"
   | "grounded_answer_ready"
   | "intake_review_ready"
   | "recovery_brief_ready"
@@ -69,6 +76,10 @@ export type AgentExecutionResponse = {
   completed_at: string | null;
   temporal_workflow_id: string | null;
   retry_of_execution_id: string | null;
+  replay_of_execution_id: string | null;
+  replay_fingerprint: string | null;
+  execution_policy_json: Record<string, unknown>;
+  output_schema_json: Record<string, unknown> | null;
   cancellation_requested_at: string | null;
   cancelled_at: string | null;
   created_at: string;
@@ -79,6 +90,7 @@ export type AgentExecutionMetricsResponse = {
   total_executions: number;
   queued_executions: number;
   running_executions: number;
+  awaiting_approval_executions: number;
   completed_executions: number;
   failed_executions: number;
   latest_execution_at: string | null;
@@ -89,6 +101,10 @@ export type CreateAgentExecutionRequest = {
   agent_definition_id: string;
   execution_input?: string | null;
   trigger_source: AgentExecutionTriggerSource;
+  max_tool_calls?: number | null;
+  max_runtime_seconds?: number | null;
+  max_output_bytes?: number | null;
+  output_schema_json?: Record<string, unknown> | null;
 };
 
 export type AgentExecutionListFilters = {
@@ -100,6 +116,7 @@ export const EMPTY_AGENT_EXECUTION_METRICS: AgentExecutionMetricsResponse = {
   total_executions: 0,
   queued_executions: 0,
   running_executions: 0,
+  awaiting_approval_executions: 0,
   completed_executions: 0,
   failed_executions: 0,
   latest_execution_at: null
@@ -245,6 +262,13 @@ export async function cancelAgentExecution(execution: AgentExecutionResponse) {
 export async function retryAgentExecution(execution: AgentExecutionResponse) {
   return await agentExecutionApiRequest<AgentExecutionResponse>(
     `/agents/executions/actions/${execution.id}/retry?tenant_id=${execution.tenant_id}`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function replayAgentExecution(execution: AgentExecutionResponse) {
+  return await agentExecutionApiRequest<AgentExecutionResponse>(
+    `/agents/executions/actions/${execution.id}/replay?tenant_id=${execution.tenant_id}`,
     { method: "POST", body: JSON.stringify({}) },
   );
 }

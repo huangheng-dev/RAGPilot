@@ -7,6 +7,8 @@ from opentelemetry import metrics
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ragpilot_api.infrastructure.observability import inject_trace_headers
+
 
 _meter = metrics.get_meter("ragpilot.api.search_projection")
 _queue_depth = _meter.create_histogram("ragpilot.projection.queue.depth", unit="{event}")
@@ -97,7 +99,10 @@ async def build_search_projection_diagnostics(
 
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            response = await client.get(f"{base_url.rstrip('/')}/_alias/{read_alias}")
+            response = await client.get(
+                f"{base_url.rstrip('/')}/_alias/{read_alias}",
+                headers=inject_trace_headers(),
+            )
             response.raise_for_status()
             diagnostics["active_indices"] = sorted(response.json().keys())
             diagnostics["reachable"] = True

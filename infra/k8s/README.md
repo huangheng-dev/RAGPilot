@@ -15,6 +15,7 @@ It is intentionally lean:
 - `namespace.yaml`
 - `configmap.yaml`
 - `secret.example.yaml`
+- `migration-job.yaml`
 - `api-deployment.yaml`
 - `worker-deployment.yaml`
 - `agent-worker-deployment.yaml`
@@ -47,6 +48,7 @@ Ingress
 5. Confirm that `NEXT_PUBLIC_API_BASE_URL` matches the public API route exposed by your ingress.
 6. Install External Secrets Operator and provide a `ClusterSecretStore` named `production-secret-store`; the `ExternalSecret` refreshes `ragpilot/production` hourly.
 7. Confirm Metrics Server is available for the API HPA and verify the PodDisruptionBudget before rollout.
+8. Provision the `ragpilot-tls` certificate Secret and adjust the ingress-controller namespace selector when the controller does not run in `ingress-nginx`.
 
 ## Example
 
@@ -54,5 +56,10 @@ Ingress
 kubectl apply -f infra/k8s/namespace.yaml
 kubectl apply -f infra/k8s/configmap.yaml
 kubectl apply -f your-private-secret.yaml
+kubectl delete job ragpilot-database-migration -n ragpilot --ignore-not-found
+kubectl apply -f infra/k8s/migration-job.yaml
+kubectl wait --for=condition=complete job/ragpilot-database-migration -n ragpilot --timeout=300s
 kubectl apply -k infra/k8s
 ```
+
+The migration Job must complete against the exact image version being deployed before the API and Worker rollout proceeds.

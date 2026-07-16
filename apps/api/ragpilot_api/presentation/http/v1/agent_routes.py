@@ -461,6 +461,22 @@ async def retry_agent_execution(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
+@router.post("/executions/actions/{execution_id}/replay", response_model=AgentExecutionResponse, status_code=status.HTTP_201_CREATED)
+async def replay_agent_execution(
+    execution_id: UUID, tenant_id: UUID = Query(...), actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> AgentExecutionResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "execute_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    try:
+        return await build_agent_execution_service(session).replay_agent_execution(
+            execution_id=execution_id, tenant_id=tenant_id, actor=actor,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
 @router.get("/executions/{execution_id}/approvals", response_model=list[AgentApprovalResponse])
 async def list_agent_approval_requests(
     execution_id: UUID, tenant_id: UUID = Query(...), actor: RequestActor = Depends(get_request_actor),

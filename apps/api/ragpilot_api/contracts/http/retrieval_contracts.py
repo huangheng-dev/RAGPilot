@@ -29,6 +29,9 @@ class RetrievalResultChunkResponse(BaseModel):
     lexical_normalized_score: float | None = None
     rerank_score: float | None = None
     rerank_rank: int | None = None
+    evidence_score: float | None = None
+    evidence_status: str | None = None
+    evidence_reasons: list[str] = Field(default_factory=list)
     embedding_model: str | None
     retrieval_method: str
     metadata_json: dict
@@ -50,6 +53,8 @@ class RetrievalResponse(BaseModel):
     rerank_strategy: str | None = None
     rerank_window: int | None = None
     rerank_metadata: dict = Field(default_factory=dict)
+    retrieval_plan_metadata: dict = Field(default_factory=dict)
+    evidence_validation_metadata: dict = Field(default_factory=dict)
     results: list[RetrievalResultChunkResponse]
 
 
@@ -65,6 +70,8 @@ class RetrievalEngineDiagnosticsResponse(BaseModel):
     rerank_strategy: str | None = None
     rerank_window: int | None = None
     rerank_metadata: dict = Field(default_factory=dict)
+    retrieval_plan_metadata: dict = Field(default_factory=dict)
+    evidence_validation_metadata: dict = Field(default_factory=dict)
     result_count: int
     retrieval_method_breakdown: dict[str, int]
     top_result_chunk_id: UUID | None = None

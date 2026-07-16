@@ -1,9 +1,13 @@
+import hashlib
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ragpilot_api.infrastructure.database.models import AgentRun
+
+
+AGENT_RUN_PROMPT_VERSION_ID = UUID("10000000-0000-0000-0000-000000000002")
 
 
 class AgentRunRepository:
@@ -35,6 +39,8 @@ class AgentRunRepository:
             run_status=run_status,
             trigger_source=trigger_source,
             launch_prompt=launch_prompt,
+            prompt_version_id=AGENT_RUN_PROMPT_VERSION_ID,
+            prompt_snapshot_hash=hashlib.sha256((launch_prompt or "").encode("utf-8")).hexdigest(),
             navigation_href=navigation_href,
             launched_by_user_id=launched_by_user_id,
         )

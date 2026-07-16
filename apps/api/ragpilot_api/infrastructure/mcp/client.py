@@ -6,7 +6,7 @@ import asyncio
 
 import httpx
 from opentelemetry import trace
-from ragpilot_api.infrastructure.observability import traced
+from ragpilot_api.infrastructure.observability import inject_trace_headers, traced
 from ragpilot_api.infrastructure.runtime_policy import get_outbound_policy
 
 
@@ -25,7 +25,9 @@ class McpInitializeResult:
 class McpStreamableHttpClient:
     def __init__(self, *, base_url: str, bearer_token: str | None = None, timeout_seconds: float = 10.0,
                  concurrency_limit: int = 16, requests_per_minute: int = 240, max_attempts: int = 2,
-                 retryable_status_codes: set[int] | None = None, retry_backoff_seconds: float = 0.25) -> None:
+                 retryable_status_codes: set[int] | None = None, retry_backoff_seconds: float = 0.25,
+                 redis_url: str | None = None, redis_failure_mode: str = "local_fallback",
+                 concurrency_lease_seconds: float = 300.0) -> None:
         self.base_url = base_url
         self.bearer_token = bearer_token
         self.timeout_seconds = timeout_seconds
@@ -36,6 +38,8 @@ class McpStreamableHttpClient:
             "concurrency_limit": concurrency_limit, "requests_per_minute": requests_per_minute,
             "max_attempts": max_attempts, "retryable_status_codes": retryable_status_codes or {429, 502, 503, 504},
             "retry_backoff_seconds": retry_backoff_seconds,
+            "redis_url": redis_url, "redis_failure_mode": redis_failure_mode,
+            "concurrency_lease_seconds": concurrency_lease_seconds,
         }
 
     def _policy(self, *, retry_safe: bool = True):
@@ -53,7 +57,7 @@ class McpStreamableHttpClient:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
-        return headers
+        return inject_trace_headers(headers)
 
     @traced("mcp.jsonrpc.request")
     async def _request(self, method: str, params: dict[str, Any] | None = None) -> tuple[dict[str, Any], httpx.Headers]:

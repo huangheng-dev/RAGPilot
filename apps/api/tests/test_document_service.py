@@ -6,7 +6,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from ragpilot_api.application.documents.document_service import DocumentService
+from ragpilot_api.application.documents.document_service import DocumentService, validate_supported_document_type
 
 
 @pytest.mark.anyio
@@ -364,19 +364,24 @@ async def test_upload_document_rejects_unsupported_document_type_before_storage(
 
     with pytest.raises(
         ValueError,
-        match="Unsupported document type. RAGPilot currently accepts TXT, Markdown, HTML, CSV, JSON, PDF, DOCX, and XLSX files.",
+        match="Unsupported document type. RAGPilot currently accepts TXT, Markdown, HTML, CSV, JSON, PDF, DOCX, XLSX, PNG, JPEG, WebP, TIFF, and BMP files.",
     ):
         await service.upload_document(
             tenant_id=uuid4(),
             knowledge_base_id=uuid4(),
-            title="Reference Image",
-            file_name="reference.png",
-            content_type="image/png",
-            content=b"\x89PNG\r\n",
+            title="Unsafe executable",
+            file_name="unsafe.exe",
+            content_type="application/x-msdownload",
+            content=b"MZ",
         )
 
     storage.store_document_object.assert_not_called()
     repository.create_uploaded_document.assert_not_awaited()
+
+
+def test_document_type_validation_accepts_images_for_governed_ocr() -> None:
+    validate_supported_document_type(file_name="diagram.png", content_type="image/png")
+    validate_supported_document_type(file_name="scan.tiff", content_type="application/octet-stream")
 
 
 @pytest.mark.anyio
@@ -390,22 +395,23 @@ async def test_import_web_page_fetches_html_and_reuses_document_ingestion_chain(
     workflow_run_id = uuid4()
     captured_storage: dict[str, object] = {}
 
-    class FakeAsyncClient:
-        async def __aenter__(self):
-            return self
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=b"<html><head><title>Operations Handbook</title></head><body><main>Grounded ops</main></body></html>",
+            request=request,
+        )
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def get(self, url, headers):
-            return httpx.Response(
-                200,
-                headers={"content-type": "text/html; charset=utf-8"},
-                content=b"<html><head><title>Operations Handbook</title></head><body><main>Grounded ops</main></body></html>",
-                request=httpx.Request("GET", url),
-            )
-
-    monkeypatch.setattr("ragpilot_api.application.documents.document_service.httpx.AsyncClient", lambda *args, **kwargs: FakeAsyncClient())
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "ragpilot_api.application.documents.document_service.httpx.AsyncClient",
+        lambda *args, **kwargs: async_client(transport=httpx.MockTransport(handle_request)),
+    )
+    monkeypatch.setattr(
+        "ragpilot_api.application.documents.document_service.validate_public_http_destination",
+        AsyncMock(),
+    )
 
     storage = SimpleNamespace(
         store_document_object=Mock(
@@ -523,3 +529,45 @@ async def test_import_web_page_rejects_non_http_urls() -> None:
                 title=None,
             )
         )
+
+
+@pytest.mark.anyio
+async def test_import_web_page_rejects_private_network_urls() -> None:
+    service = DocumentService(document_repository=SimpleNamespace())
+
+    with pytest.raises(ValueError, match="cannot access local or private network addresses"):
+        await service.import_web_page(
+            SimpleNamespace(
+                tenant_id=uuid4(),
+                knowledge_base_id=uuid4(),
+                source_url="http://127.0.0.1/internal",
+                title=None,
+            )
+        )
+
+
+@pytest.mark.anyio
+async def test_fetch_web_page_stops_when_stream_exceeds_limit(monkeypatch) -> None:
+    from ragpilot_api.application.documents.document_service import fetch_web_page
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/plain"},
+            content=b"12345",
+            request=request,
+        )
+
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "ragpilot_api.application.documents.document_service.httpx.AsyncClient",
+        lambda *args, **kwargs: async_client(transport=httpx.MockTransport(handle_request)),
+    )
+    monkeypatch.setattr(
+        "ragpilot_api.application.documents.document_service.validate_public_http_destination",
+        AsyncMock(),
+    )
+    monkeypatch.setattr("ragpilot_api.application.documents.document_service.WEB_IMPORT_MAX_BYTES", 4)
+
+    with pytest.raises(ValueError, match="too large"):
+        await fetch_web_page("https://docs.example.com/oversized")

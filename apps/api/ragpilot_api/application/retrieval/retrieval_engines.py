@@ -22,6 +22,8 @@ class RetrievalEngine(Protocol):
         knowledge_base_id: UUID,
         query_text: str,
         requested_top_k: int,
+        principal_user_id: UUID | None = None,
+        acl_bypass: bool = False,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
     ) -> RetrievalExecutionOutcome: ...
@@ -46,6 +48,8 @@ class NativeRetrievalEngine:
         knowledge_base_id: UUID,
         query_text: str,
         requested_top_k: int,
+        principal_user_id: UUID | None = None,
+        acl_bypass: bool = False,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
     ) -> RetrievalExecutionOutcome:
@@ -56,6 +60,8 @@ class NativeRetrievalEngine:
             knowledge_base_id=knowledge_base_id,
             query_text=query_text,
             requested_top_k=requested_top_k,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
             knowledge_base_repository=knowledge_base_repository,
             retrieval_profile_repository=retrieval_profile_repository,
         )
@@ -72,6 +78,8 @@ class LlamaIndexPilotRetrievalEngine:
         knowledge_base_id: UUID,
         query_text: str,
         requested_top_k: int,
+        principal_user_id: UUID | None = None,
+        acl_bypass: bool = False,
         knowledge_base_repository: KnowledgeBaseRepository | None = None,
         retrieval_profile_repository: RetrievalProfileRepository | None = None,
     ) -> RetrievalExecutionOutcome:
@@ -83,6 +91,8 @@ class LlamaIndexPilotRetrievalEngine:
             knowledge_base_id=knowledge_base_id,
             query_text=query_text,
             requested_top_k=requested_top_k,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
             knowledge_base_repository=knowledge_base_repository,
             retrieval_profile_repository=retrieval_profile_repository,
         )

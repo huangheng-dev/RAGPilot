@@ -18,7 +18,7 @@ from ragpilot_api.shared.settings import Settings
 from ragpilot_api.infrastructure.mcp.client import McpProtocolError, McpStreamableHttpClient
 from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import resolve_mcp_connector_environment_secret
 from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
-from ragpilot_api.infrastructure.observability import traced
+from ragpilot_api.infrastructure.observability import inject_trace_headers, traced
 
 
 class ToolRuntimeService:
@@ -51,9 +51,15 @@ class ToolRuntimeService:
         execution_input: str | None,
         actor: RequestActor,
         approved_tool_registration_ids: set[UUID] | None = None,
+        allowed_tool_registration_ids: list[str] | None = None,
     ) -> ToolRuntimeSummaryResponse:
         traces: list[ToolInvocationResponse] = []
-        for tool_registration_id in agent_definition.tool_registration_ids_json or []:
+        tool_registration_ids = (
+            allowed_tool_registration_ids
+            if allowed_tool_registration_ids is not None
+            else list(agent_definition.tool_registration_ids_json or [])
+        )
+        for tool_registration_id in tool_registration_ids:
             traces.append(
                 await self._execute_tool_registration(
                     tool_registration_id=UUID(tool_registration_id),
@@ -213,6 +219,9 @@ class ToolRuntimeService:
             requests_per_minute=int(getattr(self.settings, "mcp_runtime_requests_per_minute", 240)),
             max_attempts=int(getattr(self.settings, "mcp_runtime_max_attempts", 2)),
             retry_backoff_seconds=float(getattr(self.settings, "mcp_runtime_retry_backoff_seconds", 0.25)),
+            redis_url=getattr(self.settings, "redis_url", None),
+            redis_failure_mode=getattr(self.settings, "runtime_limit_redis_failure_mode", "local_fallback"),
+            concurrency_lease_seconds=float(getattr(self.settings, "runtime_limit_concurrency_lease_seconds", 300)),
         )
         try:
             initialization = await client.initialize()
@@ -494,7 +503,10 @@ class ToolRuntimeService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=request_timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=request_timeout_seconds,
+                headers=inject_trace_headers(),
+            ) as client:
                 for attempt_count in range(1, max_attempts + 1):
                     try:
                         response = await client.post(tool_registration.endpoint_url, json=request_payload)
@@ -695,3 +707,4 @@ def build_tool_runtime_summary(traces: list[ToolInvocationResponse]) -> ToolRunt
         skipped_tools=sum(1 for trace in traces if trace.invocation_status == "skipped"),
         traces=traces,
     )
+from ragpilot_api.infrastructure.observability import inject_trace_headers

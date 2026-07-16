@@ -4,7 +4,7 @@ metadata:
   name: ragpilot-agent-worker
   namespace: ragpilot
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ragpilot-agent-worker
@@ -13,10 +13,18 @@ spec:
       labels:
         app: ragpilot-agent-worker
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: agent-worker
           image: ghcr.io/your-org/ragpilot-api:0.1.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command: ["python", "-m", "ragpilot_api.workers.agent_execution_worker"]
           envFrom:
             - configMapRef:

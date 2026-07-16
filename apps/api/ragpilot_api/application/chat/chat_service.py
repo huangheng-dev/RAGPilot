@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
@@ -55,6 +56,12 @@ class CitationSourceContext:
     vector_score: float | None = None
     lexical_score: float | None = None
     lexical_normalized_score: float | None = None
+    source_location_type: str | None = None
+    source_location_label: str | None = None
+    source_page_number: int | None = None
+    source_sheet_name: str | None = None
+    source_table_number: int | None = None
+    source_is_ocr: bool = False
 
 
 class ChatService:
@@ -278,7 +285,13 @@ class ChatService:
             query_texts=query_texts,
         )
 
-    async def ask_question(self, request: ChatAskRequest) -> ChatAskResponse:
+    async def ask_question(
+        self,
+        request: ChatAskRequest,
+        *,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+        retrieval_acl_bypass: bool = False,
+    ) -> ChatAskResponse:
         active_agent_definition = await self._resolve_active_agent_definition(request)
         conversation = await self._resolve_conversation(request)
         user_message = await self.message_repository.create_message(
@@ -305,6 +318,9 @@ class ChatService:
                     "retrieval_result_count": 0,
                 },
             )
+            if on_delta is not None:
+                for offset in range(0, len(conversational_response), 24):
+                    await on_delta(conversational_response[offset:offset + 24])
             return ChatAskResponse(
                 conversation=build_conversation_response(conversation),
                 user_message=build_message_response(user_message, []),
@@ -318,6 +334,8 @@ class ChatService:
             knowledge_base_id=request.knowledge_base_id,
             query_text=request.question,
             requested_top_k=request.top_k,
+            principal_user_id=request.created_by_user_id,
+            acl_bypass=retrieval_acl_bypass,
             knowledge_base_repository=self.knowledge_base_repository,
             retrieval_profile_repository=self.retrieval_profile_repository,
         )
@@ -337,6 +355,7 @@ class ChatService:
             agent_objective=active_agent_definition.objective if active_agent_definition else None,
             agent_instructions=active_agent_definition.instructions if active_agent_definition else None,
             knowledge_base_scope=active_agent_definition.knowledge_base_scope if active_agent_definition else None,
+            on_delta=on_delta,
         )
         assistant_message = await self.message_repository.create_message(
             tenant_id=request.tenant_id,
@@ -358,6 +377,8 @@ class ChatService:
                 "retrieval_rerank_applied": retrieval_outcome.rerank_applied,
                 "retrieval_rerank_strategy": retrieval_outcome.rerank_strategy,
                 "retrieval_rerank_window": retrieval_outcome.rerank_window,
+                "retrieval_plan": retrieval_outcome.retrieval_plan_metadata,
+                "retrieval_evidence_validation": retrieval_outcome.evidence_validation_metadata,
                 "retrieval_method_breakdown": {
                     "hybrid": sum(1 for row in retrieved_chunks if row.get("retrieval_method") == "hybrid"),
                     "vector": sum(1 for row in retrieved_chunks if row.get("retrieval_method") == "vector"),
@@ -405,6 +426,10 @@ class ChatService:
                         "lexical_normalized_score": float(row["lexical_normalized_score"]) if row.get("lexical_normalized_score") is not None else None,
                         "rerank_score": float(row["rerank_score"]) if row.get("rerank_score") is not None else None,
                         "rerank_rank": int(row["rerank_rank"]) if row.get("rerank_rank") is not None else None,
+                        "source_locator": {
+                            key: value for key, value in dict(row.get("metadata_json") or {}).items()
+                            if key.startswith("source_")
+                        },
                     }
                     for row in retrieved_chunks
                 ],
@@ -505,6 +530,7 @@ def build_citation_context_by_chunk_id(retrieved_chunks: list[dict[str, Any]]) -
             vector_score=float(row["vector_score"]) if row.get("vector_score") is not None else None,
             lexical_score=float(row["lexical_score"]) if row.get("lexical_score") is not None else None,
             lexical_normalized_score=float(row["lexical_normalized_score"]) if row.get("lexical_normalized_score") is not None else None,
+            **build_citation_locator(dict(row.get("metadata_json") or {})),
         )
     return contexts
 
@@ -536,6 +562,7 @@ def build_citation_context_by_chunk_id_from_usage_json(usage_json: dict[str, Any
             vector_score=float(item["vector_score"]) if item.get("vector_score") is not None else None,
             lexical_score=float(item["lexical_score"]) if item.get("lexical_score") is not None else None,
             lexical_normalized_score=float(item["lexical_normalized_score"]) if item.get("lexical_normalized_score") is not None else None,
+            **build_citation_locator(item.get("source_locator") if isinstance(item.get("source_locator"), dict) else {}),
         )
 
     return contexts
@@ -556,6 +583,8 @@ def build_message_response(
         content=message.content,
         model_name=message.model_name,
         usage_json=message.usage_json,
+        prompt_version_id=getattr(message, "prompt_version_id", None),
+        prompt_snapshot_hash=getattr(message, "prompt_snapshot_hash", None),
         created_at=message.created_at,
         citations=[
             build_message_citation_response(
@@ -609,6 +638,12 @@ def build_message_citation_response(
                 vector_score=diagnostic_context.vector_score,
                 lexical_score=diagnostic_context.lexical_score,
                 lexical_normalized_score=diagnostic_context.lexical_normalized_score,
+                source_location_type=diagnostic_context.source_location_type,
+                source_location_label=diagnostic_context.source_location_label,
+                source_page_number=diagnostic_context.source_page_number,
+                source_sheet_name=diagnostic_context.source_sheet_name,
+                source_table_number=diagnostic_context.source_table_number,
+                source_is_ocr=diagnostic_context.source_is_ocr,
             )
 
     return MessageCitationResponse(
@@ -625,8 +660,25 @@ def build_message_citation_response(
         vector_score=citation_context.vector_score,
         lexical_score=citation_context.lexical_score,
         lexical_normalized_score=citation_context.lexical_normalized_score,
+        source_location_type=citation_context.source_location_type,
+        source_location_label=citation_context.source_location_label,
+        source_page_number=citation_context.source_page_number,
+        source_sheet_name=citation_context.source_sheet_name,
+        source_table_number=citation_context.source_table_number,
+        source_is_ocr=citation_context.source_is_ocr,
         quote=citation.quote,
     )
+
+
+def build_citation_locator(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_location_type": metadata.get("source_location_type"),
+        "source_location_label": metadata.get("source_location_label"),
+        "source_page_number": metadata.get("source_page_number"),
+        "source_sheet_name": metadata.get("source_sheet_name"),
+        "source_table_number": metadata.get("source_table_number"),
+        "source_is_ocr": bool(metadata.get("source_is_ocr", False)),
+    }
 
 
 def build_message_feedback_response(feedback_entry: MessageFeedbackRecord) -> MessageFeedbackResponse:

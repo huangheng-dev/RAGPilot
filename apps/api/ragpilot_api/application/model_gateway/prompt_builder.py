@@ -1,5 +1,20 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
+
+GROUNDED_CHAT_PROMPT_KEY = "grounded-chat"
+GROUNDED_CHAT_PROMPT_VERSION = "1.0.0"
+GROUNDED_CHAT_PROMPT_VERSION_ID = "10000000-0000-0000-0000-000000000001"
+GROUNDED_CHAT_SYSTEM_TEMPLATE = (
+    "You are RAGPilot. Answer only from the provided knowledge base context. "
+    "First decide whether the retrieved context is directly relevant to the user's question. "
+    "Never summarize or reuse context that does not answer the question. "
+    "If the context is irrelevant or insufficient, say that the current knowledge base does not contain enough relevant information. "
+    "When agent context is provided, follow its objective and instructions without inventing facts beyond the retrieved evidence."
+)
+
 
 def build_grounded_chat_messages(
     *,
@@ -13,9 +28,11 @@ def build_grounded_chat_messages(
 ) -> list[dict[str, str]]:
     context_blocks = []
     for index, result in enumerate(retrieval_results, start=1):
+        source_location = dict(result.get("metadata_json") or {}).get("source_location_label")
         context_blocks.append(
             f"[{index}] title={result['document_title']}\n"
             f"chunk_index={result['chunk_index']}\n"
+            f"source_location={source_location or 'not available'}\n"
             f"content={result['content']}"
         )
     context_text = "\n\n".join(context_blocks) if context_blocks else "No grounded context was retrieved."
@@ -38,13 +55,7 @@ def build_grounded_chat_messages(
     return [
         {
             "role": "system",
-            "content": (
-                "You are RAGPilot. Answer only from the provided knowledge base context. "
-                "First decide whether the retrieved context is directly relevant to the user's question. "
-                "Never summarize or reuse context that does not answer the question. "
-                "If the context is irrelevant or insufficient, say that the current knowledge base does not contain enough relevant information. "
-                "When agent context is provided, follow its objective and instructions without inventing facts beyond the retrieved evidence."
-            ),
+            "content": GROUNDED_CHAT_SYSTEM_TEMPLATE,
         },
         {
             "role": "user",
@@ -56,3 +67,14 @@ def build_grounded_chat_messages(
             ),
         },
     ]
+
+
+def build_grounded_chat_prompt_binding(messages: list[dict[str, str]]) -> dict[str, str]:
+    rendered = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return {
+        "prompt_key": GROUNDED_CHAT_PROMPT_KEY,
+        "prompt_version": GROUNDED_CHAT_PROMPT_VERSION,
+        "prompt_version_id": GROUNDED_CHAT_PROMPT_VERSION_ID,
+        "template_hash": hashlib.sha256(GROUNDED_CHAT_SYSTEM_TEMPLATE.encode("utf-8")).hexdigest(),
+        "rendered_snapshot_hash": hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
+    }

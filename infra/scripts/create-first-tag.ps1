@@ -39,6 +39,15 @@ if ([string]::IsNullOrWhiteSpace($currentBranch)) {
   throw "Git is not on a named branch. Check out the release branch before tagging."
 }
 
+$workingTreeChanges = @(& git status --porcelain=v1)
+if ($workingTreeChanges.Count -gt 0) {
+  throw "Release tags require a clean working tree. Commit or remove all tracked and untracked changes first."
+}
+
+if ($currentBranch -ne $Branch) {
+  throw "Release tag '$normalizedTag' must be created from branch '$Branch', not '$currentBranch'."
+}
+
 & git rev-parse --verify "refs/heads/$Branch" *> $null
 if ($LASTEXITCODE -ne 0) {
   throw "Branch '$Branch' does not exist locally."
@@ -51,19 +60,22 @@ if ($existingTags -contains $normalizedTag) {
 
 if ($DryRun) {
   Write-Host "Dry run: first tag validation passed." -ForegroundColor Yellow
-  if ($currentBranch -ne $Branch) {
-    Write-Host "Dry run: current branch is '$currentBranch' while release branch is '$Branch'." -ForegroundColor Yellow
-  }
   Write-Host "Dry run: would create and push tag '$normalizedTag' to '$RemoteName'." -ForegroundColor Yellow
   exit 0
 }
 
-if ($currentBranch -ne $Branch) {
-  Write-Host "Current branch is '$currentBranch'. RAGPilot expects release tag '$normalizedTag' to be issued from '$Branch'." -ForegroundColor Yellow
+$localHead = (& git rev-parse HEAD).Trim()
+$remoteBranchLine = @(& git ls-remote --heads $RemoteName "refs/heads/$Branch") | Select-Object -First 1
+if (-not $remoteBranchLine) {
+  throw "Remote branch '$RemoteName/$Branch' does not exist. Push the reviewed release commit before tagging."
+}
+$remoteHead = ($remoteBranchLine -split '\s+')[0]
+if ($remoteHead -ne $localHead) {
+  throw "Local HEAD '$localHead' does not match reviewed remote branch '$RemoteName/$Branch' at '$remoteHead'."
 }
 
 Write-Host "Creating tag '$normalizedTag'..." -ForegroundColor Cyan
-& git tag $normalizedTag
+& git tag -a $normalizedTag -m "RAGPilot $normalizedTag"
 if ($LASTEXITCODE -ne 0) {
   throw "Failed to create tag '$normalizedTag'."
 }

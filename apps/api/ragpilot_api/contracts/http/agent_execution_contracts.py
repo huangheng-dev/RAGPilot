@@ -36,6 +36,10 @@ class AgentExecutionCreateRequest(BaseModel):
     agent_definition_id: UUID
     execution_input: str | None = Field(default=None, max_length=4000)
     trigger_source: AgentExecutionTriggerSource = "agents_console"
+    max_tool_calls: int | None = Field(default=None, ge=0, le=20)
+    max_runtime_seconds: int | None = Field(default=None, ge=10, le=1800)
+    max_output_bytes: int | None = Field(default=None, ge=1024, le=256000)
+    output_schema_json: dict[str, Any] | None = None
 
 
 class AgentExecutionTaskStateResponse(BaseModel):
@@ -70,6 +74,8 @@ class AgentExecutionResponse(BaseModel):
     model_endpoint_id: UUID | None
     tool_registration_ids: list[UUID]
     execution_input: str | None
+    prompt_version_id: UUID | None = None
+    prompt_snapshot_hash: str | None = None
     summary: str | None
     result_payload_json: dict[str, Any]
     task_state: AgentExecutionTaskStateResponse | None = None
@@ -80,6 +86,10 @@ class AgentExecutionResponse(BaseModel):
     completed_at: datetime | None
     temporal_workflow_id: str | None = None
     retry_of_execution_id: UUID | None = None
+    replay_of_execution_id: UUID | None = None
+    replay_fingerprint: str | None = None
+    execution_policy_json: dict[str, Any] = Field(default_factory=dict)
+    output_schema_json: dict[str, Any] | None = None
     cancellation_requested_at: datetime | None = None
     cancelled_at: datetime | None = None
     created_at: datetime

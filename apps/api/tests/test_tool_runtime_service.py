@@ -158,7 +158,7 @@ async def test_tool_runtime_service_keeps_reviewing_mcp_boundary_as_reserved() -
 async def test_tool_runtime_service_executes_http_transport() -> None:
     tool_registration = build_tool_registration(
         transport_type="http",
-        endpoint_url="http://127.0.0.1:18000/tools/search",
+        endpoint_url="http://127.0.0.1:8000/tools/search",
         capabilities_json=["search"],
     )
 
@@ -219,7 +219,7 @@ async def test_tool_runtime_service_executes_http_transport() -> None:
 async def test_tool_runtime_service_marks_http_error_as_failed() -> None:
     tool_registration = build_tool_registration(
         transport_type="http",
-        endpoint_url="http://127.0.0.1:18000/tools/search",
+        endpoint_url="http://127.0.0.1:8000/tools/search",
         capabilities_json=["search"],
     )
 
@@ -275,7 +275,7 @@ async def test_tool_runtime_service_marks_http_error_as_failed() -> None:
 async def test_tool_runtime_service_retries_retryable_http_status_before_success() -> None:
     tool_registration = build_tool_registration(
         transport_type="http",
-        endpoint_url="http://127.0.0.1:18000/tools/search",
+        endpoint_url="http://127.0.0.1:8000/tools/search",
         capabilities_json=["search"],
     )
     responses = [

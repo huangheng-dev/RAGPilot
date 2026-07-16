@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\"",
-    "dev": "npm run clean && next dev -p 3001",
+    "dev": "npm run clean && next dev",
     "build": "next build",
-    "start": "next start -p 3001",
+    "start": "next start",
     "serve:stable": "npm run clean && npm run build && npm run start",
     "lint": "eslint . --max-warnings=0",
     "test:e2e": "playwright test"

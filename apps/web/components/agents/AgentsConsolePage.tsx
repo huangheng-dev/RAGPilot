@@ -74,6 +74,7 @@ import {
   type AgentExecutionMetricsResponse,
   type AgentExecutionResponse,
   type AgentExecutionStatus,
+  replayAgentExecution,
   retryAgentExecution,
 } from "@/lib/agent-executions";
 import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
@@ -505,6 +506,9 @@ function getAgentExecutionStatusClass(status: AgentExecutionStatus) {
   if (status === "running") {
     return "border-blue-200 bg-blue-50 text-blue-700";
   }
+  if (status === "awaiting_approval") {
+    return "border-violet-200 bg-violet-50 text-violet-700";
+  }
   if (status === "queued") {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
@@ -645,6 +649,7 @@ function readAllowedAgentExecutionStatusFilter(
   if (
     value === "queued" ||
     value === "running" ||
+    value === "awaiting_approval" ||
     value === "completed" ||
     value === "failed" ||
     value === "cancelled"
@@ -978,7 +983,12 @@ export default function AgentsConsolePage() {
     useState(false);
   const [isExecutingAgent, setIsExecutingAgent] = useState(false);
   const [retryingExecutionId, setRetryingExecutionId] = useState<string | null>(null);
+  const [replayingExecutionId, setReplayingExecutionId] = useState<string | null>(null);
   const [cancellingExecutionId, setCancellingExecutionId] = useState<string | null>(null);
+  const [executionMaxToolCalls, setExecutionMaxToolCalls] = useState("");
+  const [executionMaxRuntimeSeconds, setExecutionMaxRuntimeSeconds] = useState("");
+  const [executionMaxOutputBytes, setExecutionMaxOutputBytes] = useState("");
+  const [executionOutputSchema, setExecutionOutputSchema] = useState("");
   const [launchingSurface, setLaunchingSurface] =
     useState<AgentRunTargetSurface | null>(null);
   const [isDeleteAgentDialogOpen, setIsDeleteAgentDialogOpen] = useState(false);
@@ -2618,11 +2628,30 @@ export default function AgentsConsolePage() {
     try {
       const executionInput =
         launchPrompts[0]?.trim() || selectedAgent.objective.trim() || null;
+      const parseOptionalInteger = (value: string) =>
+        value.trim() ? Number.parseInt(value.trim(), 10) : undefined;
+      let outputSchema: Record<string, unknown> | undefined;
+      if (executionOutputSchema.trim()) {
+        let parsedSchema: unknown;
+        try {
+          parsedSchema = JSON.parse(executionOutputSchema);
+        } catch {
+          throw new Error(t("agents.executions.policy.invalidSchema"));
+        }
+        if (!parsedSchema || typeof parsedSchema !== "object" || Array.isArray(parsedSchema)) {
+          throw new Error(t("agents.executions.policy.invalidSchema"));
+        }
+        outputSchema = parsedSchema as Record<string, unknown>;
+      }
       const execution = await createAgentExecution({
         tenant_id: selectedAgent.tenantId,
         agent_definition_id: selectedAgent.id,
         execution_input: executionInput,
         trigger_source: "agents_console",
+        max_tool_calls: parseOptionalInteger(executionMaxToolCalls),
+        max_runtime_seconds: parseOptionalInteger(executionMaxRuntimeSeconds),
+        max_output_bytes: parseOptionalInteger(executionMaxOutputBytes),
+        output_schema_json: outputSchema,
       });
       await refreshAgentExecutionsForCurrentScope();
       setAgentSection("executions");
@@ -2666,6 +2695,31 @@ export default function AgentsConsolePage() {
       setErrorMessage(error instanceof Error ? error.message : t("agents.status.executionFailed"));
     } finally {
       setRetryingExecutionId(null);
+    }
+  }
+
+  async function handleReplayAgentExecution(execution: AgentExecutionResponse) {
+    if (
+      !hasAgentExecutionAccess ||
+      !["completed", "failed", "cancelled"].includes(execution.execution_status)
+    ) {
+      return;
+    }
+
+    setReplayingExecutionId(execution.id);
+    setErrorMessage(null);
+    try {
+      await replayAgentExecution(execution);
+      await refreshAgentExecutionsForCurrentScope();
+      setStatusMessage(t("agents.executions.replayQueued"));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : t("agents.executions.replayFailed"),
+      );
+    } finally {
+      setReplayingExecutionId(null);
     }
   }
 
@@ -3074,6 +3128,8 @@ export default function AgentsConsolePage() {
             t("agents.executions.latestPacket.failedDetail")
           : latestAgentExecution.execution_status === "running"
             ? t("agents.executions.latestPacket.runningDetail")
+            : latestAgentExecution.execution_status === "awaiting_approval"
+              ? t("agents.executions.latestPacket.awaitingApprovalDetail")
             : latestAgentExecution.execution_status === "cancelled"
               ? t("agents.executions.latestPacket.cancelledDetail")
               : t("agents.executions.latestPacket.queuedDetail");
@@ -4256,6 +4312,72 @@ export default function AgentsConsolePage() {
                 title={t("agents.executions.title")}
               />
               <div className="grid gap-4 p-6">
+                <details className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-5">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-950">
+                    {t("agents.executions.policy.title")}
+                  </summary>
+                  <div className="mt-2 text-sm leading-6 text-slate-500">
+                    {t("agents.executions.policy.description")}
+                  </div>
+                  <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                    <DialogFormField label={t("agents.executions.policy.maxToolCalls")}>
+                      <Input
+                        max={20}
+                        min={0}
+                        onChange={(event) => setExecutionMaxToolCalls(event.target.value)}
+                        placeholder={t("agents.executions.policy.deploymentDefault")}
+                        type="number"
+                        value={executionMaxToolCalls}
+                      />
+                    </DialogFormField>
+                    <DialogFormField label={t("agents.executions.policy.maxRuntimeSeconds")}>
+                      <Input
+                        max={1800}
+                        min={10}
+                        onChange={(event) => setExecutionMaxRuntimeSeconds(event.target.value)}
+                        placeholder={t("agents.executions.policy.deploymentDefault")}
+                        type="number"
+                        value={executionMaxRuntimeSeconds}
+                      />
+                    </DialogFormField>
+                    <DialogFormField label={t("agents.executions.policy.maxOutputBytes")}>
+                      <Input
+                        max={256000}
+                        min={1024}
+                        onChange={(event) => setExecutionMaxOutputBytes(event.target.value)}
+                        placeholder={t("agents.executions.policy.deploymentDefault")}
+                        type="number"
+                        value={executionMaxOutputBytes}
+                      />
+                    </DialogFormField>
+                  </div>
+                  <div className="mt-4">
+                    <DialogFormField label={t("agents.executions.policy.outputSchema")}>
+                      <Textarea
+                        className="min-h-28 bg-white font-mono text-xs"
+                        onChange={(event) => setExecutionOutputSchema(event.target.value)}
+                        placeholder={t("agents.executions.policy.outputSchemaPlaceholder")}
+                        value={executionOutputSchema}
+                      />
+                    </DialogFormField>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-xs leading-5 text-slate-500">
+                      {t("agents.executions.policy.sandboxBoundary")}
+                    </div>
+                    <Button
+                      disabled={!canOperateSelectedAgentRuntime || isExecutingAgent}
+                      onClick={() => void handleExecuteAgent()}
+                      type="button"
+                    >
+                      <BrainCircuit className="h-4 w-4" />
+                      {isExecutingAgent
+                        ? t("agents.actions.executing")
+                        : t("agents.actions.execute")}
+                    </Button>
+                  </div>
+                </details>
+
                 <ConsoleRuntimeTaskPacket
                   detail={latestExecutionTaskPacket.detail}
                   objective={latestExecutionTaskPacket.objective}
@@ -4277,7 +4399,7 @@ export default function AgentsConsolePage() {
                   title={latestExecutionTaskPacket.title}
                 />
 
-                <div className="grid gap-4 xl:grid-cols-5">
+                <div className="grid gap-4 xl:grid-cols-6">
                   <div className="rounded-[20px] border border-slate-100 bg-slate-50/80 p-5">
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                       {t("agents.executions.metrics.total")}
@@ -4308,6 +4430,14 @@ export default function AgentsConsolePage() {
                     </div>
                     <div className="mt-3 text-[28px] font-semibold tracking-tight text-slate-950">
                       {agentExecutionMetrics?.completed_executions ?? 0}
+                    </div>
+                  </div>
+                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/80 p-5">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {t("agents.executions.metrics.awaitingApproval")}
+                    </div>
+                    <div className="mt-3 text-[28px] font-semibold tracking-tight text-slate-950">
+                      {agentExecutionMetrics?.awaiting_approval_executions ?? 0}
                     </div>
                   </div>
                   <div className="rounded-[20px] border border-slate-100 bg-slate-50/80 p-5">
@@ -4360,6 +4490,9 @@ export default function AgentsConsolePage() {
                           </SelectItem>
                           <SelectItem value="running">
                             {t("agents.executions.statuses.running")}
+                          </SelectItem>
+                          <SelectItem value="awaiting_approval">
+                            {t("agents.executions.statuses.awaiting_approval")}
                           </SelectItem>
                           <SelectItem value="completed">
                             {t("agents.executions.statuses.completed")}
@@ -4445,6 +4578,24 @@ export default function AgentsConsolePage() {
                             executionInput: evidenceSummary?.executionInput,
                             recommendedActions: recommendedActionSpecs,
                           });
+                        const executionPolicy = agentExecution.execution_policy_json ?? {};
+                        const maxToolCalls =
+                          typeof executionPolicy.max_tool_calls === "number"
+                            ? executionPolicy.max_tool_calls
+                            : null;
+                        const maxRuntimeSeconds =
+                          typeof executionPolicy.max_runtime_seconds === "number"
+                            ? executionPolicy.max_runtime_seconds
+                            : null;
+                        const maxOutputBytes =
+                          typeof executionPolicy.max_output_bytes === "number"
+                            ? executionPolicy.max_output_bytes
+                            : null;
+                        const isTerminalExecution = [
+                          "completed",
+                          "failed",
+                          "cancelled",
+                        ].includes(agentExecution.execution_status);
 
                         return (
                           <div
@@ -4490,7 +4641,21 @@ export default function AgentsConsolePage() {
                                     : t("agents.executions.retry")}
                                 </Button>
                               ) : null}
-                              {(agentExecution.execution_status === "queued" || agentExecution.execution_status === "running") && hasAgentExecutionAccess ? (
+                              {isTerminalExecution && hasAgentExecutionAccess ? (
+                                <Button
+                                  disabled={replayingExecutionId !== null}
+                                  onClick={() => void handleReplayAgentExecution(agentExecution)}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <RefreshCw className={cn("h-4 w-4", replayingExecutionId === agentExecution.id && "animate-spin")} />
+                                  {replayingExecutionId === agentExecution.id
+                                    ? t("agents.executions.replaying")
+                                    : t("agents.executions.replay")}
+                                </Button>
+                              ) : null}
+                              {(agentExecution.execution_status === "queued" || agentExecution.execution_status === "running" || agentExecution.execution_status === "awaiting_approval") && hasAgentExecutionAccess ? (
                                 <Button disabled={cancellingExecutionId !== null} onClick={() => void handleCancelAgentExecution(agentExecution)} size="sm" type="button" variant="outline">
                                   {cancellingExecutionId === agentExecution.id ? t("agents.executions.cancelling") : t("agents.executions.cancel")}
                                 </Button>
@@ -4508,6 +4673,33 @@ export default function AgentsConsolePage() {
                                   t,
                                 )}
                               </ConsoleOutlineBadge>
+                              {maxToolCalls !== null ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.toolBudget", { value: String(maxToolCalls) })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {maxRuntimeSeconds !== null ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.runtimeBudget", { value: String(maxRuntimeSeconds) })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {maxOutputBytes !== null ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.outputBudget", { value: String(maxOutputBytes) })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {agentExecution.output_schema_json ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.schemaBound")}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {agentExecution.replay_of_execution_id ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.replayOf", {
+                                    value: agentExecution.replay_of_execution_id.slice(0, 8),
+                                  })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
                               {retrievalSummary?.retrievalEngine ? (
                                 <ConsoleOutlineBadge>
                                   {t("home.retrievalInspector.engineLabel", {

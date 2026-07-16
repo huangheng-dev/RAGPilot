@@ -1,18 +1,18 @@
 $ErrorActionPreference = "Stop"
 
-$env:TEMPORAL_ADDRESS = "localhost:7234"
+$env:TEMPORAL_ADDRESS = "localhost:7233"
 $env:TEMPORAL_NAMESPACE = "default"
 $env:TEMPORAL_TASK_QUEUE = "ragpilot-ingestion"
 $env:TEMPORAL_CONNECT_MAX_ATTEMPTS = "30"
 $env:TEMPORAL_CONNECT_RETRY_SECONDS = "5"
 
 $env:POSTGRES_HOST = "localhost"
-$env:POSTGRES_PORT = "5433"
+$env:POSTGRES_PORT = "5432"
 $env:POSTGRES_DB = "ragpilot"
 $env:POSTGRES_USER = "ragpilot"
 $env:POSTGRES_PASSWORD = "ragpilot"
 
-$env:MINIO_ENDPOINT = "http://localhost:9002"
+$env:MINIO_ENDPOINT = "http://localhost:9000"
 $env:MINIO_ROOT_USER = "ragpilot"
 $env:MINIO_ROOT_PASSWORD = "ragpilot123"
 $env:MINIO_BUCKET = "ragpilot-documents"
