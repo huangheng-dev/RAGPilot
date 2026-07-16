@@ -38,6 +38,7 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - exact uv resolutions and exported container dependency locks with automated drift enforcement
 - pull-request release-profile image builds and multi-architecture GHCR publication with SBOMs, provenance attestations, and keyless Cosign signatures
 - versioned staging capacity gates for liveness, database readiness, and authenticated retrieval without recording request or response secrets
+- a protected, manually dispatched staging-capacity workflow with environment-scoped inputs and sanitized evidence retention
 
 ### Changed
 
@@ -57,6 +58,9 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - Chinese documentation navigation uses translated labels while clearly identifying English technical and governance bodies as the current canonical source
 - production ingestion and retrieval embedding identities are aligned, full framework image capabilities stay consistent across API and Agent Worker, and health dependency probes are bounded independently from retrieval timeouts
 - container base images are digest-pinned and Kubernetes workloads use bounded rollout history, topology spreading, disabled automatic service-account credentials, and stricter probe/termination behavior
+- direct PostCSS build tooling is updated to the patched line; the separate version bundled exactly by Next.js remains governed as a temporary upstream risk instead of being hidden by an unsupported lockfile override or destructive framework downgrade
+- Platform API Key usage telemetry is write-throttled per process to prevent concurrent requests from serializing on a shared audit row
+- the staging capacity corpus now validates every configured path against the actual FastAPI router, correcting the authenticated retrieval path before environment promotion
 
 ### Security
 

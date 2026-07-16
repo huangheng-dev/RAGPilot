@@ -176,7 +176,7 @@ RAGPilot 提供面向生产交付的基线：
 - 包含数据库迁移 Job、探针、资源、Ingress、滚动更新/中断/拓扑控制、受限运行身份和外部 Secret 集成的 Kubernetes 清单
 - [`.env.production.example`](./.env.production.example) 生产环境模板
 - OpenTelemetry、Prometheus、Tempo、Grafana、仪表盘和告警配置
-- 版本化容量契约，以及 [`infra/scripts`](./infra/scripts) 下的发布、备份恢复、可靠性和推送辅助脚本
+- 版本化容量契约及受保护的 staging 执行工作流，以及 [`infra/scripts`](./infra/scripts) 下的发布、备份恢复、可靠性和推送辅助脚本
 
 部署方仍需选择并闭环身份模式，提供真实镜像与 Secret，配置可信来源和托管依赖，验证迁移和模型连通性，并在目标环境完成备份恢复、容量、遥测保留、事件响应和灾难恢复演练。
 

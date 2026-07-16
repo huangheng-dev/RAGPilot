@@ -176,7 +176,7 @@ RAGPilot includes a production-oriented delivery baseline:
 - Kubernetes manifests with a database migration Job, probes, resources, ingress, rolling-update/disruption/topology controls, restricted runtime identities, and external Secret integration
 - a production environment template in [`.env.production.example`](./.env.production.example)
 - OpenTelemetry, Prometheus, Tempo, Grafana, dashboard, and alert configuration
-- versioned capacity contracts plus release, backup/restore, reliability, and publishing helpers under [`infra/scripts`](./infra/scripts)
+- versioned capacity contracts with a protected staging workflow, plus release, backup/restore, reliability, and publishing helpers under [`infra/scripts`](./infra/scripts)
 
 Deployment operators remain responsible for selecting and closing the identity mode, supplying real images and Secrets, configuring trusted origins and managed dependencies, validating migrations and model reachability, and exercising backup/restore, capacity, telemetry retention, incident response, and disaster recovery in the target environment.
 

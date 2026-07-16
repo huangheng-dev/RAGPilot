@@ -77,6 +77,8 @@ Bootstrap creates only the first local administrator. Later Users enter through 
 - `GET /api-keys`
 - `POST /api-keys/{api_key_id}/revoke`
 
+Platform API Key authentication verifies the stored hash on every request. Persisted `last_used_at` telemetry is coalesced to at most one write per key per API process every 60 seconds, preventing a shared automation key from serializing concurrent reads on one audit row.
+
 The secret is displayed once; only its hash and non-sensitive prefix are stored. Keys bind tenant, role, scopes, expiry, revocation, last-use state, and lifecycle audit events.
 
 ## Workspace and Knowledge

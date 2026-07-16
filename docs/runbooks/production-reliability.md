@@ -39,6 +39,8 @@ uv run --project apps/api --locked python -m ragpilot_api.commands.staging_capac
 
 Promotion passes only when all three scenarios complete within the versioned error, throughput and p95 thresholds. Reports contain aggregate timings, status counts and transport-error classes; they exclude headers, credentials, request bodies and response bodies. Archive the report with the release evidence. Recalibrate thresholds from measured environment SLOs rather than weakening them to make a failing release pass.
 
+The same contract is available as the manually dispatched `Staging Capacity` GitHub Actions workflow. Protect a GitHub environment named `staging`, require the appropriate reviewers, configure `RAGPILOT_CAPACITY_BASE_URL`, `RAGPILOT_CAPACITY_TENANT_ID`, and `RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID` as environment variables, and configure `RAGPILOT_CAPACITY_API_KEY` as an environment secret. The workflow archives only the sanitized aggregate report for 30 days. A missing input or failed scenario blocks the job.
+
 ## Worker retries
 
 Inspect Temporal retry history and classify transient dependency errors separately from deterministic parser failures. Do not retry non-idempotent MCP tool calls automatically.
@@ -69,6 +71,8 @@ These results qualify the maintained local stack and automation. They are not a 
 - restore: every manifest hash verified; the isolated database restored with 46 public tables at Alembic `202607160001`; the isolated MinIO volume restored 31 files from the final qualification backup; all temporary resources were removed
 - reliability: 20 concurrent health requests succeeded; Elasticsearch degradation and recovery were visible in the API health contract; Redis interruption and recovery were confirmed by PING
 - framework qualification: the versioned 10-case database corpus passed for Native and LlamaIndex with no recall regression; the versioned 7-case agent corpus passed all LangGraph branch, validation, trace and fallback gates
-- control-plane capacity: local liveness completed 200 requests at concurrency 20 with zero errors and p95 122.8 ms; database readiness completed 100 requests at concurrency 20 with zero errors and p95 436.1 ms
+- control-plane capacity: local liveness completed 200 requests at concurrency 20 with zero errors and p95 109.2 ms; database readiness completed 100 requests at concurrency 20 with zero errors and p95 400.1 ms
+- authenticated retrieval capacity: an ephemeral, `access_chat`-only Platform API Key completed 50 requests at concurrency 10 with zero errors, 40.02 requests/second, and p95 381.0 ms; the key was revoked immediately after the run
+- container delivery: the digest-pinned full-capability API, OCR Worker, and production Web Dockerfiles all completed local `linux/amd64` builds from committed dependency locks; multi-architecture publication, registry attestation, and signature verification remain release-workflow evidence
 
-The authenticated retrieval capacity scenario was not executed locally because it requires environment-owned staging identity and seeded knowledge. Therefore the local evidence above does not qualify a staging promotion. Record the full capacity report, Kubernetes render results, image signature verification, external secret delivery, production identity checks, live OCR language availability, off-cluster backup replication and alert delivery separately for each deployed environment.
+This local evidence qualifies the maintained single-instance Compose path, not a staging promotion. The protected staging workflow must still run against the actual release, environment-owned identity, seeded knowledge, managed dependencies, and target replica count. Record the staging capacity report, Kubernetes render results, image signature verification, external secret delivery, production identity checks, live OCR language availability, off-cluster backup replication and alert delivery separately for each deployed environment.

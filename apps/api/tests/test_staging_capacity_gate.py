@@ -1,7 +1,22 @@
+import json
+from pathlib import Path
+
 import httpx
 import pytest
+from fastapi import FastAPI
 
 from ragpilot_api.commands.staging_capacity_gate import evaluate_capacity
+from ragpilot_api.presentation.http.v1.api_router import api_router
+
+
+def test_versioned_capacity_contract_targets_real_api_routes() -> None:
+    dataset_path = Path(__file__).parents[3] / "packages" / "evals" / "staging" / "capacity-contract-v1.json"
+    dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
+    contract_app = FastAPI()
+    contract_app.include_router(api_router, prefix="/api/v1")
+    application_paths = set(contract_app.openapi()["paths"])
+
+    assert {scenario["path"] for scenario in dataset["scenarios"]} <= application_paths
 
 
 @pytest.mark.anyio

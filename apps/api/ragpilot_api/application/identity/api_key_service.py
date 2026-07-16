@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -11,6 +13,11 @@ from ragpilot_api.application.identity.access_policy import get_role_capabilitie
 from ragpilot_api.contracts.http.api_key_contracts import ApiKeyCreateRequest, ApiKeyCreatedResponse, ApiKeyResponse
 from ragpilot_api.infrastructure.database.models import ApiKey
 from ragpilot_api.infrastructure.database.repositories.api_key_repository import ApiKeyRepository
+
+
+API_KEY_USAGE_TOUCH_INTERVAL_SECONDS = 60.0
+API_KEY_USAGE_CACHE_MAX_ENTRIES = 4096
+_api_key_usage_touches: OrderedDict[UUID, float] = OrderedDict()
 
 
 class ApiKeyService:
@@ -46,7 +53,12 @@ class ApiKeyService:
         digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
         if not hmac.compare_digest(item.key_hash, digest):
             return None
-        await self.repository.mark_used(item=item)
+        if _reserve_usage_touch(item.id):
+            try:
+                await self.repository.mark_used(item=item)
+            except Exception:
+                _api_key_usage_touches.pop(item.id, None)
+                raise
         return item
 
     async def list(self, *, tenant_id: UUID) -> list[ApiKeyResponse]:
@@ -64,6 +76,18 @@ def extract_api_key_prefix(secret: str) -> str | None:
     if len(parts) != 3 or parts[0] != "rpk" or len(parts[1]) != 12:
         return None
     return parts[1]
+
+
+def _reserve_usage_touch(api_key_id: UUID, *, now: float | None = None) -> bool:
+    observed_at = time.monotonic() if now is None else now
+    previous = _api_key_usage_touches.get(api_key_id)
+    if previous is not None and observed_at - previous < API_KEY_USAGE_TOUCH_INTERVAL_SECONDS:
+        return False
+    _api_key_usage_touches[api_key_id] = observed_at
+    _api_key_usage_touches.move_to_end(api_key_id)
+    while len(_api_key_usage_touches) > API_KEY_USAGE_CACHE_MAX_ENTRIES:
+        _api_key_usage_touches.popitem(last=False)
+    return True
 
 
 def build_api_key_response(item: ApiKey) -> ApiKeyResponse:

@@ -37,7 +37,7 @@
     {
       "scenario_id": "authenticated-retrieval-001",
       "method": "POST",
-      "path": "/api/v1/retrieval",
+      "path": "/api/v1/retrieve",
       "requests": 50,
       "concurrency": 10,
       "warmup_runs": 3,

@@ -22,6 +22,7 @@ $requiredPaths = @(
   @{ Path = "infra/docker/api.Dockerfile"; Description = "api container image" },
   @{ Path = "infra/docker/worker.Dockerfile"; Description = "worker container image" },
   @{ Path = ".github/workflows/release-images.yml"; Description = "signed image release workflow" },
+  @{ Path = ".github/workflows/staging-capacity.yml"; Description = "protected staging capacity workflow" },
   @{ Path = "infra/scripts/dependency-lock-audit.ps1"; Description = "dependency lock audit" },
   @{ Path = "apps/api/uv.lock"; Description = "API dependency resolution" },
   @{ Path = "apps/api/requirements-core.lock"; Description = "API core container dependency lock" },
@@ -53,6 +54,7 @@ foreach ($requiredPath in $requiredPaths) {
 $requiredTrackedPaths = @(
   ".env.production.example",
   ".github/workflows/release-images.yml",
+  ".github/workflows/staging-capacity.yml",
   "infra/scripts/dependency-lock-audit.ps1",
   "apps/api/uv.lock",
   "apps/api/requirements-core.lock",
@@ -168,6 +170,19 @@ $requiredReleaseImageContracts = @(
 foreach ($contract in $requiredReleaseImageContracts) {
   if ($releaseImageWorkflow -notmatch $contract.Pattern) {
     throw "Image release workflow is missing $($contract.Description)."
+  }
+}
+
+$stagingCapacityWorkflow = Get-Content ".github/workflows/staging-capacity.yml" -Raw
+$requiredStagingContracts = @(
+  @{ Pattern = 'environment:\s*\r?\n\s+name:\s*staging'; Description = "protected staging environment" },
+  @{ Pattern = 'secrets\.RAGPILOT_CAPACITY_API_KEY'; Description = "environment-scoped API key" },
+  @{ Pattern = 'staging_capacity_gate'; Description = "versioned capacity command" },
+  @{ Pattern = 'upload-artifact@'; Description = "sanitized evidence archival" }
+)
+foreach ($contract in $requiredStagingContracts) {
+  if ($stagingCapacityWorkflow -notmatch $contract.Pattern) {
+    throw "Staging capacity workflow is missing $($contract.Description)."
   }
 }
 

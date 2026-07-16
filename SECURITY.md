@@ -40,3 +40,9 @@ Higher-sensitivity areas include:
 Allow maintainers reasonable time to reproduce, assess, fix, and release a remediation before public disclosure. Do not publish exploit details, proof-of-concept Secrets, live credentials, private data, or unredacted logs while a report is being coordinated.
 
 This policy describes the reporting process and supported source baseline; it does not promise a fixed response or remediation time.
+
+## Dependency Advisory Decisions
+
+Dependency findings are evaluated against the installed tree and RAGPilot's reachable runtime behavior. High and critical production findings remain release blockers. A lower-severity finding may be accepted temporarily only when the repository records the exact advisory, affected path, exposure analysis, compensating controls, owner, review date, and expiry date.
+
+RAGPilot does not apply an automated “fix” that downgrades a framework across major versions or manually rewrites a lockfile. The current Next.js release pins an internal PostCSS version affected by `GHSA-qx2v-qp2m-jg93`, while the latest Next.js release available during review pins the same version. RAGPilot does not accept user-authored CSS or invoke PostCSS in an HTTP request path; trusted source is processed during the image build. The direct PostCSS toolchain is patched. This moderate upstream finding is accepted temporarily through 2026-10-16, owned by repository security maintainers, and must be reviewed by 2026-08-16 or immediately when Next.js publishes a compatible patched dependency.
