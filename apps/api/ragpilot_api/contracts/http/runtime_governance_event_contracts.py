@@ -45,10 +45,12 @@ RuntimeGovernanceAgentIssue = Literal[
     "model_disabled",
     "model_runtime_unconfigured",
     "retrieval_profile_disabled",
+    "retrieval_engine_unavailable",
     "tool_registration_disabled",
     "tool_approval_required",
     "tool_mcp_reserved",
     "tool_mcp_integration_pending",
+    "runtime_engine_unavailable",
 ]
 
 

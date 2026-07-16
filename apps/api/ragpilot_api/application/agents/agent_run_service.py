@@ -108,6 +108,8 @@ def build_agent_run_response(agent_run: AgentRun) -> AgentRunResponse:
         run_status=agent_run.run_status,
         trigger_source=agent_run.trigger_source,
         launch_prompt=agent_run.launch_prompt,
+        prompt_version_id=getattr(agent_run, "prompt_version_id", None),
+        prompt_snapshot_hash=getattr(agent_run, "prompt_snapshot_hash", None),
         navigation_href=agent_run.navigation_href,
         launched_by_user_id=agent_run.launched_by_user_id,
         completed_at=agent_run.completed_at,

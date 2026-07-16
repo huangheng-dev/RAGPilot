@@ -1,0 +1,21 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {"type":"timeseries","title":"API request rate","id":1,"gridPos":{"h":8,"w":12,"x":0,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(ragpilot_http_server_requests_total[5m]))","legendFormat":"requests/s","refId":"A"}]},
+    {"type":"timeseries","title":"API 5xx rate","id":2,"gridPos":{"h":8,"w":12,"x":12,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(ragpilot_http_server_requests_total{http_response_status_code=~\"5..\"}[5m]))","legendFormat":"5xx/s","refId":"A"}]},
+    {"type":"timeseries","title":"Operation p95 latency","id":3,"gridPos":{"h":8,"w":12,"x":0,"y":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"histogram_quantile(0.95, sum by (le, ragpilot_operation) (rate(ragpilot_operation_duration_milliseconds_bucket[5m])))","legendFormat":"{{ragpilot_operation}}","refId":"A"}]},
+    {"type":"timeseries","title":"Projection queue and failures","id":4,"gridPos":{"h":8,"w":12,"x":12,"y":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"max(ragpilot_projection_queue_depth_events_sum / clamp_min(ragpilot_projection_queue_depth_events_count, 1))","legendFormat":"queue","refId":"A"},{"expr":"max(ragpilot_projection_failed_events_sum / clamp_min(ragpilot_projection_failed_events_count, 1))","legendFormat":"failed","refId":"B"}]},
+    {"type":"timeseries","title":"Projection lag","id":5,"gridPos":{"h":8,"w":12,"x":0,"y":16},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"max(ragpilot_projection_lag_seconds_sum / clamp_min(ragpilot_projection_lag_seconds_count, 1))","legendFormat":"seconds","refId":"A"}]},
+    {"type":"timeseries","title":"Worker errors and retries","id":6,"gridPos":{"h":8,"w":12,"x":12,"y":16},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(ragpilot_worker_activity_errors_total[5m]))","legendFormat":"errors/s","refId":"A"},{"expr":"sum(rate(ragpilot_worker_activity_retries_total[5m]))","legendFormat":"retries/s","refId":"B"}]}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["ragpilot", "operations"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "RagPilot Runtime Operations",
+  "uid": "ragpilot-runtime",
+  "version": 1
+}

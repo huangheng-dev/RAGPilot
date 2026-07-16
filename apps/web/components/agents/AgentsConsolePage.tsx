@@ -74,6 +74,7 @@ import {
   type AgentExecutionMetricsResponse,
   type AgentExecutionResponse,
   type AgentExecutionStatus,
+  replayAgentExecution,
   retryAgentExecution,
 } from "@/lib/agent-executions";
 import { buildAgentExecutionFollowUpActions } from "@/lib/agent-execution-follow-up";
@@ -142,6 +143,7 @@ import { buildWorkspaceHref } from "@/lib/workspace-navigation";
 type AgentMode = "grounded_chat" | "document_intake" | "workflow_recovery";
 type AgentStatus = "draft" | "active" | "paused";
 type ModelStrategy = "local_reserved" | "remote_reserved" | "hybrid_reserved";
+type AgentRuntimeEngine = "native" | "langgraph_pilot";
 type AgentTool = "chat" | "documents" | "operations" | "admin";
 type AgentStatusFilter = "all" | AgentStatus;
 type AgentModeFilter = "all" | AgentMode;
@@ -159,13 +161,15 @@ type AgentReadinessIssue =
   | "model_runtime_unconfigured"
   | "retrieval_profile_missing"
   | "retrieval_profile_disabled"
+  | "retrieval_engine_unavailable"
   | "scope_missing"
   | "scope_invalid"
   | "tools_missing"
   | "tool_registration_disabled"
   | "tool_approval_required"
   | "tool_mcp_reserved"
-  | "tool_mcp_integration_pending";
+  | "tool_mcp_integration_pending"
+  | "runtime_engine_unavailable";
 type ResolvedAgentModelEndpoint = {
   id: string;
   name: string;
@@ -187,6 +191,8 @@ type ResolvedAgentRetrievalProfile = {
   name: string;
   slug: string;
   retrieval_mode: string;
+  engine_name?: "native" | "llamaindex_pilot";
+  engine_version?: string;
   is_enabled: boolean;
   is_default: boolean;
   source?: "knowledge_base" | "platform_default";
@@ -235,6 +241,8 @@ type AgentDraft = {
   mode: AgentMode;
   status: AgentStatus;
   modelStrategy: ModelStrategy;
+  runtimeEngine: AgentRuntimeEngine;
+  runtimeVersion: string;
   modelEndpointId: string;
   objective: string;
   instructions: string;
@@ -252,6 +260,8 @@ type AgentDefinitionResponse = {
   mode: AgentMode;
   status: AgentStatus;
   model_strategy: ModelStrategy;
+  runtime_engine: AgentRuntimeEngine;
+  runtime_version: string;
   model_endpoint_id: string | null;
   objective: string;
   instructions: string;
@@ -411,6 +421,8 @@ async function createAgentDefinition(agent: AgentDraft) {
       mode: agent.mode,
       status: agent.status,
       model_strategy: agent.modelStrategy,
+      runtime_engine: agent.runtimeEngine,
+      runtime_version: agent.runtimeVersion,
       model_endpoint_id: agent.modelEndpointId || null,
       objective: agent.objective,
       instructions: agent.instructions,
@@ -432,6 +444,8 @@ async function updateAgentDefinition(agent: AgentDraft) {
         mode: agent.mode,
         status: agent.status,
         model_strategy: agent.modelStrategy,
+        runtime_engine: agent.runtimeEngine,
+        runtime_version: agent.runtimeVersion,
         model_endpoint_id: agent.modelEndpointId || null,
         objective: agent.objective,
         instructions: agent.instructions,
@@ -460,6 +474,8 @@ function mapAgentDefinitionToDraft(
     mode: agentDefinition.mode,
     status: agentDefinition.status,
     modelStrategy: agentDefinition.model_strategy,
+    runtimeEngine: agentDefinition.runtime_engine ?? "native",
+    runtimeVersion: agentDefinition.runtime_version ?? "native_v1",
     modelEndpointId: agentDefinition.model_endpoint_id ?? "",
     objective: agentDefinition.objective,
     instructions: agentDefinition.instructions,
@@ -504,6 +520,9 @@ function getAgentExecutionStatusClass(status: AgentExecutionStatus) {
   }
   if (status === "running") {
     return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+  if (status === "awaiting_approval") {
+    return "border-violet-200 bg-violet-50 text-violet-700";
   }
   if (status === "queued") {
     return "border-amber-200 bg-amber-50 text-amber-700";
@@ -579,13 +598,15 @@ function readAllowedAgentReadinessIssueFilter(
     value === "model_runtime_unconfigured" ||
     value === "retrieval_profile_missing" ||
     value === "retrieval_profile_disabled" ||
+    value === "retrieval_engine_unavailable" ||
     value === "scope_missing" ||
     value === "scope_invalid" ||
     value === "tools_missing" ||
     value === "tool_registration_disabled" ||
     value === "tool_approval_required" ||
     value === "tool_mcp_reserved" ||
-    value === "tool_mcp_integration_pending"
+    value === "tool_mcp_integration_pending" ||
+    value === "runtime_engine_unavailable"
   ) {
     return value;
   }
@@ -645,6 +666,7 @@ function readAllowedAgentExecutionStatusFilter(
   if (
     value === "queued" ||
     value === "running" ||
+    value === "awaiting_approval" ||
     value === "completed" ||
     value === "failed" ||
     value === "cancelled"
@@ -978,7 +1000,12 @@ export default function AgentsConsolePage() {
     useState(false);
   const [isExecutingAgent, setIsExecutingAgent] = useState(false);
   const [retryingExecutionId, setRetryingExecutionId] = useState<string | null>(null);
+  const [replayingExecutionId, setReplayingExecutionId] = useState<string | null>(null);
   const [cancellingExecutionId, setCancellingExecutionId] = useState<string | null>(null);
+  const [executionMaxToolCalls, setExecutionMaxToolCalls] = useState("");
+  const [executionMaxRuntimeSeconds, setExecutionMaxRuntimeSeconds] = useState("");
+  const [executionMaxOutputBytes, setExecutionMaxOutputBytes] = useState("");
+  const [executionOutputSchema, setExecutionOutputSchema] = useState("");
   const [launchingSurface, setLaunchingSurface] =
     useState<AgentRunTargetSurface | null>(null);
   const [isDeleteAgentDialogOpen, setIsDeleteAgentDialogOpen] = useState(false);
@@ -1470,6 +1497,7 @@ export default function AgentsConsolePage() {
         model_runtime_unconfigured: 0,
         retrieval_profile_missing: 0,
         retrieval_profile_disabled: 0,
+        retrieval_engine_unavailable: 0,
         scope_missing: 0,
         scope_invalid: 0,
         tools_missing: 0,
@@ -1477,6 +1505,7 @@ export default function AgentsConsolePage() {
         tool_approval_required: 0,
         tool_mcp_reserved: 0,
         tool_mcp_integration_pending: 0,
+        runtime_engine_unavailable: 0,
       },
     );
   }, [agents, readinessByAgentId]);
@@ -2128,6 +2157,8 @@ export default function AgentsConsolePage() {
       mode: "grounded_chat",
       status: "draft",
       modelStrategy: "remote_reserved",
+      runtimeEngine: "native",
+      runtimeVersion: "native_v1",
       modelEndpointId:
         enabledModelEndpoints.find((modelEndpoint) => modelEndpoint.is_default)
           ?.id ?? "",
@@ -2618,11 +2649,30 @@ export default function AgentsConsolePage() {
     try {
       const executionInput =
         launchPrompts[0]?.trim() || selectedAgent.objective.trim() || null;
+      const parseOptionalInteger = (value: string) =>
+        value.trim() ? Number.parseInt(value.trim(), 10) : undefined;
+      let outputSchema: Record<string, unknown> | undefined;
+      if (executionOutputSchema.trim()) {
+        let parsedSchema: unknown;
+        try {
+          parsedSchema = JSON.parse(executionOutputSchema);
+        } catch {
+          throw new Error(t("agents.executions.policy.invalidSchema"));
+        }
+        if (!parsedSchema || typeof parsedSchema !== "object" || Array.isArray(parsedSchema)) {
+          throw new Error(t("agents.executions.policy.invalidSchema"));
+        }
+        outputSchema = parsedSchema as Record<string, unknown>;
+      }
       const execution = await createAgentExecution({
         tenant_id: selectedAgent.tenantId,
         agent_definition_id: selectedAgent.id,
         execution_input: executionInput,
         trigger_source: "agents_console",
+        max_tool_calls: parseOptionalInteger(executionMaxToolCalls),
+        max_runtime_seconds: parseOptionalInteger(executionMaxRuntimeSeconds),
+        max_output_bytes: parseOptionalInteger(executionMaxOutputBytes),
+        output_schema_json: outputSchema,
       });
       await refreshAgentExecutionsForCurrentScope();
       setAgentSection("executions");
@@ -2666,6 +2716,31 @@ export default function AgentsConsolePage() {
       setErrorMessage(error instanceof Error ? error.message : t("agents.status.executionFailed"));
     } finally {
       setRetryingExecutionId(null);
+    }
+  }
+
+  async function handleReplayAgentExecution(execution: AgentExecutionResponse) {
+    if (
+      !hasAgentExecutionAccess ||
+      !["completed", "failed", "cancelled"].includes(execution.execution_status)
+    ) {
+      return;
+    }
+
+    setReplayingExecutionId(execution.id);
+    setErrorMessage(null);
+    try {
+      await replayAgentExecution(execution);
+      await refreshAgentExecutionsForCurrentScope();
+      setStatusMessage(t("agents.executions.replayQueued"));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : t("agents.executions.replayFailed"),
+      );
+    } finally {
+      setReplayingExecutionId(null);
     }
   }
 
@@ -3074,6 +3149,8 @@ export default function AgentsConsolePage() {
             t("agents.executions.latestPacket.failedDetail")
           : latestAgentExecution.execution_status === "running"
             ? t("agents.executions.latestPacket.runningDetail")
+            : latestAgentExecution.execution_status === "awaiting_approval"
+              ? t("agents.executions.latestPacket.awaitingApprovalDetail")
             : latestAgentExecution.execution_status === "cancelled"
               ? t("agents.executions.latestPacket.cancelledDetail")
               : t("agents.executions.latestPacket.queuedDetail");
@@ -3604,7 +3681,7 @@ export default function AgentsConsolePage() {
                   </div>
                 </div>
 
-                <DialogFormGrid className="xl:grid-cols-3">
+                <DialogFormGrid className="xl:grid-cols-4">
                   <DialogFormField label={t("agents.editor.mode")}>
                     <Select
                       disabled={!hasAgentWriteAccess}
@@ -3612,6 +3689,10 @@ export default function AgentsConsolePage() {
                         updateSelectedAgent((agent) => ({
                           ...agent,
                           mode: value as AgentMode,
+                          runtimeEngine:
+                            value === "grounded_chat" ? "native" : agent.runtimeEngine,
+                          runtimeVersion:
+                            value === "grounded_chat" ? "native_v1" : agent.runtimeVersion,
                         }));
                       }}
                       value={selectedAgent.mode}
@@ -3629,6 +3710,38 @@ export default function AgentsConsolePage() {
                         <SelectItem value="workflow_recovery">
                           {t("agents.modes.workflow_recovery")}
                         </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </DialogFormField>
+
+                  <DialogFormField label={t("agents.editor.runtimeEngine")}>
+                    <Select
+                      disabled={!hasAgentWriteAccess}
+                      onValueChange={(value) => {
+                        const runtimeEngine = value as AgentRuntimeEngine;
+                        updateSelectedAgent((agent) => ({
+                          ...agent,
+                          runtimeEngine,
+                          runtimeVersion:
+                            runtimeEngine === "langgraph_pilot"
+                              ? "langgraph_v1"
+                              : "native_v1",
+                        }));
+                      }}
+                      value={selectedAgent.runtimeEngine}
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder={t("agents.editor.runtimeEngine")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="native">
+                          {t("agents.runtimeEngines.native")}
+                        </SelectItem>
+                        {selectedAgent.mode !== "grounded_chat" ? (
+                          <SelectItem value="langgraph_pilot">
+                            {t("agents.runtimeEngines.langgraph_pilot")}
+                          </SelectItem>
+                        ) : null}
                       </SelectContent>
                     </Select>
                   </DialogFormField>
@@ -4256,6 +4369,72 @@ export default function AgentsConsolePage() {
                 title={t("agents.executions.title")}
               />
               <div className="grid gap-4 p-6">
+                <details className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-5">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-950">
+                    {t("agents.executions.policy.title")}
+                  </summary>
+                  <div className="mt-2 text-sm leading-6 text-slate-500">
+                    {t("agents.executions.policy.description")}
+                  </div>
+                  <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                    <DialogFormField label={t("agents.executions.policy.maxToolCalls")}>
+                      <Input
+                        max={20}
+                        min={0}
+                        onChange={(event) => setExecutionMaxToolCalls(event.target.value)}
+                        placeholder={t("agents.executions.policy.deploymentDefault")}
+                        type="number"
+                        value={executionMaxToolCalls}
+                      />
+                    </DialogFormField>
+                    <DialogFormField label={t("agents.executions.policy.maxRuntimeSeconds")}>
+                      <Input
+                        max={1800}
+                        min={10}
+                        onChange={(event) => setExecutionMaxRuntimeSeconds(event.target.value)}
+                        placeholder={t("agents.executions.policy.deploymentDefault")}
+                        type="number"
+                        value={executionMaxRuntimeSeconds}
+                      />
+                    </DialogFormField>
+                    <DialogFormField label={t("agents.executions.policy.maxOutputBytes")}>
+                      <Input
+                        max={256000}
+                        min={1024}
+                        onChange={(event) => setExecutionMaxOutputBytes(event.target.value)}
+                        placeholder={t("agents.executions.policy.deploymentDefault")}
+                        type="number"
+                        value={executionMaxOutputBytes}
+                      />
+                    </DialogFormField>
+                  </div>
+                  <div className="mt-4">
+                    <DialogFormField label={t("agents.executions.policy.outputSchema")}>
+                      <Textarea
+                        className="min-h-28 bg-white font-mono text-xs"
+                        onChange={(event) => setExecutionOutputSchema(event.target.value)}
+                        placeholder={t("agents.executions.policy.outputSchemaPlaceholder")}
+                        value={executionOutputSchema}
+                      />
+                    </DialogFormField>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-xs leading-5 text-slate-500">
+                      {t("agents.executions.policy.sandboxBoundary")}
+                    </div>
+                    <Button
+                      disabled={!canOperateSelectedAgentRuntime || isExecutingAgent}
+                      onClick={() => void handleExecuteAgent()}
+                      type="button"
+                    >
+                      <BrainCircuit className="h-4 w-4" />
+                      {isExecutingAgent
+                        ? t("agents.actions.executing")
+                        : t("agents.actions.execute")}
+                    </Button>
+                  </div>
+                </details>
+
                 <ConsoleRuntimeTaskPacket
                   detail={latestExecutionTaskPacket.detail}
                   objective={latestExecutionTaskPacket.objective}
@@ -4277,7 +4456,7 @@ export default function AgentsConsolePage() {
                   title={latestExecutionTaskPacket.title}
                 />
 
-                <div className="grid gap-4 xl:grid-cols-5">
+                <div className="grid gap-4 xl:grid-cols-6">
                   <div className="rounded-[20px] border border-slate-100 bg-slate-50/80 p-5">
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                       {t("agents.executions.metrics.total")}
@@ -4308,6 +4487,14 @@ export default function AgentsConsolePage() {
                     </div>
                     <div className="mt-3 text-[28px] font-semibold tracking-tight text-slate-950">
                       {agentExecutionMetrics?.completed_executions ?? 0}
+                    </div>
+                  </div>
+                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/80 p-5">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {t("agents.executions.metrics.awaitingApproval")}
+                    </div>
+                    <div className="mt-3 text-[28px] font-semibold tracking-tight text-slate-950">
+                      {agentExecutionMetrics?.awaiting_approval_executions ?? 0}
                     </div>
                   </div>
                   <div className="rounded-[20px] border border-slate-100 bg-slate-50/80 p-5">
@@ -4360,6 +4547,9 @@ export default function AgentsConsolePage() {
                           </SelectItem>
                           <SelectItem value="running">
                             {t("agents.executions.statuses.running")}
+                          </SelectItem>
+                          <SelectItem value="awaiting_approval">
+                            {t("agents.executions.statuses.awaiting_approval")}
                           </SelectItem>
                           <SelectItem value="completed">
                             {t("agents.executions.statuses.completed")}
@@ -4445,6 +4635,24 @@ export default function AgentsConsolePage() {
                             executionInput: evidenceSummary?.executionInput,
                             recommendedActions: recommendedActionSpecs,
                           });
+                        const executionPolicy = agentExecution.execution_policy_json ?? {};
+                        const maxToolCalls =
+                          typeof executionPolicy.max_tool_calls === "number"
+                            ? executionPolicy.max_tool_calls
+                            : null;
+                        const maxRuntimeSeconds =
+                          typeof executionPolicy.max_runtime_seconds === "number"
+                            ? executionPolicy.max_runtime_seconds
+                            : null;
+                        const maxOutputBytes =
+                          typeof executionPolicy.max_output_bytes === "number"
+                            ? executionPolicy.max_output_bytes
+                            : null;
+                        const isTerminalExecution = [
+                          "completed",
+                          "failed",
+                          "cancelled",
+                        ].includes(agentExecution.execution_status);
 
                         return (
                           <div
@@ -4490,7 +4698,21 @@ export default function AgentsConsolePage() {
                                     : t("agents.executions.retry")}
                                 </Button>
                               ) : null}
-                              {(agentExecution.execution_status === "queued" || agentExecution.execution_status === "running") && hasAgentExecutionAccess ? (
+                              {isTerminalExecution && hasAgentExecutionAccess ? (
+                                <Button
+                                  disabled={replayingExecutionId !== null}
+                                  onClick={() => void handleReplayAgentExecution(agentExecution)}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <RefreshCw className={cn("h-4 w-4", replayingExecutionId === agentExecution.id && "animate-spin")} />
+                                  {replayingExecutionId === agentExecution.id
+                                    ? t("agents.executions.replaying")
+                                    : t("agents.executions.replay")}
+                                </Button>
+                              ) : null}
+                              {(agentExecution.execution_status === "queued" || agentExecution.execution_status === "running" || agentExecution.execution_status === "awaiting_approval") && hasAgentExecutionAccess ? (
                                 <Button disabled={cancellingExecutionId !== null} onClick={() => void handleCancelAgentExecution(agentExecution)} size="sm" type="button" variant="outline">
                                   {cancellingExecutionId === agentExecution.id ? t("agents.executions.cancelling") : t("agents.executions.cancel")}
                                 </Button>
@@ -4508,6 +4730,33 @@ export default function AgentsConsolePage() {
                                   t,
                                 )}
                               </ConsoleOutlineBadge>
+                              {maxToolCalls !== null ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.toolBudget", { value: String(maxToolCalls) })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {maxRuntimeSeconds !== null ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.runtimeBudget", { value: String(maxRuntimeSeconds) })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {maxOutputBytes !== null ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.outputBudget", { value: String(maxOutputBytes) })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {agentExecution.output_schema_json ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.schemaBound")}
+                                </ConsoleOutlineBadge>
+                              ) : null}
+                              {agentExecution.replay_of_execution_id ? (
+                                <ConsoleOutlineBadge>
+                                  {t("agents.executions.policy.replayOf", {
+                                    value: agentExecution.replay_of_execution_id.slice(0, 8),
+                                  })}
+                                </ConsoleOutlineBadge>
+                              ) : null}
                               {retrievalSummary?.retrievalEngine ? (
                                 <ConsoleOutlineBadge>
                                   {t("home.retrievalInspector.engineLabel", {
@@ -4826,13 +5075,24 @@ export default function AgentsConsolePage() {
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                                   {t("agents.executions.runtimeTrace")}
                                 </div>
+                                {runtimeSummary.graphDecisionReason ? (
+                                  <div className="mt-2 text-xs leading-5 text-slate-600">
+                                    {[
+                                      runtimeSummary.graphSelectedBranch,
+                                      runtimeSummary.graphRiskLevel,
+                                      runtimeSummary.graphDecisionReason,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </div>
+                                ) : null}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {runtimeSummary.graphTrace.map(
                                     (entry, index) => (
                                       <ConsoleOutlineBadge
                                         key={`${agentExecution.id}-graph-${entry.step}-${index}`}
                                       >
-                                        {`${entry.step} · ${entry.status}`}
+                                        {`${entry.step} · ${entry.status}${entry.durationMs !== null ? ` · ${entry.durationMs.toFixed(1)}ms` : ""}`}
                                       </ConsoleOutlineBadge>
                                     ),
                                   )}

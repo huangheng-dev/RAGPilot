@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx
@@ -68,3 +69,48 @@ async def test_invalid_json_rpc_response_is_rejected(monkeypatch):
 
     with pytest.raises(McpProtocolError):
         await McpStreamableHttpClient(base_url="https://mcp.example").list_tools()
+
+
+@pytest.mark.anyio
+async def test_initialize_rejects_unsupported_protocol_version(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload["id"],
+            "result": {"protocolVersion": "2099-01-01", "serverInfo": {"name": "future"}},
+        })
+
+    install_mock_client(monkeypatch, handler)
+
+    with pytest.raises(McpProtocolError, match="unsupported protocol version"):
+        await McpStreamableHttpClient(base_url="https://mcp.example").initialize()
+
+
+@pytest.mark.anyio
+async def test_cancelled_tool_call_notifies_remote_mcp_server(monkeypatch):
+    started = asyncio.Event()
+    methods: list[str] = []
+    cancelled_request_id: int | None = None
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal cancelled_request_id
+        payload = json.loads(request.content)
+        methods.append(payload["method"])
+        if payload["method"] == "tools/call":
+            cancelled_request_id = payload["id"]
+            started.set()
+            await asyncio.Event().wait()
+        assert payload["params"]["requestId"] == cancelled_request_id
+        return httpx.Response(202)
+
+    install_mock_client(monkeypatch, handler)
+    task = asyncio.create_task(
+        McpStreamableHttpClient(base_url="https://mcp.example").call_tool(name="search", arguments={})
+    )
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert methods == ["tools/call", "notifications/cancelled"]

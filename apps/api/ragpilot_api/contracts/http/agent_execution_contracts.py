@@ -6,11 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 AgentExecutionMode = Literal["grounded_chat", "document_intake", "workflow_recovery"]
-AgentExecutionStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
+AgentExecutionStatus = Literal["queued", "running", "awaiting_approval", "completed", "failed", "cancelled"]
 AgentExecutionTriggerSource = Literal["agents_console", "workspace", "home", "admin", "operations"]
 AgentExecutionTaskStage = Literal[
     "queued_for_execution",
     "running_execution",
+    "waiting_for_approval",
     "grounded_answer_ready",
     "intake_review_ready",
     "recovery_brief_ready",
@@ -25,6 +26,7 @@ AgentExecutionOutputKind = Literal[
     "tool_runtime",
 ]
 AgentExecutionOutputStatus = Literal["ready", "attention", "pending"]
+AgentApprovalStatus = Literal["pending", "approved", "rejected", "expired", "cancelled"]
 
 
 class AgentExecutionCreateRequest(BaseModel):
@@ -34,6 +36,10 @@ class AgentExecutionCreateRequest(BaseModel):
     agent_definition_id: UUID
     execution_input: str | None = Field(default=None, max_length=4000)
     trigger_source: AgentExecutionTriggerSource = "agents_console"
+    max_tool_calls: int | None = Field(default=None, ge=0, le=20)
+    max_runtime_seconds: int | None = Field(default=None, ge=10, le=1800)
+    max_output_bytes: int | None = Field(default=None, ge=1024, le=256000)
+    output_schema_json: dict[str, Any] | None = None
 
 
 class AgentExecutionTaskStateResponse(BaseModel):
@@ -68,6 +74,8 @@ class AgentExecutionResponse(BaseModel):
     model_endpoint_id: UUID | None
     tool_registration_ids: list[UUID]
     execution_input: str | None
+    prompt_version_id: UUID | None = None
+    prompt_snapshot_hash: str | None = None
     summary: str | None
     result_payload_json: dict[str, Any]
     task_state: AgentExecutionTaskStateResponse | None = None
@@ -78,6 +86,10 @@ class AgentExecutionResponse(BaseModel):
     completed_at: datetime | None
     temporal_workflow_id: str | None = None
     retry_of_execution_id: UUID | None = None
+    replay_of_execution_id: UUID | None = None
+    replay_fingerprint: str | None = None
+    execution_policy_json: dict[str, Any] = Field(default_factory=dict)
+    output_schema_json: dict[str, Any] | None = None
     cancellation_requested_at: datetime | None = None
     cancelled_at: datetime | None = None
     created_at: datetime
@@ -88,6 +100,42 @@ class AgentExecutionMetricsResponse(BaseModel):
     total_executions: int
     queued_executions: int
     running_executions: int
+    awaiting_approval_executions: int = 0
     completed_executions: int
     failed_executions: int
     latest_execution_at: datetime | None
+
+
+class AgentExecutionEvaluationResponse(BaseModel):
+    sample_size: int = Field(ge=0)
+    completion_rate: float = Field(ge=0, le=1)
+    failure_rate: float = Field(ge=0, le=1)
+    cancellation_rate: float = Field(ge=0, le=1)
+    fallback_rate: float = Field(ge=0, le=1)
+    approval_block_rate: float = Field(ge=0, le=1)
+    promotion_ready: bool
+    failed_gates: list[str] = Field(default_factory=list)
+
+
+class AgentApprovalDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tenant_id: UUID
+    decision: Literal["approved", "rejected"]
+    reason: str = Field(min_length=3, max_length=1000)
+    resume_token: UUID
+
+
+class AgentApprovalResponse(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    agent_execution_id: UUID
+    tool_registration_id: UUID
+    approval_status: AgentApprovalStatus
+    requested_by_user_id: UUID | None
+    decided_by_user_id: UUID | None
+    decision_reason: str | None
+    resume_token: UUID
+    expires_at: datetime
+    decided_at: datetime | None
+    created_at: datetime
+    updated_at: datetime

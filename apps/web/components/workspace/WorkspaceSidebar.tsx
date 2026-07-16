@@ -533,7 +533,7 @@ export function WorkspaceSidebar({
             <div className="space-y-3">
               <label className="flex min-h-24 cursor-pointer items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-4 py-4 text-center text-sm text-slate-600 transition hover:border-blue-400 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900">
                 <input
-                  accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.pdf,.docx,.xlsx,text/plain,text/markdown,text/html,application/xhtml+xml,text/csv,application/csv,application/json,text/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  accept=".txt,.md,.markdown,.html,.htm,.csv,.json,.pdf,.docx,.xlsx,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp,text/plain,text/markdown,text/html,application/xhtml+xml,text/csv,application/csv,application/json,text/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/png,image/jpeg,image/webp,image/tiff,image/bmp"
                   className="hidden"
                   disabled={!canManageDocuments || isContextControlDisabled || isUploading}
                   onChange={onFileSelection}

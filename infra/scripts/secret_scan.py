@@ -10,14 +10,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATHS = [
     "README.md",
     ".env.example",
+    ".env.production.example",
+    ".github",
+    "CHANGELOG.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
     "apps/api/ragpilot_api",
+    "apps/api/migrations",
+    "apps/mcp-server/src",
     "apps/web/app",
     "apps/web/components",
     "apps/web/lib",
     "apps/web/messages",
+    "apps/worker/ragpilot_worker",
     "docs",
+    "infra/docker",
+    "infra/k8s",
+    "infra/otel",
     "packages",
 ]
 
@@ -45,9 +54,14 @@ EXCLUDED_PARTS = {
     "work",
 }
 
-SENSITIVE_PATTERN = re.compile(
-    r"(OPENAI_API_KEY|ANTHROPIC_API_KEY|AZURE_OPENAI|SECRET_KEY|JWT_SECRET|PRIVATE KEY|BEGIN RSA|BEGIN OPENSSH|sk-[A-Za-z0-9_-]{20,})"
-)
+SENSITIVE_PATTERNS = {
+    "private key material": re.compile(r"BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY", re.IGNORECASE),
+    "provider-style API key": re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    "literal credential assignment": re.compile(
+        r"^\s*[A-Z][A-Z0-9_]*(?:PASSWORD|SECRET|API_KEY|TOKEN)[A-Z0-9_]*\s*=\s*"
+        r"(?!\s*(?:$|replace|change|example|your-|\$\{|<))[^\s#]{16,}\s*$",
+    ),
+}
 
 
 def is_allowed_file(path: Path) -> bool:
@@ -88,9 +102,12 @@ def main() -> int:
             return 2
 
         for line_number, line in enumerate(lines, start=1):
-            if SENSITIVE_PATTERN.search(line):
+            for pattern_name, pattern in SENSITIVE_PATTERNS.items():
+                if not pattern.search(line):
+                    continue
                 relative_path = file.relative_to(REPO_ROOT).as_posix()
-                matches.append(f"{relative_path}:{line_number}:{line}")
+                matches.append(f"{relative_path}:{line_number}: {pattern_name}")
+                break
 
     if matches:
         print("")

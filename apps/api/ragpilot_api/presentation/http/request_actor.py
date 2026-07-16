@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 
 from ragpilot_api.application.identity.access_policy import SUPPORTED_ACTOR_ROLES, role_has_capability
 from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
+from ragpilot_api.infrastructure.database.repositories.api_key_repository import ApiKeyRepository
+from ragpilot_api.application.identity.api_key_service import ApiKeyService
 from ragpilot_api.infrastructure.database.repositories.user_repository import UserRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
 from ragpilot_api.infrastructure.database.repositories.user_session_repository import UserSessionRepository
@@ -15,6 +18,8 @@ from ragpilot_api.infrastructure.database.session import get_database_session
 from ragpilot_api.shared.settings import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
+SESSION_COOKIE_NAME = "ragpilot_session"
+
 
 @dataclass(slots=True)
 class RequestActor:
@@ -22,15 +27,40 @@ class RequestActor:
     user_id: UUID | None
     session_id: UUID | None = None
     active_tenant_ids: tuple[UUID, ...] | None = None
+    api_key_id: UUID | None = None
+    capabilities: tuple[str, ...] | None = None
 
 
 async def get_request_actor(
     authorization: str | None = Header(default=None, alias="Authorization"),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    browser_session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
     x_ragpilot_role: str | None = Header(default=None, alias="X-RAGPilot-Role"),
     x_ragpilot_actor_id: UUID | None = Header(default=None, alias="X-RAGPilot-Actor-Id"),
     session: AsyncSession = Depends(get_database_session),
 ) -> RequestActor:
     settings = get_settings()
+
+    api_key_secret = x_api_key.strip() if isinstance(x_api_key, str) and x_api_key.strip() else None
+    if authorization is not None and authorization.strip().lower().startswith("bearer rpk_"):
+        if api_key_secret is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide the API key only once.")
+        api_key_secret = authorization.strip()[7:].strip()
+        authorization = None
+    if api_key_secret is not None:
+        api_key = await ApiKeyService(ApiKeyRepository(session)).authenticate(api_key_secret)
+        if api_key is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key is invalid, expired, or revoked.")
+        return RequestActor(
+            role=api_key.role,
+            user_id=api_key.created_by_user_id,
+            active_tenant_ids=(api_key.tenant_id,),
+            api_key_id=api_key.id,
+            capabilities=tuple(api_key.scopes_json or []),
+        )
+
+    if authorization is None and browser_session_token:
+        authorization = f"Bearer {browser_session_token}"
 
     if authorization is not None:
         normalized_authorization = authorization.strip()
@@ -113,6 +143,9 @@ def require_actor_capability(actor: RequestActor, capability: str) -> None:
             detail="Missing actor role header.",
         )
 
+    if actor.capabilities is not None and capability not in actor.capabilities:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="API key scope does not grant the required capability.")
+
     if not role_has_capability(actor.role, capability):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -130,6 +163,9 @@ async def require_actor_capability_from_policy(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing actor role header.",
         )
+
+    if actor.capabilities is not None and capability not in actor.capabilities:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="API key scope does not grant the required capability.")
 
     try:
         role_capability_grants = await role_permission_repository.list_role_permission_slugs()
@@ -183,7 +219,7 @@ def require_authenticated_actor(actor: RequestActor) -> None:
             detail="Missing actor role header.",
         )
 
-    if actor.user_id is None:
+    if actor.user_id is None and actor.api_key_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing actor user header.",
@@ -195,6 +231,9 @@ def require_current_session_actor(actor: RequestActor, *, detail: str) -> None:
 
     if actor.session_id is not None:
         return
+
+    if actor.api_key_id is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
     if get_settings().allow_legacy_actor_headers:
         return

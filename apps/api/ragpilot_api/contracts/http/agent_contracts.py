@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 AgentMode = Literal["grounded_chat", "document_intake", "workflow_recovery"]
 AgentStatus = Literal["draft", "active", "paused"]
+AgentRuntimeEngine = Literal["native", "langgraph_pilot"]
 ModelStrategy = Literal["local_reserved", "remote_reserved", "hybrid_reserved"]
 AgentTool = Literal["chat", "documents", "operations", "admin"]
 AgentRuntimeReadinessIssue = Literal[
@@ -15,6 +16,7 @@ AgentRuntimeReadinessIssue = Literal[
     "model_runtime_unconfigured",
     "retrieval_profile_missing",
     "retrieval_profile_disabled",
+    "retrieval_engine_unavailable",
     "scope_missing",
     "scope_invalid",
     "tools_missing",
@@ -22,6 +24,7 @@ AgentRuntimeReadinessIssue = Literal[
     "tool_approval_required",
     "tool_mcp_reserved",
     "tool_mcp_integration_pending",
+    "runtime_engine_unavailable",
 ]
 
 
@@ -33,6 +36,8 @@ class AgentDefinitionCreateRequest(BaseModel):
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     mode: AgentMode
     status: AgentStatus
+    runtime_engine: AgentRuntimeEngine = "native"
+    runtime_version: str = Field(default="native_v1", min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")
     model_strategy: ModelStrategy
     model_endpoint_id: UUID | None = None
     objective: str = Field(default="", max_length=4000)
@@ -49,6 +54,8 @@ class AgentDefinitionUpdateRequest(BaseModel):
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     mode: AgentMode
     status: AgentStatus
+    runtime_engine: AgentRuntimeEngine | None = None
+    runtime_version: str | None = Field(default=None, min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")
     model_strategy: ModelStrategy
     model_endpoint_id: UUID | None = None
     objective: str = Field(default="", max_length=4000)
@@ -65,6 +72,8 @@ class AgentDefinitionResponse(BaseModel):
     slug: str
     mode: AgentMode
     status: AgentStatus
+    runtime_engine: AgentRuntimeEngine = "native"
+    runtime_version: str = "native_v1"
     model_strategy: ModelStrategy
     model_endpoint_id: UUID | None
     objective: str
@@ -122,6 +131,8 @@ class AgentRuntimeResolvedRetrievalProfileResponse(BaseModel):
     name: str
     slug: str
     retrieval_mode: str
+    engine_name: str = "native"
+    engine_version: str = "native_v1"
     is_enabled: bool
     is_default: bool
     source: Literal["knowledge_base", "platform_default"]
@@ -166,6 +177,7 @@ class AgentRuntimeIssueCountsResponse(BaseModel):
     model_runtime_unconfigured: int = 0
     retrieval_profile_missing: int = 0
     retrieval_profile_disabled: int = 0
+    retrieval_engine_unavailable: int = 0
     scope_missing: int = 0
     scope_invalid: int = 0
     tools_missing: int = 0
@@ -173,6 +185,7 @@ class AgentRuntimeIssueCountsResponse(BaseModel):
     tool_approval_required: int = 0
     tool_mcp_reserved: int = 0
     tool_mcp_integration_pending: int = 0
+    runtime_engine_unavailable: int = 0
 
 
 class AgentRuntimeGovernanceItemResponse(BaseModel):
@@ -182,6 +195,8 @@ class AgentRuntimeGovernanceItemResponse(BaseModel):
     slug: str
     mode: AgentMode
     status: AgentStatus
+    runtime_engine: AgentRuntimeEngine = "native"
+    runtime_version: str = "native_v1"
     objective: str
     knowledge_base_scope: str | None
     model_endpoint_id: UUID | None

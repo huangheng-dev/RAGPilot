@@ -119,7 +119,25 @@ const WORKFLOW_PAGE_SIZE = 6;
 const CONVERSATION_PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 250;
 const MAX_DOCUMENT_UPLOAD_BYTES = 25 * 1024 * 1024;
-const SUPPORTED_DOCUMENT_EXTENSIONS = [".txt", ".md", ".markdown", ".html", ".htm", ".csv", ".json", ".pdf", ".docx", ".xlsx"];
+const SUPPORTED_DOCUMENT_EXTENSIONS = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".html",
+  ".htm",
+  ".csv",
+  ".json",
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".tif",
+  ".tiff",
+  ".bmp",
+];
 const RETRIEVAL_VALIDATION_TOP_K = 5;
 
 function resolveOperatorErrorMessage(error: unknown, fallbackMessage: string) {
@@ -246,6 +264,46 @@ async function apiRequestWithHeaders<T>(
   init?: RequestInit
 ): Promise<{ data: T; headers: Headers }> {
   return await authenticatedApiRequestWithHeaders<T>(path, init);
+}
+
+async function streamChatQuestion(
+  payload: Record<string, unknown>,
+  onDelta: (content: string) => void,
+): Promise<ChatAskResponse> {
+  const response = await authenticatedFetch("/chat/messages/stream", {
+    method: "POST",
+    headers: { Accept: "text/event-stream" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.body) {
+    throw new Error("The chat stream did not provide a response body.");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed: ChatAskResponse | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      let eventName = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+      const parsed = JSON.parse(data) as Record<string, unknown>;
+      if (eventName === "delta") onDelta(String(parsed.content ?? ""));
+      if (eventName === "complete") completed = parsed as unknown as ChatAskResponse;
+      if (eventName === "error") throw new Error(String(parsed.detail ?? "Chat streaming failed."));
+    }
+    if (done) break;
+  }
+  if (!completed) throw new Error("The chat stream ended before completion.");
+  return completed;
 }
 
 function readCountHeader(headers: Headers, headerName: string, fallbackCount: number) {
@@ -2846,6 +2904,7 @@ export default function WorkspaceConsolePage({
             preferredWorkflowPage: initialLocationStateRef.current?.workflowPage
           }
         );
+        writeCurrentTenantId(tenant.id);
     } catch (error) {
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.contextSwitchFailed")));
       setStatusMessage(t("workspace.status.contextSwitchFailed"));
@@ -3947,6 +4006,7 @@ export default function WorkspaceConsolePage({
 
     const submittedQuestion = question.trim();
     const optimisticMessageId = `pending-${crypto.randomUUID()}`;
+    const streamingAssistantId = `streaming-${crypto.randomUUID()}`;
     const optimisticMessage: Message = {
       id: optimisticMessageId,
       tenant_id: bootstrap.tenant.id,
@@ -3959,6 +4019,13 @@ export default function WorkspaceConsolePage({
       citations: [],
       feedback_entries: [],
     };
+    const streamingAssistant: Message = {
+      ...optimisticMessage,
+      id: streamingAssistantId,
+      role: "assistant",
+      content: "",
+      model_name: "streaming",
+    };
 
     try {
       setIsSending(true);
@@ -3966,12 +4033,11 @@ export default function WorkspaceConsolePage({
       setStatusMessage(t("workspace.status.generatingGroundedReply"));
       setQuestion("");
       setMessages((currentMessages) =>
-        selectedConversationId ? [...currentMessages, optimisticMessage] : [optimisticMessage]
+        selectedConversationId ? [...currentMessages, optimisticMessage, streamingAssistant] : [optimisticMessage, streamingAssistant]
       );
 
-      const response = await apiRequest<ChatAskResponse>("/chat/messages", {
-        method: "POST",
-        body: JSON.stringify({
+      const response = await streamChatQuestion(
+        {
           tenant_id: bootstrap.tenant.id,
           workspace_id: bootstrap.workspace.id,
           knowledge_base_id: bootstrap.knowledgeBase.id,
@@ -3979,13 +4045,16 @@ export default function WorkspaceConsolePage({
           conversation_id: selectedConversationId,
           question: submittedQuestion,
           top_k: 3
-        })
-      });
+        },
+        (content) => setMessages((currentMessages) => currentMessages.map((message) =>
+          message.id === streamingAssistantId ? { ...message, content: `${message.content}${content}` } : message
+        )),
+      );
 
       setMessages((currentMessages) =>
         response.conversation.id === selectedConversationId
           ? [
-              ...currentMessages.filter((message) => message.id !== optimisticMessageId),
+              ...currentMessages.filter((message) => message.id !== optimisticMessageId && message.id !== streamingAssistantId),
               response.user_message,
               response.assistant_message,
             ]
@@ -4002,7 +4071,7 @@ export default function WorkspaceConsolePage({
       ]);
     } catch (error) {
       setMessages((currentMessages) =>
-        currentMessages.filter((message) => message.id !== optimisticMessageId)
+        currentMessages.filter((message) => message.id !== optimisticMessageId && message.id !== streamingAssistantId)
       );
       setQuestion(submittedQuestion);
       setErrorMessage(resolveOperatorErrorMessage(error, t("workspace.status.questionFailed")));
@@ -5724,6 +5793,8 @@ export default function WorkspaceConsolePage({
             documentLifecycleFilter={documentLifecycleFilter}
             documentTotalCount={documentTotalCount}
             documents={documents}
+            tenantId={bootstrap?.tenant.id ?? null}
+            knowledgeBaseId={bootstrap?.knowledgeBase.id ?? null}
             focusedChunkId={focusedDocumentChunkId}
               canManageDocuments={canManageDocuments}
               canManageWorkflowRuns={canManageWorkflowRuns}

@@ -1,0 +1,66 @@
+name: Staging Capacity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-capacity
+  cancel-in-progress: false
+
+jobs:
+  capacity:
+    name: Authenticated staging capacity gate
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.RAGPILOT_CAPACITY_BASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install locked capacity runtime
+        run: |
+          python -m pip install uv==0.11.16
+          uv sync --project apps/api --locked --dev
+
+      - name: Validate protected staging inputs
+        env:
+          BASE_URL: ${{ vars.RAGPILOT_CAPACITY_BASE_URL }}
+          TENANT_ID: ${{ vars.RAGPILOT_CAPACITY_TENANT_ID }}
+          KNOWLEDGE_BASE_ID: ${{ vars.RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID }}
+          API_KEY: ${{ secrets.RAGPILOT_CAPACITY_API_KEY }}
+        run: |
+          test -n "$BASE_URL" || { echo "Missing staging variable RAGPILOT_CAPACITY_BASE_URL"; exit 2; }
+          test -n "$TENANT_ID" || { echo "Missing staging variable RAGPILOT_CAPACITY_TENANT_ID"; exit 2; }
+          test -n "$KNOWLEDGE_BASE_ID" || { echo "Missing staging variable RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID"; exit 2; }
+          test -n "$API_KEY" || { echo "Missing staging secret RAGPILOT_CAPACITY_API_KEY"; exit 2; }
+
+      - name: Run versioned capacity contract
+        env:
+          RAGPILOT_CAPACITY_BASE_URL: ${{ vars.RAGPILOT_CAPACITY_BASE_URL }}
+          RAGPILOT_CAPACITY_TENANT_ID: ${{ vars.RAGPILOT_CAPACITY_TENANT_ID }}
+          RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID: ${{ vars.RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID }}
+          RAGPILOT_CAPACITY_API_KEY: ${{ secrets.RAGPILOT_CAPACITY_API_KEY }}
+        run: >-
+          uv run --project apps/api --locked python -m ragpilot_api.commands.staging_capacity_gate
+          packages/evals/staging/capacity-contract-v1.json
+          --base-url "$RAGPILOT_CAPACITY_BASE_URL"
+          --output output/capacity/staging.json
+
+      - name: Archive sanitized capacity evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: staging-capacity-${{ github.run_id }}
+          path: output/capacity/staging.json
+          if-no-files-found: warn
+          retention-days: 30

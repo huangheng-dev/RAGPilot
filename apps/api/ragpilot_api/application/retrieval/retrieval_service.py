@@ -1,4 +1,5 @@
 from collections import Counter
+from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from ragpilot_api.contracts.http.retrieval_contracts import (
     RetrievalResultChunkResponse,
 )
 from ragpilot_api.application.retrieval.retrieval_engines import build_retrieval_engine, normalize_retrieval_engine_name
+from ragpilot_api.application.retrieval.retrieval_runtime import resolve_retrieval_profile
 from ragpilot_api.infrastructure.database.models import RetrievalEvaluation
 from ragpilot_api.infrastructure.database.repositories.retrieval_evaluation_repository import RetrievalEvaluationRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_repository import RetrievalRepository
@@ -46,8 +48,17 @@ class RetrievalService:
         self.retrieval_profile_repository = retrieval_profile_repository
         self.retrieval_evaluation_repository = retrieval_evaluation_repository
 
-    async def retrieve_chunks(self, request: RetrievalRequest) -> RetrievalResponse:
-        engine_name = normalize_retrieval_engine_name(getattr(self.settings, "retrieval_engine", "native"))
+    async def retrieve_chunks(
+        self, request: RetrievalRequest, *, principal_user_id: UUID | None = None, acl_bypass: bool = False,
+    ) -> RetrievalResponse:
+        resolved_profile = await resolve_retrieval_profile(
+            knowledge_base_id=request.knowledge_base_id,
+            requested_top_k=request.top_k,
+            settings=self.settings,
+            knowledge_base_repository=self.knowledge_base_repository,
+            retrieval_profile_repository=self.retrieval_profile_repository,
+        )
+        engine_name = normalize_retrieval_engine_name(resolved_profile.engine_name)
         retrieval_engine = build_retrieval_engine(self.settings, engine_name=engine_name)
         retrieval_outcome = await retrieval_engine.execute(
             retrieval_repository=self.retrieval_repository,
@@ -56,8 +67,11 @@ class RetrievalService:
             knowledge_base_id=request.knowledge_base_id,
             query_text=request.query_text,
             requested_top_k=request.top_k,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
             knowledge_base_repository=self.knowledge_base_repository,
             retrieval_profile_repository=self.retrieval_profile_repository,
+            resolved_profile=resolved_profile,
         )
         return self._build_retrieval_response(
             request=request,
@@ -65,14 +79,20 @@ class RetrievalService:
             retrieval_outcome=retrieval_outcome,
         )
 
-    async def compare_chunks(self, request: RetrievalCompareRequest) -> RetrievalCompareResponse:
+    async def compare_chunks(
+        self, request: RetrievalCompareRequest, *, principal_user_id: UUID | None = None, acl_bypass: bool = False,
+    ) -> RetrievalCompareResponse:
         baseline = await self._run_engine_diagnostics(
             request=request,
             engine_name=request.baseline_engine,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
         )
         candidate = await self._run_engine_diagnostics(
             request=request,
             engine_name=request.candidate_engine,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
         )
         baseline_chunk_ids = [result.document_chunk_id for result in baseline.results]
         candidate_chunk_ids = [result.document_chunk_id for result in candidate.results]
@@ -714,8 +734,26 @@ class RetrievalService:
         *,
         request: RetrievalCompareRequest,
         engine_name: str,
+        principal_user_id: UUID | None,
+        acl_bypass: bool,
     ) -> RetrievalEngineDiagnosticsResponse:
         normalized_engine_name = normalize_retrieval_engine_name(engine_name)
+        resolved_profile = await resolve_retrieval_profile(
+            knowledge_base_id=request.knowledge_base_id,
+            requested_top_k=request.top_k,
+            settings=self.settings,
+            knowledge_base_repository=self.knowledge_base_repository,
+            retrieval_profile_repository=self.retrieval_profile_repository,
+        )
+        resolved_profile = replace(
+            resolved_profile,
+            engine_name=normalized_engine_name,
+            engine_version=(
+                "llamaindex_authorized_context_v1"
+                if normalized_engine_name == "llamaindex_pilot"
+                else "native_v1"
+            ),
+        )
         retrieval_engine = build_retrieval_engine(self.settings, engine_name=normalized_engine_name)
         retrieval_outcome = await retrieval_engine.execute(
             retrieval_repository=self.retrieval_repository,
@@ -724,8 +762,11 @@ class RetrievalService:
             knowledge_base_id=request.knowledge_base_id,
             query_text=request.query_text,
             requested_top_k=request.top_k,
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
             knowledge_base_repository=self.knowledge_base_repository,
             retrieval_profile_repository=self.retrieval_profile_repository,
+            resolved_profile=resolved_profile,
         )
         results = self._build_result_rows(retrieval_outcome.results)
         retrieval_method_breakdown: dict[str, int] = {}
@@ -745,6 +786,9 @@ class RetrievalService:
             rerank_applied=retrieval_outcome.rerank_applied,
             rerank_strategy=retrieval_outcome.rerank_strategy,
             rerank_window=retrieval_outcome.rerank_window,
+            rerank_metadata=retrieval_outcome.rerank_metadata,
+            retrieval_plan_metadata=retrieval_outcome.retrieval_plan_metadata,
+            evidence_validation_metadata=retrieval_outcome.evidence_validation_metadata,
             result_count=len(results),
             retrieval_method_breakdown=retrieval_method_breakdown,
             top_result_chunk_id=top_result.document_chunk_id if top_result is not None else None,
@@ -767,6 +811,9 @@ class RetrievalService:
             rerank_applied=retrieval_outcome.rerank_applied,
             rerank_strategy=retrieval_outcome.rerank_strategy,
             rerank_window=retrieval_outcome.rerank_window,
+            rerank_metadata=retrieval_outcome.rerank_metadata,
+            retrieval_plan_metadata=retrieval_outcome.retrieval_plan_metadata,
+            evidence_validation_metadata=retrieval_outcome.evidence_validation_metadata,
             results=self._build_result_rows(retrieval_outcome.results),
         )
 
@@ -787,6 +834,9 @@ class RetrievalService:
                 lexical_normalized_score=float(row["lexical_normalized_score"]) if row.get("lexical_normalized_score") is not None else None,
                 rerank_score=float(row["rerank_score"]) if row.get("rerank_score") is not None else None,
                 rerank_rank=int(row["rerank_rank"]) if row.get("rerank_rank") is not None else None,
+                evidence_score=float(row["evidence_score"]) if row.get("evidence_score") is not None else None,
+                evidence_status=row.get("evidence_status"),
+                evidence_reasons=list(row.get("evidence_reasons") or []),
                 embedding_model=row.get("embedding_model"),
                 retrieval_method=row["retrieval_method"],
                 metadata_json=row["metadata_json"],

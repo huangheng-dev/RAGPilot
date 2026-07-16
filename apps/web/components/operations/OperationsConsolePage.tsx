@@ -2288,6 +2288,13 @@ export default function OperationsConsolePage() {
     },
   ];
 
+  function handleOperationsTenantChange(tenantId: string) {
+    setSelectedAgentId("");
+    setSelectedWorkflowRunId("");
+    setSelectedWorkflowRunDetail(null);
+    setSelectedTenantId(tenantId);
+  }
+
   return (
     <ConsoleShell activeHref="/operations">
       <PageTitleSync title={t("operations.title")} />
@@ -2297,7 +2304,7 @@ export default function OperationsConsolePage() {
             <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.8fr)] sm:items-center lg:grid-cols-1 lg:items-stretch">
               <div className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t("operations.title")}</div>
               {tenants.length > 1 ? (
-                <Select disabled={isLoading} onValueChange={setSelectedTenantId} value={selectedTenantId}>
+                <Select disabled={isLoading} onValueChange={handleOperationsTenantChange} value={selectedTenantId}>
                   <SelectTrigger className="w-full bg-white"><SelectValue placeholder={t("operations.filters.tenant")} /></SelectTrigger>
                   <SelectContent>{tenants.map((tenant) => <SelectItem key={tenant.id} value={tenant.id}>{tenant.name}</SelectItem>)}</SelectContent>
                 </Select>
@@ -2889,13 +2896,24 @@ export default function OperationsConsolePage() {
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                                   {t("agents.executions.runtimeTrace")}
                                 </div>
+                                {runtimeSummary.graphDecisionReason ? (
+                                  <div className="mt-2 text-xs leading-5 text-slate-600">
+                                    {[
+                                      runtimeSummary.graphSelectedBranch,
+                                      runtimeSummary.graphRiskLevel,
+                                      runtimeSummary.graphDecisionReason,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </div>
+                                ) : null}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {runtimeSummary.graphTrace.map(
                                     (entry, index) => (
                                       <ConsoleOutlineBadge
                                         key={`${execution.id}-graph-${entry.step}-${index}`}
                                       >
-                                        {`${entry.step} · ${entry.status}`}
+                                        {`${entry.step} · ${entry.status}${entry.durationMs !== null ? ` · ${entry.durationMs.toFixed(1)}ms` : ""}`}
                                       </ConsoleOutlineBadge>
                                     ),
                                   )}

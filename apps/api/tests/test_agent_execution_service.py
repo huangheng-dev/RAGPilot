@@ -8,6 +8,7 @@ import pytest
 from ragpilot_api.application.model_gateway.contracts import RuntimeModelBinding
 from ragpilot_api.application.agents.agent_execution_service import (
     AgentExecutionService,
+    build_agent_definition_snapshot,
     build_agent_execution_response,
 )
 from ragpilot_api.contracts.http.agent_execution_contracts import AgentExecutionCreateRequest
@@ -59,6 +60,152 @@ def build_agent_definition(**overrides):
         "updated_at": now,
     }
     return SimpleNamespace(**{**defaults, **overrides})
+
+
+def test_agent_definition_snapshot_binds_runtime_policy_version() -> None:
+    snapshot = build_agent_definition_snapshot(
+        build_agent_definition(
+            runtime_engine="langgraph_pilot",
+            runtime_version="langgraph_v1",
+        )
+    )
+
+    assert snapshot["version"] == "agent_definition_snapshot_v2"
+    assert snapshot["runtime_engine"] == "langgraph_pilot"
+    assert snapshot["runtime_version"] == "langgraph_v1"
+
+
+@pytest.mark.parametrize(
+    ("branch", "expected_action_keys"),
+    [
+        ("recover_failed", ["review_failed_documents", "inspect_workflow_recovery"]),
+        ("review_processing", ["review_active_intake"]),
+        ("release_ready", ["review_ready_documents", "validate_intake_in_chat"]),
+    ],
+)
+def test_document_intake_recommended_actions_follow_langgraph_branch(
+    branch, expected_action_keys,
+) -> None:
+    service = object.__new__(AgentExecutionService)
+
+    actions = service._build_mode_recommended_action_specs(
+        execution_mode="document_intake",
+        payload={"intake_decision": {"branch": branch}},
+    )
+
+    assert [action.action_key for action in actions] == expected_action_keys
+
+
+@pytest.mark.anyio
+async def test_agent_replay_reuses_source_definition_and_sandbox_snapshot() -> None:
+    tenant_id = uuid4()
+    agent_definition = build_agent_definition(tenant_id=tenant_id)
+    definition_snapshot = build_agent_definition_snapshot(agent_definition)
+    source = build_agent_execution(
+        tenant_id=tenant_id,
+        agent_definition_id=agent_definition.id,
+        execution_policy_json={
+            "version": "agent_execution_policy_v1",
+            "max_tool_calls": 0,
+            "max_runtime_seconds": 60,
+            "max_output_bytes": 4096,
+            "sandbox": {
+                "shell_access": "none",
+                "filesystem_access": "none",
+                "network_access": "registered_tools_only",
+                "allowed_tool_registration_ids": [],
+            },
+            "agent_definition_snapshot": definition_snapshot,
+        },
+        output_schema_json={"type": "object"},
+    )
+    created = build_agent_execution(
+        tenant_id=tenant_id,
+        agent_definition_id=agent_definition.id,
+        execution_status="queued",
+        replay_of_execution_id=source.id,
+        execution_policy_json=source.execution_policy_json,
+        output_schema_json=source.output_schema_json,
+        completed_at=None,
+        started_at=None,
+    )
+    current_definition_lookup = AsyncMock()
+    execution_repository = SimpleNamespace(
+        get_agent_execution=AsyncMock(return_value=source),
+        create_agent_execution=AsyncMock(return_value=created),
+        attach_temporal_workflow=AsyncMock(return_value=created),
+    )
+    temporal = SimpleNamespace(
+        start_agent_execution_workflow=AsyncMock(return_value="agent-replay-workflow")
+    )
+    service = AgentExecutionService(
+        SimpleNamespace(get_agent_definition=current_definition_lookup),
+        execution_repository,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        temporal_workflow_client=temporal,
+    )
+
+    await service.replay_agent_execution(
+        execution_id=source.id,
+        tenant_id=tenant_id,
+        actor=SimpleNamespace(user_id=None, role="operator"),
+    )
+
+    current_definition_lookup.assert_not_awaited()
+    create_kwargs = execution_repository.create_agent_execution.await_args.kwargs
+    assert create_kwargs["replay_of_execution_id"] == source.id
+    assert create_kwargs["execution_policy_json"]["agent_definition_snapshot"] == definition_snapshot
+    assert create_kwargs["execution_policy_json"]["sandbox"]["allowed_tool_registration_ids"] == []
+    assert create_kwargs["output_schema_json"] == {"type": "object"}
+
+
+@pytest.mark.anyio
+async def test_cancelling_waiting_execution_closes_pending_approval() -> None:
+    tenant_id = uuid4()
+    waiting = build_agent_execution(
+        tenant_id=tenant_id,
+        execution_status="awaiting_approval",
+        temporal_workflow_id="agent-execution-waiting",
+        completed_at=None,
+    )
+    cancelled = build_agent_execution(**{
+        **waiting.__dict__,
+        "execution_status": "cancelled",
+        "cancelled_at": datetime.now(timezone.utc),
+    })
+    pending_approval = SimpleNamespace(approval_status="pending")
+    execution_repository = SimpleNamespace(
+        get_agent_execution=AsyncMock(return_value=waiting),
+        request_agent_execution_cancellation=AsyncMock(return_value=waiting),
+        cancel_agent_execution=AsyncMock(return_value=cancelled),
+    )
+    approval_repository = SimpleNamespace(
+        list_for_execution=AsyncMock(return_value=[pending_approval]),
+        decide=AsyncMock(return_value=pending_approval),
+    )
+    temporal = SimpleNamespace(cancel_workflow=AsyncMock())
+    service = AgentExecutionService(
+        SimpleNamespace(), execution_repository, SimpleNamespace(), SimpleNamespace(),
+        SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
+        temporal_workflow_client=temporal,
+        agent_approval_repository=approval_repository,
+    )
+
+    response = await service.cancel_agent_execution(execution_id=waiting.id, tenant_id=tenant_id)
+
+    assert response.execution_status == "cancelled"
+    approval_repository.decide.assert_awaited_once_with(
+        request=pending_approval, status="cancelled", actor_user_id=None,
+        reason="Agent execution was cancelled.",
+    )
+    temporal.cancel_workflow.assert_awaited_once_with(
+        temporal_workflow_id="agent-execution-waiting",
+        reason="Agent execution cancelled by an operator.",
+    )
 
 
 @pytest.mark.anyio

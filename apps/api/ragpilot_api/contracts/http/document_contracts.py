@@ -37,6 +37,7 @@ class DocumentResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     knowledge_base_id: UUID
+    data_source_id: UUID | None = None
     title: str
     source_uri: str | None
     source_kind: str

@@ -595,7 +595,9 @@ async def test_get_message_feedback_summary_returns_repository_counts() -> None:
 
 
 @pytest.mark.anyio
-async def test_ask_question_includes_citation_source_metadata_from_retrieval_results() -> None:
+async def test_ask_question_uses_persisted_retrieval_engine_and_includes_citation_source_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     tenant_id = uuid4()
     workspace_id = uuid4()
     knowledge_base_id = uuid4()
@@ -626,6 +628,17 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
     document_version_id = uuid4()
     document_chunk_id = uuid4()
     citation_id = uuid4()
+    retrieval_profile_id = uuid4()
+    captured_engine_names: list[str | None] = []
+
+    from ragpilot_api.application.retrieval.retrieval_engines import NativeRetrievalEngine
+
+    monkeypatch.setattr(
+        "ragpilot_api.application.chat.chat_service.build_retrieval_engine",
+        lambda settings, engine_name=None: (
+            captured_engine_names.append(engine_name) or NativeRetrievalEngine()
+        ),
+    )
 
     conversation_repository = SimpleNamespace(
         get_conversation=AsyncMock(return_value=conversation),
@@ -732,6 +745,30 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
         ),
         model_gateway=model_gateway,
         runtime_binding_resolver=runtime_binding_resolver,
+        knowledge_base_repository=SimpleNamespace(
+            get_knowledge_base_by_id=AsyncMock(
+                return_value=SimpleNamespace(retrieval_profile_id=retrieval_profile_id)
+            )
+        ),
+        retrieval_profile_repository=SimpleNamespace(
+            get_retrieval_profile=AsyncMock(
+                return_value=SimpleNamespace(
+                    id=retrieval_profile_id,
+                    name="Authorized LlamaIndex",
+                    is_enabled=True,
+                    engine_name="llamaindex_pilot",
+                    engine_version="llamaindex_authorized_context_v1",
+                    retrieval_mode="hybrid",
+                    top_k=8,
+                    vector_weight=0.65,
+                    lexical_weight=0.35,
+                    hybrid_overlap_bonus=0.05,
+                    llamaindex_similarity_cutoff=0.2,
+                    llamaindex_long_context_reorder_enabled=True,
+                )
+            ),
+            get_default_enabled_retrieval_profile=AsyncMock(),
+        ),
     )
 
     response = await service.ask_question(
@@ -773,7 +810,9 @@ async def test_ask_question_includes_citation_source_metadata_from_retrieval_res
     message_repository.create_message_citations.assert_awaited_once()
     assistant_create_call = message_repository.create_message.await_args_list[1]
     assert assistant_create_call.kwargs["usage_json"]["retrieval_mode"] == "hybrid"
-    assert assistant_create_call.kwargs["usage_json"]["retrieval_engine"] == "native"
+    assert captured_engine_names == ["llamaindex_pilot"]
+    assert assistant_create_call.kwargs["usage_json"]["retrieval_engine"] == "llamaindex_pilot"
+    assert assistant_create_call.kwargs["usage_json"]["retrieval_engine_version"] == "llamaindex_authorized_context_v1"
     assert assistant_create_call.kwargs["usage_json"]["retrieval_method_breakdown"] == {
         "hybrid": 1,
         "vector": 0,

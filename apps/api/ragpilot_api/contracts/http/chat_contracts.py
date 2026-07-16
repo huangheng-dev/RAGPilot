@@ -49,6 +49,12 @@ class MessageCitationResponse(BaseModel):
     document_version_id: UUID | None = None
     knowledge_base_id: UUID | None = None
     chunk_index: int | None = None
+    source_location_type: str | None = None
+    source_location_label: str | None = None
+    source_page_number: int | None = None
+    source_sheet_name: str | None = None
+    source_table_number: int | None = None
+    source_is_ocr: bool = False
     rank: int
     score: float | None
     retrieval_method: str | None = None
@@ -127,6 +133,8 @@ class MessageResponse(BaseModel):
     content: str
     model_name: str | None
     usage_json: dict
+    prompt_version_id: UUID | None = None
+    prompt_snapshot_hash: str | None = None
     created_at: datetime
     citations: list[MessageCitationResponse] = Field(default_factory=list)
     feedback_entries: list[MessageFeedbackResponse] = Field(default_factory=list)

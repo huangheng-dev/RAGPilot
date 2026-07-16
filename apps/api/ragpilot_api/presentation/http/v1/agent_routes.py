@@ -23,6 +23,9 @@ from ragpilot_api.contracts.http.agent_execution_contracts import (
     AgentExecutionMetricsResponse,
     AgentExecutionMode,
     AgentExecutionResponse,
+    AgentExecutionEvaluationResponse,
+    AgentApprovalDecisionRequest,
+    AgentApprovalResponse,
     AgentExecutionStatus,
 )
 from ragpilot_api.contracts.http.agent_run_contracts import (
@@ -34,6 +37,7 @@ from ragpilot_api.contracts.http.agent_run_contracts import (
     AgentRunTriggerSource,
 )
 from ragpilot_api.infrastructure.database.repositories.agent_execution_repository import AgentExecutionRepository
+from ragpilot_api.infrastructure.database.repositories.agent_approval_repository import AgentApprovalRepository
 from ragpilot_api.infrastructure.database.repositories.agent_repository import AgentRepository
 from ragpilot_api.infrastructure.database.repositories.agent_run_repository import AgentRunRepository
 from ragpilot_api.infrastructure.database.repositories.conversation_repository import ConversationRepository
@@ -60,6 +64,8 @@ from ragpilot_api.presentation.http.request_actor import (
 )
 from ragpilot_api.shared.settings import get_settings
 from ragpilot_api.infrastructure.workflows.temporal_client import TemporalWorkflowClient
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.database.repositories.runtime_credential_repository import RuntimeCredentialRepository
 
 
 router = APIRouter()
@@ -139,8 +145,11 @@ def build_agent_execution_service(session: AsyncSession) -> AgentExecutionServic
             WorkflowRepository(session),
             get_settings(),
             mcp_connector_repository=McpConnectorRepository(session),
+            runtime_credential_service=RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
         ),
         temporal_workflow_client=TemporalWorkflowClient(get_settings()),
+        agent_approval_repository=AgentApprovalRepository(session),
+        runtime_credential_service=RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
     )
 
 
@@ -246,7 +255,7 @@ async def get_agent_runtime_governance(
     readiness: str | None = Query(default=None, pattern=r"^(ready|attention)$"),
     issue: str | None = Query(
         default=None,
-        pattern=r"^(model_missing|model_disabled|model_runtime_unconfigured|retrieval_profile_missing|retrieval_profile_disabled|scope_missing|scope_invalid|tools_missing|tool_registration_disabled|tool_approval_required|tool_mcp_reserved|tool_mcp_integration_pending)$",
+        pattern=r"^(model_missing|model_disabled|model_runtime_unconfigured|retrieval_profile_missing|retrieval_profile_disabled|retrieval_engine_unavailable|scope_missing|scope_invalid|tools_missing|tool_registration_disabled|tool_approval_required|tool_mcp_reserved|tool_mcp_integration_pending|runtime_engine_unavailable)$",
     ),
     model_endpoint_id: UUID | None = Query(default=None),
     model_provider_type: str | None = Query(default=None, pattern=r"^(deterministic|openai_compatible|ollama|vllm)$"),
@@ -452,6 +461,55 @@ async def retry_agent_execution(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
+@router.post("/executions/actions/{execution_id}/replay", response_model=AgentExecutionResponse, status_code=status.HTTP_201_CREATED)
+async def replay_agent_execution(
+    execution_id: UUID, tenant_id: UUID = Query(...), actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> AgentExecutionResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "execute_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    try:
+        return await build_agent_execution_service(session).replay_agent_execution(
+            execution_id=execution_id, tenant_id=tenant_id, actor=actor,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@router.get("/executions/{execution_id}/approvals", response_model=list[AgentApprovalResponse])
+async def list_agent_approval_requests(
+    execution_id: UUID, tenant_id: UUID = Query(...), actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> list[AgentApprovalResponse]:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "access_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    return await build_agent_execution_service(session).list_agent_approval_requests(
+        execution_id=execution_id, tenant_id=tenant_id,
+    )
+
+
+@router.post("/executions/approvals/{approval_request_id}/decision", response_model=AgentApprovalResponse)
+async def decide_agent_approval(
+    approval_request_id: UUID, request: AgentApprovalDecisionRequest,
+    actor: RequestActor = Depends(get_request_actor), session: AsyncSession = Depends(get_database_session),
+) -> AgentApprovalResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "execute_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, request.tenant_id)
+    if actor.role != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super-admin approval is required.")
+    try:
+        return await build_agent_execution_service(session).decide_agent_approval(
+            approval_request_id=approval_request_id, request=request, actor=actor,
+        )
+    except ResourceNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
 @router.get("/executions/metrics", response_model=AgentExecutionMetricsResponse)
 async def get_agent_execution_metrics(
     tenant_id: UUID = Query(...),
@@ -473,6 +531,26 @@ async def get_agent_execution_metrics(
         agent_definition_id=agent_definition_id,
         execution_mode=execution_mode,
         execution_status=execution_status,
+    )
+
+
+@router.get("/executions/evaluation", response_model=AgentExecutionEvaluationResponse)
+async def evaluate_agent_execution_lane(
+    tenant_id: UUID = Query(...),
+    agent_definition_id: UUID | None = Query(default=None),
+    execution_mode: AgentExecutionMode | None = Query(default=None),
+    minimum_samples: int = Query(default=20, ge=5, le=1000),
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> AgentExecutionEvaluationResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "access_agents", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, tenant_id)
+    return await build_agent_execution_service(session).evaluate_agent_execution_lane(
+        tenant_id=tenant_id,
+        agent_definition_id=agent_definition_id,
+        execution_mode=execution_mode,
+        minimum_samples=minimum_samples,
     )
 
 

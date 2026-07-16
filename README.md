@@ -2,266 +2,220 @@
 
 Language: English | [简体中文](./README.zh-CN.md)
 
-RAGPilot is an open-source AI knowledge operations platform for teams that need governed knowledge ingestion, retrieval-grounded chat, agent execution, workflow supervision, and platform administration in one system.
+[![CI](https://github.com/huangheng-dev/RAGPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/huangheng-dev/RAGPilot/actions/workflows/ci.yml)
+[![Release Readiness](https://github.com/huangheng-dev/RAGPilot/actions/workflows/release-readiness.yml/badge.svg)](https://github.com/huangheng-dev/RAGPilot/actions/workflows/release-readiness.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-It is built for real production workflows rather than isolated chat demos. The product combines knowledge access, document processing, retrieval diagnostics, citation-backed answers, long-running workflow execution, model governance, and operator-facing control surfaces into a single platform.
+RAGPilot is an open-source platform for building and operating governed retrieval-augmented generation systems. It connects source ingestion, permission-aware hybrid retrieval, citation-backed Chat, constrained Agent execution, durable workflows, and runtime administration in one product.
 
-The current release provides a complete operator workflow from scoped knowledge intake to governed answers and operational follow-up. Its web console, API, worker, persistence layer, runtime controls, deployment assets, and release checks are maintained as one versioned product surface.
+Authorization, provenance, recoverability, evaluation, and observability are part of the runtime design rather than add-on concerns. The Web console, API, Workers, persistence model, deployment assets, and release gates evolve together in a versioned monorepo.
 
-## What RAGPilot Delivers
+## Why RAGPilot
 
-- retrieval-grounded chat with citations and persisted conversation history
-- governed knowledge-source intake across file assets and URL-based single-page web content import
-- document ingestion across upload, parsing, chunking, indexing, reindex, lifecycle review, and failure recovery
-- durable workflow execution with queueing, retry, lineage tracking, and operational follow-up
-- agent management with governed runtime handoff, task orchestration, and tool-aware execution boundaries
-- tenant, workspace, knowledge base, and member governance for multi-scope operations
-- model, retrieval, tool, and runtime credential control surfaces for consistent execution behavior
-- English-first product structure with Simplified Chinese support
+- **Governed knowledge lifecycle:** Data Sources, Documents, immutable versions, Chunks, embeddings, indexing state, synchronization cursors, leases, and recovery history are persisted and operable.
+- **Authorization inside retrieval:** tenant, Workspace, Knowledge Base, Document, and Chunk access is enforced at retrieval candidate boundaries, including PostgreSQL reauthorization of Elasticsearch candidates.
+- **Constrained Agent execution:** approved Tools, immutable execution snapshots, deployment-capped budgets, optional JSON Schema result contracts, approval, cancellation, retry, and replay remain auditable.
+- **Durable operations:** Temporal owns long-running ingestion, source synchronization, and Agent execution state instead of hiding background work inside HTTP requests.
+- **Measurable quality:** versioned retrieval datasets, evidence validation, Prompt bindings, Citations, traces, and release gates make runtime changes reviewable.
 
-## Product Areas
-
-RAGPilot keeps the visible product focused on the main operating path:
-
-- `Home` for a concise overview of recent chats, documents, and agents
-- `Chat` for grounded question answering with traceable sources
-- `Documents` for multi-file or web-page intake, knowledge-base filtering, indexing, and lifecycle operations
-- `Agents` for governed agent definitions, model and tool bindings, execution entry, and review
-- `Admin` for tenant directories, workspaces, knowledge bases, members, access, and runtime governance
-- `Operations` for platform-wide workflow supervision, queue visibility, retry handling, and run inspection
-- `Settings` for profile, active-session, and password management
-
-## Core Operating Flow
+## End-to-End Flow
 
 ```text
-Tenant
--> Workspace
--> Knowledge Base
--> Source Registration
--> Document Ingestion
--> Durable Workflow Execution
--> Retrieval Validation
--> Grounded Chat or Agent Task
--> Operational Follow-up and Governance
+Tenant and identity scope
+-> Workspace and Knowledge Base
+-> Source registration
+-> durable ingestion and search projection
+-> authorized retrieval and evidence validation
+-> grounded Chat or constrained Agent task
+-> operational review, recovery, and evaluation
 ```
+
+## Product Surfaces
+
+- `Home` — recent activity, active scope, and entry into current work
+- `Chat` — streaming grounded answers, Citations, feedback, and conversation history
+- `Documents` — file and single-page Web intake, Data Sources, indexing, lifecycle, and recovery
+- `Agents` — governed definitions, model and Tool bindings, execution constraints, approval, and replay
+- `Admin` — tenant, Workspace, Knowledge Base, member, access, model, Tool, connector, and retrieval governance
+- `Operations` — Workflow and Agent execution queues, failures, retry, cancellation, lineage, and diagnostics
+- `Settings` — profile, password, active sessions, and personal security actions
 
 ## Platform Capabilities
 
-### Knowledge Ingestion
+### Knowledge and retrieval
 
-- document upload and source registration
-- URL-based single-page web content import
-- parsing, normalization, chunking, and embedding
-- vector and lexical indexing
-- document versioning, rebuild, and status tracking
+- multi-file upload and durable source registration
+- versioned `public_web_v1` single-page synchronization with conditional fetch state, database leases, Temporal orchestration, SSRF protection, and authoritative deletion handling
+- parsing and normalization for supported text, structured-data, PDF, DOCX, XLSX, and image formats
+- governed OCR for scanned PDFs and supported standalone images
+- pgvector semantic recall, Elasticsearch BM25 recall, and PostgreSQL lexical fallback
+- governed fusion, reranking, context assembly, and retrieval diagnostics
+- Document and Chunk user/group grants enforced during candidate retrieval
+- versioned retrieval evaluation contracts covering ranking, isolation, forbidden content, groundedness, Citations, latency, and cost
+- release-blocking Native/LlamaIndex comparison gates and Native/LangGraph branch-contract gates using the installed framework runtimes
 
-RAGPilot treats knowledge intake as a governed lifecycle:
+### Chat and Prompt history
 
-```text
-Source
--> Ingest
--> Parse
--> Chunk
--> Index
--> Retrieve
--> Validate
--> Rebuild or Archive
-```
+- persisted and searchable conversations with rename and deletion controls
+- native SSE deltas for Ollama and OpenAI-compatible providers
+- explicit completion-chunk fallback and disconnect cancellation
+- persisted final Messages, Citations, feedback, usage evidence, and streaming mode
+- immutable Prompt version and rendered-snapshot hash bindings on Chat and Agent history
 
-### Retrieval and Chat
+### Agents, Tools, and Workflows
 
-- hybrid retrieval across semantic and keyword signals
-- rerank and context assembly
-- source citation return and answer traceability
-- persisted, searchable conversation history with rename and deletion controls
-- knowledge-scope selection at workspace and knowledge-base level
-- lightweight conversational intent handling that avoids irrelevant retrieval for greetings
+- persisted Agent definitions, scoped launches, durable executions, and evaluation summaries
+- native, HTTP, and MCP Tool registration behind one policy-enforcing runtime
+- Tool-call, runtime, and output-size budgets capped by deployment policy
+- immutable Agent definition and allowed-Tool sandbox snapshots
+- optional JSON Schema terminal-result validation
+- durable approval, cancellation, retry, replay lineage, and replay fingerprints
+- Workflow Runs, Steps, Events, notes, queue metrics, and operator recovery actions
 
-### Agents and Workflows
+### Identity, governance, and observability
 
-- agent definition management
-- long-running workflow execution and recovery
-- structured runtime handoff between retrieval, tools, and task steps
-- operator-visible retry, cancellation, and lineage review
+- backend-issued sessions, local-password authentication, invitation activation, password change/reset, and session revocation
+- tenant memberships, role capabilities, Workspace/Knowledge Base scope, Access Groups, and access-event history
+- tenant-scoped platform API keys with one-time secret display, hash-only storage, scopes, expiry, revocation, usage tracking, and audit events
+- encrypted runtime credentials and governed model, retrieval, Tool, and MCP records
+- Redis-backed cross-instance model and MCP concurrency/rate limits
+- W3C Trace Context across API, Temporal, Workers, retrieval, model, Agent, Tool, MCP, embedding, and Elasticsearch boundaries
+- privacy-safe structured logs, metrics, traces, dashboards, and alert baselines
 
-Agents in RAGPilot are governed task executors. They are expected to run with explicit scope, approved tools, traceable steps, and reviewable outputs rather than open-ended autonomous behavior.
+## Runtime Stack and Integrations
 
-### Governance and Runtime Control
+Core runtime components:
 
-- tenant and workspace scoping
-- member invitation, activation, and access review
-- formal authentication-mode contracts across local directory, password-local, OIDC, and SAML provider-managed sign-in boundaries
-- retrieval profile and model endpoint governance
-- tool inventory management across native, HTTP, and MCP-oriented integrations
-- runtime credential, connector, and binding governance without exposing raw secret values
+| Component | Role |
+| --- | --- |
+| Next.js | Web product and operator surfaces |
+| FastAPI | HTTP contracts, authorization, and domain orchestration |
+| PostgreSQL / pgvector | business source of truth and semantic retrieval |
+| Temporal | durable Workflow and Agent execution history |
+| Elasticsearch | rebuildable lexical/search projection and BM25 recall |
+| Redis | distributed runtime limits and ephemeral coordination |
+| MinIO | original and derived document assets |
+| OpenTelemetry stack | correlated logs, metrics, traces, and diagnostics |
 
-## Architecture
+Active integration paths:
 
-RAGPilot uses a multi-service monorepo layout:
+- native Ollama Chat
+- OpenAI-compatible Chat and embeddings, including governed vLLM-compatible endpoints
+- Streamable HTTP MCP client discovery, Tool mapping, and Agent invocation
+- read-only `stdio` MCP server for scoped knowledge search, Document inspection, and Workflow inspection
 
-```text
-RAGPilot/
-  apps/
-    web/
-    api/
-    worker/
-    mcp-server/
-  packages/
-    shared-types/
-    prompts/
-    evals/
-  infra/
-    docker/
-    k8s/
-    otel/
-```
+Governed framework lanes:
 
-## Runtime Stack
+- `LlamaIndex` wraps already-authorized native candidates, applies official similarity and long-context processors, revalidates the final Chunk set against PostgreSQL policy, and records comparison evidence
+- `LangGraph` runs typed, bounded decision graphs for document intake and workflow recovery inside Temporal-owned durable Agent executions, including branch selection, validation, and trace timing
 
-- `Next.js`
-- `FastAPI`
-- `Temporal`
-- `PostgreSQL`
-- `pgvector`
-- `Elasticsearch`
-- `Redis`
-- `MinIO`
-- `OpenTelemetry`
+`native` remains the default for both boundaries. Retrieval Profiles persist the selected processor, policy version, and LlamaIndex processor settings; Agent definitions persist their runtime engine and version. Every Agent execution snapshots the effective versions it used. Deployment profiles can be core-only, Agent (LangGraph), or full framework; API and Agent Worker capabilities stay aligned so runtime governance can mark a selected adapter unavailable before execution.
 
-## Integration Layer
+## Scope and Deployment Boundaries
 
-RAGPilot includes active governed integration paths for:
+- the built-in Web connector intentionally synchronizes one public page per Data Source rather than crawling a site
+- OCR targets scanned PDFs and listed standalone image formats; complex-layout and table reconstruction remain format-dependent
+- local-password authentication is included; deployments that select an external identity provider must complete and validate its callbacks, claim mapping, and operating policy
+- the Kubernetes manifests provide a production-oriented baseline that still requires environment-specific images, Secrets, dependencies, and validation
+- alternate reranking and framework paths are promoted only when versioned evaluations demonstrate a measurable benefit
 
-- `Ollama`
-- `vLLM`
-- `LlamaIndex` retrieval runtime lanes
-- `LangGraph` agent runtime lanes
-
-RAGPilot also includes an `MCP`-compatible connector boundary for governed external tool exposure.
-
-All of these integrations sit behind explicit runtime selection, configuration, and governance boundaries.
-The shipped Docker API baseline includes the optional `LlamaIndex` and `LangGraph` dependencies required for governed runtime execution and readiness checks.
-
-## Repository Conventions
-
-- English-first naming across code, APIs, persistence, and product structure
-- explicit domain naming instead of vague utility naming
-- backend routes and services organized by product domain
-- durable backend state instead of UI-only simulation
-- lean visible surfaces aligned to the main user flow
+For exact implementation status, use the [Project Snapshot](./docs/product/project-snapshot.md). The [Project Blueprint](./docs/product/project-blueprint.md) defines durable architecture rules, while the [Roadmap](./docs/planning/roadmap.md) records prioritized evolution.
 
 ## Local Development
 
 Prerequisites:
 
-- Node.js and npm
-- Python 3.11 or newer
+- Node.js 20 or newer and npm
+- Python 3.10 or newer
 - Docker Desktop or a compatible Docker Compose environment
-- an optional Ollama or OpenAI-compatible endpoint when using a non-deterministic chat model
+- optional Ollama or OpenAI-compatible endpoint for non-deterministic model execution
 
-1. Copy `.env.example` to `.env` and replace development credentials before shared or production use.
-2. Install repository dependencies with `npm install`.
-3. Start RAGPilot in stable local mode:
+1. Copy `.env.example` to `.env` and replace development credentials before shared use.
+2. Install repository dependencies:
+
+```bash
+npm install
+```
+
+3. Start stable local mode:
 
 ```bash
 npm run stable:mode:up
 ```
 
-This mode keeps dependency services in Docker while running the web and API through stable host processes.
+Stable mode keeps infrastructure dependencies in Docker while running the Web and API through managed host processes. RAGPilot does not publish a universal production account or password; identities, Secrets, model endpoints, and runtime credentials are provisioned per environment.
 
-RAGPilot does not publish a default production account or password. Authentication users, secrets, model endpoints, and runtime credentials must be provisioned for each environment.
+Default local endpoints are configurable through `.env`:
 
-Default local targets:
+- Web: `http://localhost:3000`
+- API: `http://localhost:8000`
+- Temporal UI: `http://localhost:8080`
+- Temporal gRPC: `localhost:7233`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+- Elasticsearch: `http://localhost:9200`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
 
-- Web: `http://localhost:3001`
-- API: `http://localhost:18000`
-- Temporal UI: `http://localhost:8081`
-- Temporal gRPC: `localhost:7234`
-- PostgreSQL: `localhost:5433`
-- Redis: `localhost:6380`
-- Elasticsearch: `http://localhost:9201`
-- MinIO API: `http://localhost:9002`
-- MinIO Console: `http://localhost:9003`
+These are repository defaults. If a host port is already owned by another application, override only the corresponding `RAGPILOT_*_PORT` value in `.env`; container-internal service ports remain unchanged.
 
-For full-stack container verification:
+For full-container validation:
 
 ```bash
 npm run compose:up:detached
 ```
 
-For frontend-only work:
-
-```bash
-npm install
-npm run web:serve
-```
+For detailed setup, migration, validation, and troubleshooting instructions, use the [Local Development Runbook](./docs/runbooks/local-development.md).
 
 ## Production Deployment
 
-RAGPilot ships with a production-delivery baseline rather than only local development scaffolding. Operators remain responsible for environment-specific security hardening, secret management, backups, observability retention, capacity planning, and disaster recovery.
+RAGPilot includes a production-oriented delivery baseline:
 
-Delivery assets included in this repository:
+- reproducible production container definitions for Web, API, Document Worker, and Agent Worker, backed by committed Node/Python dependency locks and digest-pinned base images
+- pull-request image builds plus tag-triggered multi-architecture GHCR publication with SBOMs, provenance attestations, and keyless Cosign signatures
+- Kubernetes manifests with a database migration Job, probes, resources, ingress, rolling-update/disruption/topology controls, restricted runtime identities, and external Secret integration
+- a production environment template in [`.env.production.example`](./.env.production.example)
+- OpenTelemetry, Prometheus, Tempo, Grafana, dashboard, and alert configuration
+- versioned capacity contracts with a protected staging workflow, plus release, backup/restore, reliability, and publishing helpers under [`infra/scripts`](./infra/scripts)
 
-- production-ready container images for `web`, `api`, and `worker`
-- Kubernetes baseline manifests under [`infra/k8s`](./infra/k8s)
-- production environment template in [`.env.production.example`](./.env.production.example)
-- release validation and publish automation helpers under [`infra/scripts`](./infra/scripts)
+Deployment operators remain responsible for selecting and closing the identity mode, supplying real images and Secrets, configuring trusted origins and managed dependencies, validating migrations and model reachability, and exercising backup/restore, capacity, telemetry retention, incident response, and disaster recovery in the target environment.
 
-The default production topology is:
-
-```text
-Ingress
--> Web
--> API
--> Worker
--> PostgreSQL / Redis / MinIO / Elasticsearch / Temporal
-```
-
-For Kubernetes-oriented rollout:
-
-1. prepare your own secret manifest from [`infra/k8s/secret.example.yaml`](./infra/k8s/secret.example.yaml)
-2. replace placeholder image references such as `ghcr.io/your-org/ragpilot-api:0.1.0`
-3. point [`infra/k8s/configmap.yaml`](./infra/k8s/configmap.yaml) at your real managed dependency endpoints
-4. apply the manifests through [`infra/k8s/kustomization.yaml`](./infra/k8s/kustomization.yaml)
-
-Before exposing an environment publicly, configure trusted origins, replace all template secrets, provision authentication identities, verify model endpoint reachability, apply database migrations, and run the release preflight.
-
-## Release Quality
-
-The release gate covers the public documentation set, Markdown links, frontend lint and type safety, the optimized web build, API tests, authenticated core-surface browser checks, deployment assets, and common secret-leakage patterns. These checks are intended to keep product behavior, documentation, and deployment configuration aligned before a release is tagged.
+See the [Kubernetes Deployment Baseline](./infra/k8s/README.md) and [Production Reliability Runbook](./docs/runbooks/production-reliability.md).
 
 ## Release Workflow
 
-RAGPilot keeps public release work on one unified preflight path:
+Run the unified release gate before tagging or publishing:
 
 ```bash
 npm run release:status
 npm run release:preflight
 ```
 
-The preflight flow audits:
+The preflight validates:
 
-- public root documentation
-- public markdown links
-- web build integrity
-- API tests
-- candidate public file set
-- production delivery assets
-- basic secret leakage patterns
+- public documentation and Markdown links
+- Web lint, type safety, and production build
+- production Node dependency policy
+- synchronized Python resolution and container dependency locks
+- API and Worker tests plus migration completeness
+- deterministic and real-database retrieval regression gates
+- MCP build and protocol tests
+- authenticated browser E2E behavior
+- release-profile container definitions, public delivery assets, and common secret-leakage patterns
 
-Useful release helpers:
+API route and ORM table documentation are also checked against the running FastAPI and SQLAlchemy contracts.
 
-- `npm run release:help`
-- `npm run release:delivery-audit`
-- `npm run release:first-push`
-- `npm run release:first-tag`
-- `npm run release:promote`
+## Documentation
 
-## Open-Source Documentation
-
-- contribution guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
-- security policy: [SECURITY.md](./SECURITY.md)
-- release history: [CHANGELOG.md](./CHANGELOG.md)
+- [Technical documentation index](./docs/README.md)
+- [Project Snapshot](./docs/product/project-snapshot.md)
+- [Project Blueprint](./docs/product/project-blueprint.md)
+- [System Overview](./docs/architecture/system-overview.md)
+- [API Outline](./docs/api/api-outline.md)
+- [Roadmap](./docs/planning/roadmap.md)
+- [Contribution Guide](./CONTRIBUTING.md)
+- [Security Policy](./SECURITY.md)
+- [Changelog](./CHANGELOG.md)
 
 ## License
 

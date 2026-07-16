@@ -34,6 +34,7 @@ class McpConnectorRepository:
             credential_key_hint=credential_key_hint,
             notes=notes,
             is_enabled=is_enabled,
+            governance_status="reviewing",
         )
         self.session.add(mcp_connector)
 
@@ -136,3 +137,16 @@ class McpConnectorRepository:
         mcp_connector.updated_at = now
         await self.session.commit()
         return True
+
+    async def set_governance_status(self, *, mcp_connector: McpConnector, governance_status: str,
+                                    actor_user_id: UUID | None) -> McpConnector:
+        now = datetime.now(timezone.utc)
+        mcp_connector.governance_status = governance_status
+        mcp_connector.approved_by_user_id = actor_user_id if governance_status == "approved" else None
+        mcp_connector.approved_at = now if governance_status == "approved" else None
+        if governance_status == "rejected":
+            mcp_connector.is_enabled = False
+        mcp_connector.updated_at = now
+        await self.session.commit()
+        await self.session.refresh(mcp_connector)
+        return mcp_connector

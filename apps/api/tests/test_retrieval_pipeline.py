@@ -3,8 +3,21 @@ import pytest
 from ragpilot_api.application.retrieval.retrieval_pipeline import (
     build_query_terms,
     merge_retrieval_results,
+    normalize_ranked_scores,
     rerank_retrieval_results,
 )
+
+
+def test_rank_percentile_normalization_is_independent_of_bm25_score_scale() -> None:
+    low_scale = normalize_ranked_scores(
+        [{"document_chunk_id": "a", "lexical_score": 3}, {"document_chunk_id": "b", "lexical_score": 1}],
+        score_key="lexical_score",
+    )
+    high_scale = normalize_ranked_scores(
+        [{"document_chunk_id": "a", "lexical_score": 300}, {"document_chunk_id": "b", "lexical_score": 100}],
+        score_key="lexical_score",
+    )
+    assert low_scale == high_scale == {"a": 1.0, "b": 0.5}
 
 
 def test_build_query_terms_supports_english_and_cjk_queries() -> None:

@@ -3,7 +3,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from html import unescape
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from uuid import UUID
 
 import httpx
@@ -28,8 +28,14 @@ from ragpilot_api.contracts.http.document_contracts import (
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.infrastructure.database.models import Document, DocumentChunk
 from ragpilot_api.infrastructure.database.repositories.document_repository import DocumentRepository
+from ragpilot_api.infrastructure.database.repositories.data_source_repository import DataSourceRepository
 from ragpilot_api.infrastructure.database.repositories.workflow_repository import WorkflowRepository
 from ragpilot_api.infrastructure.object_storage.document_storage import DocumentStorage
+from ragpilot_api.infrastructure.security.outbound_urls import (
+    validate_public_http_destination,
+    validate_public_http_url,
+    validate_response_peer,
+)
 from ragpilot_api.infrastructure.workflows.temporal_client import TemporalWorkflowClient
 
 
@@ -44,6 +50,13 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     ".pdf",
     ".docx",
     ".xlsx",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".tif",
+    ".tiff",
+    ".bmp",
 }
 SUPPORTED_DOCUMENT_CONTENT_TYPES = {
     "text/plain",
@@ -57,14 +70,20 @@ SUPPORTED_DOCUMENT_CONTENT_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/tiff",
+    "image/bmp",
 }
-SUPPORTED_DOCUMENT_TYPES_LABEL = "TXT, Markdown, HTML, CSV, JSON, PDF, DOCX, and XLSX"
+SUPPORTED_DOCUMENT_TYPES_LABEL = "TXT, Markdown, HTML, CSV, JSON, PDF, DOCX, XLSX, PNG, JPEG, WebP, TIFF, and BMP"
 SUPPORTED_WEB_IMPORT_CONTENT_TYPES = {
     "text/html",
     "application/xhtml+xml",
     "text/plain",
 }
 WEB_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+WEB_IMPORT_MAX_REDIRECTS = 5
 
 
 class DocumentService:
@@ -74,19 +93,30 @@ class DocumentService:
         workflow_repository: WorkflowRepository | None = None,
         document_storage: DocumentStorage | None = None,
         temporal_workflow_client: TemporalWorkflowClient | None = None,
+        data_source_repository: DataSourceRepository | None = None,
     ) -> None:
         self.document_repository = document_repository
         self.workflow_repository = workflow_repository
         self.document_storage = document_storage
         self.temporal_workflow_client = temporal_workflow_client
+        self.data_source_repository = data_source_repository
 
     async def create_document(self, request: DocumentCreateRequest) -> DocumentResponse:
-        document = await self.document_repository.create_document(
+        data_source = None
+        if self.data_source_repository is not None:
+            data_source = await self.data_source_repository.get_or_create(
+                tenant_id=request.tenant_id, knowledge_base_id=request.knowledge_base_id, name=request.title,
+                source_type=detect_document_source_kind(request.source_uri), source_uri=request.source_uri,
+            )
+        create_options = dict(
             tenant_id=request.tenant_id,
             knowledge_base_id=request.knowledge_base_id,
             title=request.title,
             source_uri=request.source_uri,
         )
+        if data_source is not None:
+            create_options["data_source_id"] = data_source.id
+        document = await self.document_repository.create_document(**create_options)
         return build_document_response(document)
 
     async def import_web_page(self, request: WebPageImportRequest) -> DocumentUploadResponse:
@@ -260,18 +290,39 @@ class DocumentService:
             content=content,
         )
 
-        document, document_version, document_asset, workflow_run = await self.document_repository.create_uploaded_document(
-            tenant_id=tenant_id,
-            knowledge_base_id=knowledge_base_id,
-            title=title,
-            source_uri=source_uri or f"s3://{stored_object.storage_bucket}/{stored_object.storage_key}",
-            content_hash=content_hash,
-            storage_bucket=stored_object.storage_bucket,
-            storage_key=stored_object.storage_key,
-            file_name=stored_object.file_name,
-            content_type=stored_object.content_type,
-            file_size_bytes=stored_object.file_size_bytes,
-        )
+        data_source = None
+        sync_run = None
+        if self.data_source_repository is not None:
+            resolved_source_uri = source_uri or f"s3://{stored_object.storage_bucket}/{stored_object.storage_key}"
+            source_type = "web" if source_uri and source_uri.lower().startswith(("http://", "https://")) else "file"
+            data_source = await self.data_source_repository.get_or_create(
+                tenant_id=tenant_id, knowledge_base_id=knowledge_base_id, name=title,
+                source_type=source_type, source_uri=resolved_source_uri,
+                identity_key=None if source_type == "web" else f"file:{content_hash}",
+                metadata_json={"file_name": stored_object.file_name, "content_type": stored_object.content_type},
+            )
+            sync_run = await self.data_source_repository.start_sync(item=data_source)
+
+        try:
+            upload_options = dict(
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+                title=title,
+                source_uri=source_uri or f"s3://{stored_object.storage_bucket}/{stored_object.storage_key}",
+                content_hash=content_hash,
+                storage_bucket=stored_object.storage_bucket,
+                storage_key=stored_object.storage_key,
+                file_name=stored_object.file_name,
+                content_type=stored_object.content_type,
+                file_size_bytes=stored_object.file_size_bytes,
+            )
+            if data_source is not None:
+                upload_options["data_source_id"] = data_source.id
+            document, document_version, document_asset, workflow_run = await self.document_repository.create_uploaded_document(**upload_options)
+        except Exception as error:
+            if self.data_source_repository is not None and data_source is not None and sync_run is not None:
+                await self.data_source_repository.fail_sync(item=data_source, run=sync_run, error=str(error))
+            raise
 
         workflow_repository = self.workflow_repository or WorkflowRepository(self.document_repository.session)
         temporal_workflow_client = self.temporal_workflow_client or TemporalWorkflowClient()
@@ -289,6 +340,11 @@ class DocumentService:
             workflow_run = await workflow_repository.mark_workflow_run_failed(
                 workflow_run=workflow_run,
                 error_message=str(error),
+            )
+
+        if self.data_source_repository is not None and data_source is not None and sync_run is not None:
+            await self.data_source_repository.complete_sync(
+                item=data_source, run=sync_run, cursor=content_hash, changed=1,
             )
 
         return DocumentUploadResponse(
@@ -399,7 +455,8 @@ class DocumentService:
         if deleted_document is None:
             raise ResourceNotFoundError("Document not found.")
 
-        deleted_document_id, deleted_at = deleted_document
+        deleted_document_id, deleted_at, projection_event_id = deleted_document
+        await self._dispatch_search_projection_event(projection_event_id)
         return DocumentDeleteResponse(document_id=deleted_document_id, deleted_at=deleted_at)
 
     async def restore_document(
@@ -408,12 +465,15 @@ class DocumentService:
         document_id: UUID,
         knowledge_base_id: UUID,
     ) -> DocumentRestoreResponse:
-        restored_document = await self.document_repository.restore_document(
+        restore_result = await self.document_repository.restore_document(
             document_id=document_id,
             knowledge_base_id=knowledge_base_id,
         )
-        if restored_document is None:
+        if restore_result is None:
             raise ResourceNotFoundError("Document not found.")
+        restored_document, projection_event_id = restore_result
+        if projection_event_id is not None:
+            await self._dispatch_search_projection_event(projection_event_id)
 
         return DocumentRestoreResponse(
             document=build_document_response(restored_document),
@@ -441,11 +501,24 @@ class DocumentService:
         storage = self.document_storage or DocumentStorage()
         for storage_bucket, storage_key in candidate["assets"]:
             storage.delete_document_object(storage_bucket=storage_bucket, storage_key=storage_key)
-        await self.document_repository.permanently_delete_document(document_id=document.id)
+        projection_event_id = await self.document_repository.permanently_delete_document(document_id=document.id)
+        await self._dispatch_search_projection_event(projection_event_id)
         return DocumentPermanentDeleteResponse(
             document_id=document.id,
             permanently_deleted_at=datetime.now(timezone.utc),
         )
+
+    async def _dispatch_search_projection_event(self, projection_event_id: UUID) -> None:
+        temporal_workflow_client = self.temporal_workflow_client or TemporalWorkflowClient()
+        try:
+            await temporal_workflow_client.start_search_projection_workflow(
+                projection_event_id=str(projection_event_id),
+            )
+        except Exception:
+            # The transactional Outbox event remains pending and can be reconciled
+            # after Temporal connectivity returns. Document lifecycle writes must
+            # not be rolled back because an external dispatcher is unavailable.
+            return
 
 
 def build_document_response(
@@ -459,6 +532,7 @@ def build_document_response(
         id=document.id,
         tenant_id=document.tenant_id,
         knowledge_base_id=document.knowledge_base_id,
+        data_source_id=getattr(document, "data_source_id", None),
         title=document.title,
         source_uri=document.source_uri,
         source_kind=detect_document_source_kind(document.source_uri),
@@ -538,38 +612,63 @@ class FetchedWebPage:
 
 
 def validate_web_import_url(source_url: str) -> str:
-    normalized_url = source_url.strip()
-    parsed_url = urlparse(normalized_url)
-    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
-        raise ValueError("Web import only accepts absolute http or https URLs.")
-    return normalized_url
+    return validate_public_http_url(source_url)
 
 
 async def fetch_web_page(source_url: str) -> FetchedWebPage:
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            response = await client.get(
-                source_url,
-                headers={"Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1"},
-            )
-            response.raise_for_status()
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False, trust_env=False) as client:
+            current_url = source_url
+            for redirect_count in range(WEB_IMPORT_MAX_REDIRECTS + 1):
+                await validate_public_http_destination(current_url)
+                async with client.stream(
+                    "GET",
+                    current_url,
+                    headers={"Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1"},
+                ) as response:
+                    validate_response_peer(response)
+                    if response.is_redirect:
+                        if redirect_count >= WEB_IMPORT_MAX_REDIRECTS:
+                            raise ValueError("Web import exceeded the redirect safety limit.")
+                        redirect_location = response.headers.get("location")
+                        if not redirect_location:
+                            raise ValueError("Web import received an invalid redirect response.")
+                        current_url = validate_web_import_url(urljoin(str(response.url), redirect_location))
+                        continue
+
+                    response.raise_for_status()
+                    normalized_content_type = normalize_content_type(response.headers.get("content-type"))
+                    if normalized_content_type not in SUPPORTED_WEB_IMPORT_CONTENT_TYPES:
+                        raise ValueError("Web import currently accepts only single-page HTML or plain-text content.")
+                    content_length = response.headers.get("content-length")
+                    if content_length is not None:
+                        try:
+                            declared_content_length = int(content_length)
+                        except ValueError:
+                            declared_content_length = None
+                        if declared_content_length is not None and declared_content_length > WEB_IMPORT_MAX_BYTES:
+                            raise ValueError("The requested web page is too large to import into RAGPilot.")
+
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(content) + len(chunk) > WEB_IMPORT_MAX_BYTES:
+                            raise ValueError("The requested web page is too large to import into RAGPilot.")
+                        content.extend(chunk)
+                    if not content:
+                        raise ValueError("The requested web page returned empty content.")
+
+                    response_encoding = response.encoding or "utf-8"
+                    content_bytes = bytes(content)
+                    return FetchedWebPage(
+                        source_url=str(response.url),
+                        content_type=normalized_content_type,
+                        content=content_bytes,
+                        text=content_bytes.decode(response_encoding, errors="replace"),
+                    )
     except httpx.HTTPError as error:
         raise ValueError(f"Unable to fetch web page content from {source_url}.") from error
 
-    normalized_content_type = normalize_content_type(response.headers.get("content-type"))
-    if normalized_content_type not in SUPPORTED_WEB_IMPORT_CONTENT_TYPES:
-        raise ValueError("Web import currently accepts only single-page HTML or plain-text content.")
-    if not response.content:
-        raise ValueError("The requested web page returned empty content.")
-    if len(response.content) > WEB_IMPORT_MAX_BYTES:
-        raise ValueError("The requested web page is too large to import into RAGPilot.")
-
-    return FetchedWebPage(
-        source_url=str(response.url),
-        content_type=normalized_content_type,
-        content=response.content,
-        text=response.text,
-    )
+    raise ValueError("Unable to fetch web page content.")
 
 
 def extract_web_page_title(content: str) -> str | None:

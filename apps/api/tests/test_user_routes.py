@@ -647,6 +647,8 @@ def test_login_user_route_returns_directory_entry(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["user"]["last_signed_in_at"] is not None
     assert response.json()["session"]["session_token"] == "rp_sess_test_token"
+    assert "ragpilot_session=rp_sess_test_token" in response.headers["set-cookie"]
+    assert "HttpOnly" in response.headers["set-cookie"]
     assert captured["request"].email == "operator@ragpilot.local"
     assert captured["request"].password == "Operator123"
     assert captured["session_telemetry"].ip_address == "testclient"
@@ -973,6 +975,7 @@ def test_activate_user_invitations_route_returns_directory_entry(monkeypatch) ->
     assert response.status_code == 200
     assert captured["session_telemetry"].ip_address == "testclient"
     assert response.json()["user"]["email"] == "operator@ragpilot.local"
+    assert "ragpilot_session=rp_sess_test_token" in response.headers["set-cookie"]
     assert captured["request"].email == "operator@ragpilot.local"
     assert captured["request"].invitation_token == "RP-AB12CD34"
 

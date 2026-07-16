@@ -34,37 +34,15 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Install Python dependency manager
+        run: python -m pip install uv==0.11.16
+
       - name: Install web dependencies
         run: npm ci
 
-      - name: Audit public documentation
-        shell: pwsh
-        run: ./infra/scripts/public-docs-audit.ps1
+      - name: Run the release preflight gate
+        run: npm run release:preflight
 
-      - name: Audit public markdown links
-        shell: pwsh
-        run: ./infra/scripts/public-links-audit.ps1
-
-      - name: Build web
-        run: npm run web:build
-
-      - name: Install API dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e './apps/api[retrieval-llamaindex,agent-langgraph]'
-          python -m pip install pytest
-
-      - name: Run API tests
-        run: python -m pytest apps/api/tests
-
-      - name: Audit public release candidate files
-        shell: pwsh
-        run: ./infra/scripts/release-candidate-audit.ps1
-
-      - name: Audit production delivery assets
-        shell: pwsh
-        run: ./infra/scripts/production-delivery-audit.ps1
-
-      - name: Run secret scan
-        shell: pwsh
-        run: ./infra/scripts/secret-scan.ps1
+      - name: Clean up test dependencies
+        if: always()
+        run: docker compose -f infra/docker/compose.yaml down --volumes

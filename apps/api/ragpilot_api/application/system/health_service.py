@@ -5,7 +5,18 @@ from ragpilot_api.application.model_gateway.runtime_binding_resolver import Runt
 from ragpilot_api.contracts.http.health_contracts import HealthResponse
 from ragpilot_api.application.system.runtime_readiness import build_runtime_readiness_snapshot
 from ragpilot_api.infrastructure.database.repositories.model_endpoint_repository import ModelEndpointRepository
+from ragpilot_api.infrastructure.search.projection_diagnostics import build_search_projection_diagnostics
 from ragpilot_api.shared.settings import get_settings
+
+
+MAX_HEALTH_DEPENDENCY_TIMEOUT_SECONDS = 5.0
+
+
+def resolve_health_dependency_timeout(settings: object) -> float:
+    configured_timeout = float(
+        getattr(settings, "elasticsearch_request_timeout_seconds", MAX_HEALTH_DEPENDENCY_TIMEOUT_SECONDS)
+    )
+    return min(max(configured_timeout, 0.1), MAX_HEALTH_DEPENDENCY_TIMEOUT_SECONDS)
 
 
 async def build_health_response(session: AsyncSession) -> HealthResponse:
@@ -15,6 +26,26 @@ async def build_health_response(session: AsyncSession) -> HealthResponse:
         ModelEndpointRepository(session),
         settings,
     ).resolve_chat_runtime_binding(agent_definition=None)
+    read_alias = f"{getattr(settings, 'elasticsearch_index_prefix', 'ragpilot-document-chunks').rstrip('-')}-read"
+    search_projection = {
+        "enabled": False,
+        "reachable": False,
+        "read_alias": read_alias,
+        "active_indices": [],
+        "pending_count": 0,
+        "processing_count": 0,
+        "failed_count": 0,
+        "oldest_unprocessed_age_seconds": None,
+        "stale_document_count": 0,
+    }
+    if hasattr(session, "execute"):
+        search_projection = await build_search_projection_diagnostics(
+            session=session,
+            enabled=bool(getattr(settings, "elasticsearch_retrieval_enabled", False)),
+            base_url=getattr(settings, "elasticsearch_url", "http://elasticsearch:9200"),
+            read_alias=read_alias,
+            timeout_seconds=resolve_health_dependency_timeout(settings),
+        )
     return HealthResponse(
         service=settings.service_name,
         status="ok",
@@ -30,5 +61,7 @@ async def build_health_response(session: AsyncSession) -> HealthResponse:
         effective_chat_model_name=runtime_binding.model_name,
         effective_chat_model_source=runtime_binding.source,
         effective_chat_model_endpoint_name=runtime_binding.model_endpoint_name,
-        effective_chat_model_api_base_url=runtime_binding.api_base_url,
+        # Keep internal model endpoints out of the unauthenticated health contract.
+        effective_chat_model_api_base_url=None,
+        search_projection=search_projection,
     )

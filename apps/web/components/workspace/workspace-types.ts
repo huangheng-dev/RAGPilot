@@ -193,6 +193,12 @@ export type Citation = {
   document_version_id: string | null;
   knowledge_base_id: string | null;
   chunk_index: number | null;
+  source_location_type: string | null;
+  source_location_label: string | null;
+  source_page_number: number | null;
+  source_sheet_name: string | null;
+  source_table_number: number | null;
+  source_is_ocr: boolean;
   rank: number;
   score: number | null;
   retrieval_method: string | null;

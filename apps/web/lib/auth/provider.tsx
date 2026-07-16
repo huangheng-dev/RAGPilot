@@ -60,11 +60,12 @@ export function AuthProvider({
     try {
       const parsedSession = JSON.parse(storedSession) as AuthSession;
       if (isStoredAuthSessionExpired(parsedSession)) {
-        setSession(parsedSession);
-        return parsedSession;
+        clearStoredAuthSessionWithReason("session_revoked");
+        setSession(null);
+        return null;
       }
 
-      if (!parsedSession.sessionToken || !parsedSession.sessionExpiresAt) {
+      if (!parsedSession.sessionExpiresAt) {
         clearStoredAuthSessionWithReason("session_revoked");
         setSession(null);
         return null;
@@ -110,7 +111,7 @@ export function AuthProvider({
           displayName: directoryUser.display_name,
           email: directoryUser.email,
           role: directoryUser.role,
-          sessionToken: parsedSession.sessionToken ?? null,
+          sessionToken: null,
           sessionExpiresAt: parsedSession.sessionExpiresAt ?? null,
           lastSignedInAt: directoryUser.last_signed_in_at,
           memberships: directoryUser.memberships,
@@ -199,7 +200,7 @@ export function AuthProvider({
     const mergedSession = {
       ...session,
       ...nextSession,
-      sessionToken: nextSession.sessionToken ?? session?.sessionToken ?? null,
+      sessionToken: null,
       sessionExpiresAt: nextSession.sessionExpiresAt ?? session?.sessionExpiresAt ?? null,
     } satisfies AuthSession;
     setSession(mergedSession);

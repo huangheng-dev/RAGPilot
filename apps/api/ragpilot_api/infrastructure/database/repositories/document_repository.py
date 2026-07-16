@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ragpilot_api.application.errors import ResourceConflictError
-from ragpilot_api.infrastructure.database.models import Document, DocumentAsset, DocumentChunk, DocumentChunkEmbedding, DocumentVersion, MessageCitation, WorkflowRun
+from ragpilot_api.infrastructure.database.models import Document, DocumentAsset, DocumentChunk, DocumentChunkEmbedding, DocumentVersion, MessageCitation, SearchProjectionOutboxEvent, WorkflowRun
 
 
 class DocumentRepository:
@@ -21,12 +21,14 @@ class DocumentRepository:
         knowledge_base_id: UUID,
         title: str,
         source_uri: str | None,
+        data_source_id: UUID | None = None,
     ) -> Document:
         document = Document(
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
             source_uri=source_uri,
+            data_source_id=data_source_id,
         )
         self.session.add(document)
 
@@ -657,12 +659,14 @@ class DocumentRepository:
         file_name: str,
         content_type: str | None,
         file_size_bytes: int,
+        data_source_id: UUID | None = None,
     ) -> tuple[Document, DocumentVersion, DocumentAsset, WorkflowRun]:
         document = Document(
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
             title=title,
             source_uri=source_uri,
+            data_source_id=data_source_id,
         )
         self.session.add(document)
 
@@ -790,22 +794,35 @@ class DocumentRepository:
         *,
         document_id: UUID,
         knowledge_base_id: UUID,
-    ) -> tuple[UUID, datetime] | None:
+    ) -> tuple[UUID, datetime, UUID] | None:
         document = await self.get_document(document_id=document_id, knowledge_base_id=knowledge_base_id)
         if document is None:
             return None
 
         deleted_at = datetime.now(timezone.utc)
         document.deleted_at = deleted_at
+        document.updated_at = deleted_at
+        projection_event = SearchProjectionOutboxEvent(
+            tenant_id=document.tenant_id,
+            aggregate_type="document",
+            aggregate_id=document.id,
+            document_id=document.id,
+            document_version_id=None,
+            event_type="document_delete",
+            event_key=f"document:{document.id}:soft-delete:{deleted_at.isoformat()}",
+            payload_json={"reason": "soft_delete", "deleted_at": deleted_at.isoformat()},
+        )
+        self.session.add(projection_event)
+        await self.session.flush()
         await self.session.commit()
-        return document.id, deleted_at
+        return document.id, deleted_at, projection_event.id
 
     async def restore_document(
         self,
         *,
         document_id: UUID,
         knowledge_base_id: UUID,
-    ) -> Document | None:
+    ) -> tuple[Document, UUID | None] | None:
         document = await self.get_document(
             document_id=document_id,
             knowledge_base_id=knowledge_base_id,
@@ -815,10 +832,40 @@ class DocumentRepository:
         if document is None:
             return None
 
+        restored_at = datetime.now(timezone.utc)
         document.deleted_at = None
+        document.updated_at = restored_at
+        latest_completed_version = await self.session.scalar(
+            select(DocumentVersion)
+            .where(
+                DocumentVersion.document_id == document.id,
+                DocumentVersion.tenant_id == document.tenant_id,
+                DocumentVersion.ingestion_status == "completed",
+            )
+            .order_by(DocumentVersion.version_number.desc(), DocumentVersion.created_at.desc())
+            .limit(1)
+        )
+        projection_event: SearchProjectionOutboxEvent | None = None
+        if latest_completed_version is not None:
+            projection_event = SearchProjectionOutboxEvent(
+                tenant_id=document.tenant_id,
+                aggregate_type="document_version",
+                aggregate_id=latest_completed_version.id,
+                document_id=document.id,
+                document_version_id=latest_completed_version.id,
+                event_type="document_version_upsert",
+                event_key=f"document:{document.id}:restore:{restored_at.isoformat()}",
+                payload_json={
+                    "reason": "restore",
+                    "restored_at": restored_at.isoformat(),
+                    "document_version_id": str(latest_completed_version.id),
+                },
+            )
+            self.session.add(projection_event)
+            await self.session.flush()
         await self.session.commit()
         await self.session.refresh(document)
-        return document
+        return document, projection_event.id if projection_event is not None else None
 
     async def get_permanent_delete_candidate(self, *, document_id: UUID, knowledge_base_id: UUID) -> dict | None:
         document = await self.get_document(document_id=document_id, knowledge_base_id=knowledge_base_id, include_deleted=True, only_deleted=True)
@@ -830,7 +877,23 @@ class DocumentRepository:
         assets = (await self.session.execute(select(DocumentAsset.storage_bucket, DocumentAsset.storage_key).where(DocumentAsset.document_version_id.in_(version_ids)))).all()
         return {"document": document, "assets": [(row[0], row[1]) for row in assets], "citation_count": citation_count}
 
-    async def permanently_delete_document(self, *, document_id: UUID) -> None:
+    async def permanently_delete_document(self, *, document_id: UUID) -> UUID:
+        document = await self.session.scalar(select(Document).where(Document.id == document_id))
+        if document is None:
+            raise ResourceConflictError("Document disappeared before permanent deletion could complete.")
+        deleted_at = datetime.now(timezone.utc)
+        projection_event = SearchProjectionOutboxEvent(
+            tenant_id=document.tenant_id,
+            aggregate_type="document",
+            aggregate_id=document.id,
+            document_id=document.id,
+            document_version_id=None,
+            event_type="document_delete",
+            event_key=f"document:{document.id}:purge:{deleted_at.isoformat()}",
+            payload_json={"reason": "permanent_delete", "deleted_at": deleted_at.isoformat()},
+        )
+        self.session.add(projection_event)
+        await self.session.flush()
         version_ids = select(DocumentVersion.id).where(DocumentVersion.document_id == document_id)
         chunk_ids = select(DocumentChunk.id).where(DocumentChunk.document_version_id.in_(version_ids))
         await self.session.execute(delete(DocumentChunkEmbedding).where(DocumentChunkEmbedding.document_chunk_id.in_(chunk_ids)))
@@ -839,6 +902,7 @@ class DocumentRepository:
         await self.session.execute(delete(DocumentVersion).where(DocumentVersion.document_id == document_id))
         await self.session.execute(delete(Document).where(Document.id == document_id))
         await self.session.commit()
+        return projection_event.id
 
 
 def build_document_sort_order(sort_order: str) -> tuple:

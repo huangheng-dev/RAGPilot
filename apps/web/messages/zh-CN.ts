@@ -5,12 +5,12 @@ const zhCN = {
       chat: "对话",
       documents: "文档",
       workflows: "工作流",
-      agents: "智能体"
+      agents: "智能体",
     },
     languagePlaceholder: "语言",
     languages: {
       en: "English",
-      zhCN: "简体中文"
+      zhCN: "简体中文",
     },
     userMenu: {
       title: "本地运营账号",
@@ -19,28 +19,45 @@ const zhCN = {
       workspace: "工作台",
       operations: "运行中心",
       admin: "管理后台",
+      accessControl: "访问控制",
       settings: "系统设置",
       signIn: "登录",
       signOut: "退出登录",
       rolePrefix: "角色：",
-      currentTenant: "当前租户",
+      currentTenant: "当前组织",
       memberships: "成员关系",
-      noMemberships: "当前还没有租户成员关系。"
+      noMemberships: "当前还没有租户成员关系。",
     },
     actions: {
-      openRepository: "打开 GitHub 仓库"
-    }
+      openRepository: "打开 GitHub 仓库",
+    },
+  },
+  accessControl: {
+    title: "检索访问控制",
+    description: "管理租户用户组，并在真实检索链路中强制执行文档与 Chunk 可见性。",
+    fields: {
+      tenant: "租户", groupName: "用户组名称", groupSlug: "用户组标识", description: "说明",
+      member: "选择有效租户成员", document: "文档", chunk: "Chunk", resourceId: "资源 UUID",
+      group: "用户组", user: "用户", grantSubject: "选择授权对象"
+    },
+    groups: { title: "访问用户组", description: "用于检索 ACL 的租户级读者组。", empty: "还没有访问用户组。" },
+    members: { title: "用户组成员", description: "只能添加当前租户的有效成员。", selectGroup: "请选择一个用户组管理成员。", empty: "这个用户组还没有成员。" },
+    policy: { title: "资源策略", description: "载入文档或 Chunk UUID，并替换服务端强制执行的读取策略。", noGrants: "没有显式读取授权。" },
+    scope: { tenant: "租户内可读", inherit: "继承文档策略", restricted: "受限" },
+    actions: { createGroup: "创建用户组", add: "添加", remove: "移除", loadPolicy: "载入策略", addGrant: "添加授权", savePolicy: "保存策略" },
+    status: { loadFailed: "无法加载访问控制数据。", saveFailed: "访问控制变更失败。", groupCreated: "访问用户组已创建。", memberAdded: "用户组成员已添加。", memberRemoved: "用户组成员已移除。", policyLoadFailed: "无法加载资源策略。", policySaved: "资源策略已保存并对检索生效。" }
   },
   agents: {
     access: {
       editable: "可编辑",
-      readOnly: "只读模式"
+      readOnly: "只读模式",
     },
     title: "智能体",
     header: {
       eyebrow: "Agent Studio",
       title: "智能体设计工作台",
-      description: "用于定义智能体配置、工具接入边界与执行控制规则，并与 RAGPilot 已落地的平台能力保持一致。"
+      description:
+        "用于定义智能体配置、工具接入边界与执行控制规则，并与 RAGPilot 已落地的平台能力保持一致。",
     },
     status: {
       loading: "正在加载智能体定义...",
@@ -74,9 +91,11 @@ const zhCN = {
       executionBlocked: "只有已启用且运行就绪的智能体，才允许直接执行。",
       executionHistoryFailed: "智能体执行历史加载失败。",
       validationFailed: "智能体名称和标识不能为空。",
-      activationBlocked: "启用中的智能体必须先具备有效模型、允许的知识范围，以及至少一个已连接工具，才能保存。",
-      runtimeLaunchBlocked: "只有已启用且运行就绪的智能体，才允许投递到正式运行页面。",
-      lastUpdated: "最近更新 {value}"
+      activationBlocked:
+        "启用中的智能体必须先具备有效模型、允许的知识范围，以及至少一个已连接工具，才能保存。",
+      runtimeLaunchBlocked:
+        "只有已启用且运行就绪的智能体，才允许投递到正式运行页面。",
+      lastUpdated: "最近更新 {value}",
     },
     actions: {
       refresh: "刷新",
@@ -94,26 +113,27 @@ const zhCN = {
       openChat: "打开对话",
       openDocuments: "打开文档",
       openOperations: "打开运营操作",
-      openAdmin: "打开管理后台"
+      openAdmin: "打开管理后台",
     },
     confirm: {
       delete: "确定删除 {name} 吗？该操作会移除当前租户下已保存的智能体定义。",
-      bulkDelete: "确定删除选中的 {count} 个智能体吗？该操作无法撤销。"
+      bulkDelete: "确定删除选中的 {count} 个智能体吗？该操作无法撤销。",
     },
     metrics: {
       totalDrafts: "草稿总数",
       activeDrafts: "启用草稿",
       toolEnabledDrafts: "已接工具草稿",
       scopedDrafts: "已设范围草稿",
-      noScope: "未设范围"
+      noScope: "未设范围",
     },
     executionPackets: {
       title: "执行包",
-      description: "把定义就绪度、运行投递、治理姿态和页面交接收拢成同一层正式控制面。",
+      description:
+        "把定义就绪度、运行投递、治理姿态和页面交接收拢成同一层正式控制面。",
       statuses: {
         attention: "需关注",
         review: "待复核",
-        healthy: "健康"
+        healthy: "健康",
       },
       notSelected: "尚未选择智能体",
       scopePending: "范围待补全",
@@ -122,11 +142,12 @@ const zhCN = {
         title: "就绪执行包",
         metric: "已就绪定义",
         readyDetail: "{name} 当前已经满足最基本的运行就绪条件。",
-        reviewDetail: "{name} 当前还有 {count} 个就绪问题需要处理后，才能更干净地投递运行。",
+        reviewDetail:
+          "{name} 当前还有 {count} 个就绪问题需要处理后，才能更干净地投递运行。",
         emptyDetail: "请选择一个智能体后，再查看运行就绪度与治理姿态。",
         primaryAction: "打开定义复核",
         secondaryAdmin: "打开后台总览",
-        secondaryOperations: "打开运营操作"
+        secondaryOperations: "打开运营操作",
       },
       delivery: {
         title: "投递执行包",
@@ -135,7 +156,7 @@ const zhCN = {
         emptyDetail: "当前还没有可用的运行投递目标，请先补齐范围与模式。",
         primaryAction: "打开投递路由",
         secondaryChat: "打开对话",
-        secondaryDocuments: "打开文档"
+        secondaryDocuments: "打开文档",
       },
       runtime: {
         title: "运行执行包",
@@ -144,50 +165,58 @@ const zhCN = {
         emptyDetail: "请选择一个智能体后，再查看运行能力与解析后的模型路径。",
         primaryAction: "打开运行页面",
         secondaryOperations: "打开运营操作",
-        secondaryAdmin: "打开管理后台"
+        secondaryAdmin: "打开管理后台",
       },
       retrieval: {
         title: "检索执行包",
         metric: "已解析检索姿态",
         readyDetail: "{profile} 当前已经对齐到所选知识范围。",
-        missingDetail: "当前所选范围（{scope}）还缺少可用的治理检索姿态，暂时不适合干净地进入运行。",
-        disabledDetail: "{profile} 当前已被停用，建议先完成治理修复后再继续运行交付。",
+        missingDetail:
+          "当前所选范围（{scope}）还缺少可用的治理检索姿态，暂时不适合干净地进入运行。",
+        disabledDetail:
+          "{profile} 当前已被停用，建议先完成治理修复后再继续运行交付。",
         emptyDetail: "请选择知识问答或文档接入定义后，再查看检索治理姿态。",
         primaryAction: "查看检索治理",
         primaryMissingAction: "查看默认回退",
         secondarySettings: "打开检索设置",
-        secondaryDefinitions: "打开启用定义"
+        secondaryDefinitions: "打开启用定义",
       },
       governance: {
         title: "治理执行包",
         metric: "已解析模型姿态",
-        activeDetail: "当前租户范围内可见 {total} 个定义，其中有 {active} 个为启用状态。",
+        activeDetail:
+          "当前租户范围内可见 {total} 个定义，其中有 {active} 个为启用状态。",
         emptyDetail: "当前租户范围内暂时没有可见的启用智能体定义。",
         primaryAction: "打开治理复核",
         secondaryDefinitions: "打开启用定义",
-        secondaryAccess: "打开访问复核"
-      }
+        secondaryAccess: "打开访问复核",
+      },
     },
     releaseBoard: {
       title: "发布看板",
-      description: "在定义进入正式运行面之前，先统一复核它的完整度、作用域、运行条件和治理交接状态。",
+      description:
+        "在定义进入正式运行面之前，先统一复核它的完整度、作用域、运行条件和治理交接状态。",
       definition: {
         title: "定义基线",
         metric: "已完成定义字段",
-        readyDetail: "名称、标识、业务目标和运行说明都已具备，可以进入更正式的交付复核。",
-        reviewDetail: "还有 {count} 个必要定义字段未完成，暂时不适合直接推进到正式交付。",
+        readyDetail:
+          "名称、标识、业务目标和运行说明都已具备，可以进入更正式的交付复核。",
+        reviewDetail:
+          "还有 {count} 个必要定义字段未完成，暂时不适合直接推进到正式交付。",
         emptyDetail: "请选择一个智能体定义以检查发布完整度。",
-        action: "查看定义"
+        action: "查看定义",
       },
       scope: {
         title: "作用域对齐",
         metric: "已解析作用域",
         readyDetail: "当前定义已经解析到 {scope}，可以沿着已有业务面继续交付。",
-        reviewDetail: "这个运行通道还缺少明确的工作区和知识库作用域，暂时不适合正式发布。",
-        optionalDetail: "这个运行通道可以不绑定知识作用域启动，但仍应留在租户治理边界内。",
+        reviewDetail:
+          "这个运行通道还缺少明确的工作区和知识库作用域，暂时不适合正式发布。",
+        optionalDetail:
+          "这个运行通道可以不绑定知识作用域启动，但仍应留在租户治理边界内。",
         emptyDetail: "请选择一个智能体定义以检查作用域解析情况。",
         notRequiredValue: "作用域可选",
-        action: "打开对应界面"
+        action: "打开对应界面",
       },
       retrieval: {
         title: "检索姿态",
@@ -198,52 +227,59 @@ const zhCN = {
         notRequiredDetail: "这个通道不依赖检索策略也可以继续推进。",
         emptyDetail: "请选择一个定义后，再检查检索治理姿态。",
         action: "打开检索治理",
-        actionSettings: "打开检索设置"
+        actionSettings: "打开检索设置",
       },
       runtime: {
         title: "运行就绪",
         metric: "已解析运行模型",
-        readyDetail: "{model} 已通过 {provider} 接入，且当前已具备可执行能力连接。",
+        readyDetail:
+          "{model} 已通过 {provider} 接入，且当前已具备可执行能力连接。",
         reviewDetail: "{model} 已解析完成，但仍需补齐可执行能力连接后再交付。",
         emptyRuntimeDetail: "当前定义还没有解析出可用的运行模型。",
         emptyDetail: "请选择一个智能体定义以检查运行准备度。",
-        action: "打开运行面"
+        action: "打开运行面",
       },
       governance: {
         title: "治理交接",
         metric: "待处理治理项",
         healthyDetail: "当前治理姿态稳定，定义状态为 {status}。",
-        reviewDetail: "有 {count} 个已绑定工具注册项处于禁用状态，需要先完成治理清理。",
+        reviewDetail:
+          "有 {count} 个已绑定工具注册项处于禁用状态，需要先完成治理清理。",
         pendingDetail: "还有 {count} 个已注册工具仍在审批边界之后。",
         emptyDetail: "请选择一个智能体定义以检查治理交接状态。",
-        action: "打开治理面"
-      }
+        action: "打开治理面",
+      },
     },
     architecture: {
       title: "智能体运行通道",
-      description: "把智能体草稿映射到 RAGPilot 已落地的运行页面中，让问答、文档接入、恢复处理与治理审核保持在同一平台链路里。",
+      description:
+        "把智能体草稿映射到 RAGPilot 已落地的运行页面中，让问答、文档接入、恢复处理与治理审核保持在同一平台链路里。",
       lane: "运行通道",
       openLane: "打开通道",
       groundedChat: {
         title: "知识问答通道",
-        description: "当前有 {total} 个知识问答型草稿，面向带引用的回答与线程交付。",
-        value: "{active} 个启用 / 共 {total} 个"
+        description:
+          "当前有 {total} 个知识问答型草稿，面向带引用的回答与线程交付。",
+        value: "{active} 个启用 / 共 {total} 个",
       },
       documentIntake: {
         title: "文档接入通道",
-        description: "当前有 {total} 个文档接入型草稿，服务于索引跟进与文档监督。",
-        value: "{active} 个启用 / 共 {total} 个"
+        description:
+          "当前有 {total} 个文档接入型草稿，服务于索引跟进与文档监督。",
+        value: "{active} 个启用 / 共 {total} 个",
       },
       workflowRecovery: {
         title: "工作流恢复通道",
-        description: "当前有 {total} 个工作流恢复型草稿，用于失败运行排查与受控重试处理。",
-        value: "{active} 个启用 / 共 {total} 个"
+        description:
+          "当前有 {total} 个工作流恢复型草稿，用于失败运行排查与受控重试处理。",
+        value: "{active} 个启用 / 共 {total} 个",
       },
       governance: {
         title: "治理审核通道",
-        description: "已有 {ready} 个草稿满足最基本的范围、工具与启用姿态，可进入正式治理审核。",
-        value: "{count} 个待治理审核"
-      }
+        description:
+          "已有 {ready} 个草稿满足最基本的范围、工具与启用姿态，可进入正式治理审核。",
+        value: "{count} 个待治理审核",
+      },
     },
     filters: {
       scopeTitle: "智能体范围",
@@ -263,13 +299,14 @@ const zhCN = {
       allModelEndpoints: "全部运行时模型",
       allModelProviders: "全部模型提供方",
       allToolRegistrations: "全部注册工具",
-      searchPlaceholder: "搜索智能体"
+      searchPlaceholder: "搜索智能体",
     },
     governance: {
       title: "治理问题通道",
-      description: "把范围、模型和工具问题直接拆成过滤通道，让运行治理清理可以进入更窄的处理队列。",
+      description:
+        "把范围、模型和工具问题直接拆成过滤通道，让运行治理清理可以进入更窄的处理队列。",
       issueDescription: "当前有 {count} 个草稿匹配这类治理问题。",
-      filterIssue: "过滤智能体"
+      filterIssue: "过滤智能体",
     },
     directory: {
       title: "智能体目录",
@@ -288,12 +325,13 @@ const zhCN = {
       status: "状态",
       mode: "执行模式",
       scope: "知识库范围",
-      updated: "更新时间"
+      updated: "更新时间",
     },
     editor: {
       title: "当前智能体草稿",
       detailTitle: "智能体详情",
-      description: "在正式接入运行时之前，先完成智能体配置、执行范围与控制策略定义。",
+      description:
+        "在正式接入运行时之前，先完成智能体配置、执行范围与控制策略定义。",
       empty: "请选择或创建一个智能体草稿后再编辑。",
       newAgentName: "新智能体草稿",
       name: "智能体名称",
@@ -301,6 +339,7 @@ const zhCN = {
       mode: "执行模式",
       status: "草稿状态",
       modelStrategy: "模型策略",
+      runtimeEngine: "智能体运行时",
       runtimeModel: "运行模型端点",
       runtimeModelInherited: "沿用策略预留",
       runtimeModelBound: "已绑模型",
@@ -312,66 +351,78 @@ const zhCN = {
       tools: "连接工具",
       toolHint: "仅应向该智能体开放已明确授权的页面能力与工具入口。",
       registeredTools: "工具注册绑定",
-      registeredToolsHint: "把已经持久化登记的工具绑定到当前智能体，供后续运行时调用。",
+      registeredToolsHint:
+        "把已经持久化登记的工具绑定到当前智能体，供后续运行时调用。",
       noRegisteredTools: "当前还没有可用的启用工具注册，请先到设置里添加。",
       namePlaceholder: "智能体名称",
       slugPlaceholder: "agent-slug",
       scopePlaceholder: "选择知识库",
       unscoped: "未设范围",
       objectivePlaceholder: "描述该智能体需要达成的业务目标。",
-      instructionsPlaceholder: "填写该智能体的执行策略、升级规则与输出要求。"
+      instructionsPlaceholder: "填写该智能体的执行策略、升级规则与输出要求。",
     },
     modes: {
       grounded_chat: "知识问答",
       document_intake: "文档接入",
-      workflow_recovery: "工作流恢复"
+      workflow_recovery: "工作流恢复",
     },
     statuses: {
       draft: "草稿",
       active: "启用",
-      paused: "暂停"
+      paused: "暂停",
     },
     modelStrategies: {
       local_reserved: "本地模型预留",
       remote_reserved: "远程模型预留",
-      hybrid_reserved: "混合路由预留"
+      hybrid_reserved: "混合路由预留",
+    },
+    runtimeEngines: {
+      native: "原生运行时 · native_v1",
+      langgraph_pilot: "LangGraph · langgraph_v1",
     },
     tools: {
       chat: "对话",
       documents: "文档",
       operations: "运行中心",
-      admin: "管理后台"
+      admin: "管理后台",
     },
     connectivity: {
       title: "已连接页面能力",
-      description: "以下页面能力已经在 RAGPilot 中落地，可作为智能体后续接入的基础操作面。",
+      description:
+        "以下页面能力已经在 RAGPilot 中落地，可作为智能体后续接入的基础操作面。",
       enabled: "已启用",
       disabled: "未启用",
       openSurface: "打开页面",
       chatDescription: "用于引用复核、线程历史和知识问答的对话页面。",
       documentsDescription: "用于接入状态、文档详情和重建索引动作的文档页面。",
       operationsDescription: "用于队列、重试和失败恢复的工作流监督页面。",
-      adminDescription: "用于范围审核、发布控制和生命周期操作的治理页面。"
+      adminDescription: "用于范围审核、发布控制和生命周期操作的治理页面。",
     },
     delivery: {
       title: "运行投递",
-      description: "把当前智能体投递到最合适的已建页面能力里，同时保留租户与知识范围上下文。",
+      description:
+        "把当前智能体投递到最合适的已建页面能力里，同时保留租户与知识范围上下文。",
       selectedAgentTitle: "当前定义",
-      selectedAgentDescription: "当前 {mode} 处于 {status}，可以继续进入路由交接复核。",
+      selectedAgentDescription:
+        "当前 {mode} 处于 {status}，可以继续进入路由交接复核。",
       recommendedChat: "推荐入口：知识问答",
       recommendedDocuments: "推荐入口：文档操作",
       recommendedOperations: "推荐入口：运营操作",
-      chatReady: "当前知识问答型智能体已经绑定到 {scope}，可以直接进入真实对话页面。",
-      documentsReady: "当前文档接入型智能体已经绑定到 {scope}，可以直接进入文档操作页面。",
+      chatReady:
+        "当前知识问答型智能体已经绑定到 {scope}，可以直接进入真实对话页面。",
+      documentsReady:
+        "当前文档接入型智能体已经绑定到 {scope}，可以直接进入文档操作页面。",
       operationsReady: "当前工作流恢复型智能体应优先进入失败运行队列。",
-      scopeRequired: "请先绑定工作区与知识库范围，保证投递仍然基于真实资源上下文。",
+      scopeRequired:
+        "请先绑定工作区与知识库范围，保证投递仍然基于真实资源上下文。",
       noRecommendation: "当前还没有可用投递入口",
       selectAgent: "请选择一个智能体后，再进行模式感知的运行投递。",
       openRecommendation: "打开推荐页面",
       registeredToolCount: "{count} 个已绑工具注册",
       runtimePacket: "运行包",
       launchPrompts: "启动提问",
-      launchPromptsDescription: "使用这些按模式生成的提问模板，直接带着可执行的运营简报进入对话页面。",
+      launchPromptsDescription:
+        "使用这些按模式生成的提问模板，直接带着可执行的运营简报进入对话页面。",
       primarySurface: "主页面",
       secondarySurface: "次页面",
       tertiarySurface: "补充页面",
@@ -379,19 +430,27 @@ const zhCN = {
       openSecondary: "打开次页面",
       openTertiary: "打开补充页面",
       openInChat: "带入对话",
-      primaryChatDescription: "从知识问答页面开始，保留当前范围，并预装一条推荐的运营提问。",
-      primaryDocumentsDescription: "优先进入文档列表，把接入、失败文件和重建索引动作保持在同一条操作线上。",
-      primaryOperationsDescription: "优先进入工作流操作台，先检查失败运行、重试链路和队列压力，再返回其他页面。",
-      secondaryChatDescription: "当当前运行链路稳定后，可回到对话页生成简洁的运营说明与下一步动作。",
-      secondaryDocumentsDescription: "在开始检索前先检查当前知识库状态和源文档准备情况。",
-      tertiaryDocumentsDescription: "当工作流恢复依赖源文档清理时，可把文档列表作为补充处理页面。",
-      tertiaryOperationsDescription: "当运行健康度需要监督队列或跟进重试时，进入工作流操作台处理。",
+      primaryChatDescription:
+        "从知识问答页面开始，保留当前范围，并预装一条推荐的运营提问。",
+      primaryDocumentsDescription:
+        "优先进入文档列表，把接入、失败文件和重建索引动作保持在同一条操作线上。",
+      primaryOperationsDescription:
+        "优先进入工作流操作台，先检查失败运行、重试链路和队列压力，再返回其他页面。",
+      secondaryChatDescription:
+        "当当前运行链路稳定后，可回到对话页生成简洁的运营说明与下一步动作。",
+      secondaryDocumentsDescription:
+        "在开始检索前先检查当前知识库状态和源文档准备情况。",
+      tertiaryDocumentsDescription:
+        "当工作流恢复依赖源文档清理时，可把文档列表作为补充处理页面。",
+      tertiaryOperationsDescription:
+        "当运行健康度需要监督队列或跟进重试时，进入工作流操作台处理。",
       checkScopeReady: "范围已就绪：{scope}",
       checkScopeMissing: "范围缺失：请先绑定工作区和知识库，再进入运行投递。",
       checkModelReady: "运行模型已就绪：{name}",
       checkModelInherited: "运行模型将继承当前策略配置。",
       checkToolsReady: "当前已有 {count} 个连接能力可参与执行。",
-      checkToolsMissing: "当前还没有可执行连接能力。进入自主执行前请先绑定工具。",
+      checkToolsMissing:
+        "当前还没有可执行连接能力。进入自主执行前请先绑定工具。",
       runtimeTaskPending: "待解析",
       runtimeTaskNoObjective: "当前智能体还没有补齐正式业务目标说明。",
       runtimeTaskNoPrompt: "这条运行投递暂时还没有可用启动提示词。",
@@ -407,20 +466,24 @@ const zhCN = {
         model: "运行模型",
         capabilities: "连接能力",
         objective: "业务目标",
-        prompt: "启动提示词"
-      }
+        prompt: "启动提示词",
+      },
     },
     dependencies: {
       title: "运行依赖",
-      description: "统一查看最终会带入运行态的模型契约，以及已绑定的注册工具集合。",
+      description:
+        "统一查看最终会带入运行态的模型契约，以及已绑定的注册工具集合。",
       resolvedModelTitle: "已解析模型契约",
       noResolvedModel: "尚未解析到模型端点",
       modelRuntimeReady: "运行就绪",
       modelRuntimeNeedsReview: "运行待复核",
       modelRuntimeIssues: {
-        missing_base_url: "这个模型端点仍缺少基础地址，当前不应该直接依赖它进入运行执行。",
-        missing_credential_hint: "这个模型端点仍缺少环境变量凭据提示，当前不应该直接依赖它进入运行执行。",
-        managed_reserved: "这个模型端点仍依赖托管预留凭据模式，目前还不能算作运行就绪。"
+        missing_base_url:
+          "这个模型端点仍缺少基础地址，当前不应该直接依赖它进入运行执行。",
+        missing_credential_hint:
+          "这个模型端点仍缺少环境变量凭据提示，当前不应该直接依赖它进入运行执行。",
+        managed_reserved:
+          "这个模型端点仍依赖托管预留凭据模式，目前还不能算作运行就绪。",
       },
       modelProvider: "提供方: {value}",
       modelCapabilities: "能力: {value}",
@@ -429,33 +492,36 @@ const zhCN = {
       providerLaneMetrics: {
         runtimeReady: "运行就绪端点",
         activeAgents: "启用智能体",
-        attentionAgents: "待关注智能体"
+        attentionAgents: "待关注智能体",
       },
       providerLaneBaseUrlHint: "建议基础地址格式: {value}",
-      providerLaneBaseUrlRequired: "这个提供方仍需要明确填写基础地址，之后才能作为稳定运行链路使用。",
+      providerLaneBaseUrlRequired:
+        "这个提供方仍需要明确填写基础地址，之后才能作为稳定运行链路使用。",
       providerLaneBaseUrlNotRequired: "这个提供方不需要基础地址。",
       openModelSettings: "打开模型设置",
       openProviderAttention: "打开运行关注项",
       retrievalProfileTitle: "已解析检索策略",
       noRetrievalProfile: "尚未解析到检索策略",
       noRetrievalProfileDescription: "当前知识范围还没有可用的受治理检索策略。",
-      retrievalProfileDescription: "当前使用 {source}，模式为 {mode}，Top K 为 {topK}。",
+      retrievalProfileDescription:
+        "当前使用 {source}，模式为 {mode}，Top K 为 {topK}。",
       retrievalMode: "模式：{value}",
       retrievalTopK: "Top K：{value}",
       retrievalProfileSources: {
         knowledge_base: "知识库绑定",
-        platform_default: "平台默认"
+        platform_default: "平台默认",
       },
       registeredToolsTitle: "已绑定注册工具",
       registeredToolsCount: "{count} 个绑定工具",
       noRegisteredTools: "当前定义还没有绑定任何持久化注册工具。",
       requiresApproval: "需要审批",
       directReady: "可直接使用",
-      disabledBinding: "绑定已禁用"
+      disabledBinding: "绑定已禁用",
     },
     runs: {
       title: "运行历史",
-      description: "为当前租户或选中定义保留启动记录，让运行交接从临时跳转变成可追踪链路。",
+      description:
+        "为当前租户或选中定义保留启动记录，让运行交接从临时跳转变成可追踪链路。",
       count: "已记录 {count} 次运行",
       refresh: "刷新运行历史",
       latestTitle: "最近一次启动",
@@ -468,19 +534,24 @@ const zhCN = {
         source: "来源页面",
         allSources: "全部来源",
         status: "运行状态",
-        allStatuses: "全部状态"
+        allStatuses: "全部状态",
       },
       noPrompt: "这次运行没有附带启动提示词。",
       noHandoffIntent: "通用交接",
       openRoute: "打开记录路由",
       latestPacket: {
         title: "最近交接包",
-        emptyDetail: "当前还没有记录任何运行交接。先把选中的定义投递到正式页面，再形成可追踪链路。",
+        emptyDetail:
+          "当前还没有记录任何运行交接。先把选中的定义投递到正式页面，再形成可追踪链路。",
         emptyObjective: "当前还没有任何已记录交接，因此没有可展示的交付目标。",
-        launchedDetail: "最近一次交接仍停留在 {surface}，建议先在原链路继续处理，再开启新的操作页面。",
-        completedDetail: "最近一次交接已经在 {surface} 完成，可以重新进入记录路由，或回到治理面做最终收口。",
-        failedDetail: "最近一次交接在 {surface} 失败，建议先重新打开记录路由，或回到已治理定义后再重试。",
-        cancelledDetail: "最近一次交接在 {surface} 已取消，建议先复核当时的路由上下文，再决定是否重新发起。",
+        launchedDetail:
+          "最近一次交接仍停留在 {surface}，建议先在原链路继续处理，再开启新的操作页面。",
+        completedDetail:
+          "最近一次交接已经在 {surface} 完成，可以重新进入记录路由，或回到治理面做最终收口。",
+        failedDetail:
+          "最近一次交接在 {surface} 失败，建议先重新打开记录路由，或回到已治理定义后再重试。",
+        cancelledDetail:
+          "最近一次交接在 {surface} 已取消，建议先复核当时的路由上下文，再决定是否重新发起。",
         openDefinitions: "打开定义",
         openSettings: "打开治理详情",
         openAdmin: "打开后台",
@@ -489,29 +560,29 @@ const zhCN = {
           surface: "目标页面",
           source: "启动来源",
           intent: "交接意图",
-          scope: "作用域"
-        }
+          scope: "作用域",
+        },
       },
       metrics: {
         total: "总运行数",
         chat: "对话启动",
         documents: "文档启动",
         operations: "运营启动",
-        admin: "后台启动"
+        admin: "后台启动",
       },
       sources: {
         agentsConsole: "智能体控制台",
         workspace: "工作台",
         home: "首页",
         admin: "管理后台",
-        operations: "运行中心"
+        operations: "运行中心",
       },
       statuses: {
         launched: "已启动",
         completed: "已完成",
         failed: "失败",
-        cancelled: "已取消"
-      }
+        cancelled: "已取消",
+      },
     },
     mcpMapping: {
       open: "配置 MCP 映射",
@@ -525,15 +596,20 @@ const zhCN = {
       discovering: "发现中...",
       discoveryFailed: "远程工具发现失败。",
       save: "保存映射",
-      saveFailed: "无法保存 MCP 工具映射。"
+      saveFailed: "无法保存 MCP 工具映射。",
     },
     executions: {
       title: "执行任务",
-      description: "把当前智能体定义推进成真实执行任务，并记录状态、执行摘要和后续动作建议。",
+      description:
+        "把当前智能体定义推进成真实执行任务，并记录状态、执行摘要和后续动作建议。",
       count: "{count} 个执行任务",
       refresh: "刷新执行任务",
       retry: "重试执行",
       retrying: "重试中...",
+      replay: "审计重放",
+      replaying: "重放中...",
+      replayQueued: "已创建一条受治理的重放执行。",
+      replayFailed: "无法重放这条执行记录。",
       cancel: "取消执行",
       cancelling: "取消中...",
       latestTitle: "最近执行",
@@ -544,16 +620,44 @@ const zhCN = {
       pendingSummary: "执行仍在处理中，或还没有产出最终结果。",
       executionInput: "执行输入",
       answerPreview: "回答预览",
+      policy: {
+        title: "高级执行约束",
+        description:
+          "可选地收紧部署级预算，并用 JSON Schema 校验完整结果载荷；留空则继承服务端默认值。",
+        maxToolCalls: "最大工具调用数",
+        maxRuntimeSeconds: "最大运行时间（秒）",
+        maxOutputBytes: "最大结果字节数",
+        deploymentDefault: "继承部署默认值",
+        outputSchema: "结果 JSON Schema（可选）",
+        outputSchemaPlaceholder:
+          '{"type":"object","required":["answer_preview"]}',
+        invalidSchema: "结果 Schema 必须是有效的 JSON 对象。",
+        sandboxBoundary:
+          "沙箱边界：禁止 Shell 与文件系统访问；出站访问仅限本次执行快照中登记的工具。",
+        toolBudget: "工具调用 ≤ {value}",
+        runtimeBudget: "运行时间 ≤ {value} 秒",
+        outputBudget: "结果 ≤ {value} 字节",
+        schemaBound: "已绑定 Schema",
+        replayOf: "重放自 {value}",
+      },
       latestPacket: {
         title: "最近执行包",
-        emptyDetail: "当前还没有记录任何执行任务。先执行已经就绪的定义，生成正式的结果链路。",
+        emptyDetail:
+          "当前还没有记录任何执行任务。先执行已经就绪的定义，生成正式的结果链路。",
         emptyObjective: "当前还没有任何执行结果，因此没有可展示的执行目标。",
         emptyPrompt: "当前还没有附带任何执行输入。",
-        completedDetail: "最近一次执行已经完成，并且已经给出返回正式产品页面的后续动作。",
-        failedDetail: "最近一次执行失败了。请通过下方后续动作回到运行时、证据面或下游交接链路继续处理。",
-        runningDetail: "最近一次执行仍在进行中。建议沿着这条正式结果链继续观察，直到产出与后续动作稳定下来。",
-        queuedDetail: "最近一次执行仍在排队中。等运行真正开始产出结果后，再回到正式后续页面继续处理。",
-        cancelledDetail: "最近一次执行已取消。请先复核运行链路，再重新进入正确的正式页面。",
+        completedDetail:
+          "最近一次执行已经完成，并且已经给出返回正式产品页面的后续动作。",
+        failedDetail:
+          "最近一次执行失败了。请通过下方后续动作回到运行时、证据面或下游交接链路继续处理。",
+        runningDetail:
+          "最近一次执行仍在进行中。建议沿着这条正式结果链继续观察，直到产出与后续动作稳定下来。",
+        awaitingApprovalDetail:
+          "最近一次执行停在受治理的工具审批边界，等待授权决策。",
+        queuedDetail:
+          "最近一次执行仍在排队中。等运行真正开始产出结果后，再回到正式后续页面继续处理。",
+        cancelledDetail:
+          "最近一次执行已取消。请先复核运行链路，再重新进入正确的正式页面。",
         openDefinitions: "打开定义",
         openSettings: "打开设置",
         fields: {
@@ -561,8 +665,8 @@ const zhCN = {
           stage: "运行阶段",
           scope: "作用域",
           outputs: "产出数量",
-          followUps: "后续动作"
-        }
+          followUps: "后续动作",
+        },
       },
       runtimeBinding: "运行时绑定",
       runtimeEngine: "运行时 {value}",
@@ -580,38 +684,42 @@ const zhCN = {
       runtimeFallbackReasonWithTarget: "{reason}，本次执行已回退到 {target}。",
       runtimeFallbackTargets: {
         default_model_endpoint: "平台默认模型端点",
-        settings: "服务默认运行时"
+        settings: "服务默认运行时",
       },
       runtimeFallbackReasons: {
         configured_model_endpoint_missing: "原始配置的模型端点已无法解析",
         model_endpoint_disabled: "原始配置的模型端点已被禁用",
-        model_endpoint_missing_chat_capability: "原始配置的模型端点不支持对话生成",
-        model_endpoint_not_runtime_ready: "原始配置的模型端点虽然已启用，但运行配置还不完整",
-        model_endpoint_unsupported_credential_mode: "原始配置的模型端点使用了当前不支持的凭据模式",
+        model_endpoint_missing_chat_capability:
+          "原始配置的模型端点不支持对话生成",
+        model_endpoint_not_runtime_ready:
+          "原始配置的模型端点虽然已启用，但运行配置还不完整",
+        model_endpoint_unsupported_credential_mode:
+          "原始配置的模型端点使用了当前不支持的凭据模式",
         model_endpoint_unavailable: "原始配置的模型端点当前不可用",
-        unknown: "原始配置的模型端点触发了运行时回退"
+        unknown: "原始配置的模型端点触发了运行时回退",
       },
       followUpTitle: "下一步动作",
       stageLabels: {
         queued_for_execution: "等待执行",
         running_execution: "执行中",
+        waiting_for_approval: "等待审批",
         grounded_answer_ready: "知识回答已生成",
         intake_review_ready: "摄取审查已就绪",
         recovery_brief_ready: "恢复摘要已就绪",
         execution_failed: "执行失败",
-        execution_completed: "执行完成"
+        execution_completed: "执行完成",
       },
       outputKinds: {
         answer_preview: "回答预览",
         retrieval_evidence: "证据覆盖",
         document_intake: "文档摄取",
         workflow_recovery: "工作流恢复",
-        tool_runtime: "工具运行"
+        tool_runtime: "工具运行",
       },
       outputStatuses: {
         ready: "已就绪",
         attention: "需关注",
-        pending: "待完成"
+        pending: "待完成",
       },
       retrievalResults: "{count} 个命中分块",
       evidenceSources: "证据来源",
@@ -637,25 +745,27 @@ const zhCN = {
         inspect_workflow_recovery: "检查工作流恢复",
         triage_failed_workflows: "分诊失败工作流",
         inspect_retry_lineage: "检查重试链路",
-        return_to_documents: "返回文档处理"
+        return_to_documents: "返回文档处理",
       },
       metrics: {
         total: "执行总数",
         queued: "排队中",
         running: "执行中",
+        awaitingApproval: "等待审批",
         completed: "已完成",
-        failed: "失败"
+        failed: "失败",
       },
       filters: {
         status: "执行状态",
-        allStatuses: "全部执行状态"
+        allStatuses: "全部执行状态",
       },
       statuses: {
         queued: "排队中",
         running: "执行中",
+        awaiting_approval: "等待审批",
         completed: "已完成",
         failed: "失败",
-        cancelled: "已取消"
+        cancelled: "已取消",
       },
       toolRuntime: {
         title: "工具运行",
@@ -675,46 +785,57 @@ const zhCN = {
           reserved: "预留",
           unavailable: "不可用",
           failed: "失败",
-          skipped: "跳过"
-        }
-      }
+          skipped: "跳过",
+        },
+      },
     },
     runbook: {
       title: "操作手册",
-      description: "按照模式感知的执行顺序推进，让启动、升级处理和治理收口都留在既有平台路径中。",
+      description:
+        "按照模式感知的执行顺序推进，让启动、升级处理和治理收口都留在既有平台路径中。",
       empty: "请选择一个智能体定义，以生成对应的操作手册。",
       stepLabel: "步骤 {value}",
       actions: {
         openDocuments: "打开文档",
         openChat: "打开对话",
         openOperations: "打开工作流",
-        openAccess: "打开访问治理"
+        openAccess: "打开访问治理",
       },
       groundedChat: {
         scopeTitle: "确认知识作用域",
-        scopeReady: "当前问答通道已经解析到 {scope}，可以先在文档面复核范围后再进入实时问答。",
-        scopeMissing: "当前问答通道还缺少明确的工作区和知识库作用域，暂时不适合直接上线。",
+        scopeReady:
+          "当前问答通道已经解析到 {scope}，可以先在文档面复核范围后再进入实时问答。",
+        scopeMissing:
+          "当前问答通道还缺少明确的工作区和知识库作用域，暂时不适合直接上线。",
         launchTitle: "进入回答通道",
-        launchDetail: "带着当前启动提示词进入对话面，让操作员从正式、可溯源的问答简报开始。",
+        launchDetail:
+          "带着当前启动提示词进入对话面，让操作员从正式、可溯源的问答简报开始。",
         closureTitle: "完成治理收口",
-        closureDetail: "还有 {count} 个带审批边界的注册工具需要在更大范围发布前完成复核。"
+        closureDetail:
+          "还有 {count} 个带审批边界的注册工具需要在更大范围发布前完成复核。",
       },
       documentIntake: {
         intakeTitle: "检查接入通道",
-        intakeDetail: "先进入文档面，让接入状态、重建索引需求和源内容质量信号保持可见。",
+        intakeDetail:
+          "先进入文档面，让接入状态、重建索引需求和源内容质量信号保持可见。",
         recoveryTitle: "把异常升级到工作流",
-        recoveryDetail: "在完成源内容检查后，把失败或高风险接入事项转入工作流运行面继续处理。",
+        recoveryDetail:
+          "在完成源内容检查后，把失败或高风险接入事项转入工作流运行面继续处理。",
         briefingTitle: "整理操作员简报",
-        briefingDetail: "带着模式化提示词进入对话面，总结当前接入状态和下一步执行优先级。"
+        briefingDetail:
+          "带着模式化提示词进入对话面，总结当前接入状态和下一步执行优先级。",
       },
       workflowRecovery: {
         triageTitle: "分拣失败运行",
-        triageDetail: "先进入工作流运行面，对失败任务做优先级排序，再决定哪些重试链值得优先介入。",
+        triageDetail:
+          "先进入工作流运行面，对失败任务做优先级排序，再决定哪些重试链值得优先介入。",
         cleanupTitle: "确认源内容清理",
-        cleanupDetail: "在把恢复动作送回运行态前，先到文档面检查失败或高风险的源内容。",
+        cleanupDetail:
+          "在把恢复动作送回运行态前，先到文档面检查失败或高风险的源内容。",
         approvalTitle: "确认治理审批",
-        approvalDetail: "当前这条恢复通道还有 {count} 个带审批边界的注册工具仍在治理路径中。"
-      }
+        approvalDetail:
+          "当前这条恢复通道还有 {count} 个带审批边界的注册工具仍在治理路径中。",
+      },
     },
     guardrails: {
       title: "执行护栏",
@@ -727,7 +848,7 @@ const zhCN = {
       executionMissing: "请先明确执行模式，再推进到可运行配置。",
       governanceTitle: "治理姿态",
       governanceReady: "当前状态为 {status}，模型策略为 {strategy}。",
-      governanceMissing: "进入正式阶段前，应先明确状态与模型策略。"
+      governanceMissing: "进入正式阶段前，应先明确状态与模型策略。",
     },
     readiness: {
       ready: "已就绪",
@@ -738,59 +859,73 @@ const zhCN = {
         model_runtime_unconfigured: "模型运行配置不完整",
         retrieval_profile_missing: "缺失检索策略",
         retrieval_profile_disabled: "已禁用检索策略",
+        retrieval_engine_unavailable: "检索处理器不可用",
         scope_missing: "缺失范围",
         scope_invalid: "范围失效",
         tools_missing: "缺失工具",
         tool_registration_disabled: "已禁用工具注册",
         tool_approval_required: "审批边界工具",
         tool_mcp_reserved: "预留 MCP 工具",
-        tool_mcp_integration_pending: "待接入 MCP 连接器"
+        tool_mcp_integration_pending: "待接入 MCP 连接器",
+        runtime_engine_unavailable: "智能体运行时不可用",
       },
       issues: {
         model_missing: "当前没有可用的运行模型",
         model_disabled: "绑定的模型端点已停用",
-        model_runtime_unconfigured: "绑定的模型端点虽然已启用，但运行配置还不完整",
+        model_runtime_unconfigured:
+          "绑定的模型端点虽然已启用，但运行配置还不完整",
         retrieval_profile_missing: "当前知识范围没有解析到有效的治理检索策略",
         retrieval_profile_disabled: "当前知识范围绑定到了已停用的检索策略",
+        retrieval_engine_unavailable:
+          "当前知识范围所用检索策略依赖的处理器未安装在此部署配置中",
         scope_missing: "知识范围尚未配置",
         scope_invalid: "知识范围已无法解析到现有资源",
         tools_missing: "当前没有可用的连接工具",
         tool_registration_disabled: "有 {count} 个已绑定工具注册已停用",
-        tool_approval_required: "有 {count} 个已绑定工具注册仍处于治理审批边界之后",
-        tool_mcp_reserved: "有 {count} 个已绑定预留 MCP 工具仍未完成治理连接器指派",
-        tool_mcp_integration_pending: "有 {count} 个已绑定预留 MCP 工具仍在等待连接器运行闭环"
-      }
+        tool_approval_required:
+          "有 {count} 个已绑定工具注册仍处于治理审批边界之后",
+        tool_mcp_reserved:
+          "有 {count} 个已绑定预留 MCP 工具仍未完成治理连接器指派",
+        tool_mcp_integration_pending:
+          "有 {count} 个已绑定预留 MCP 工具仍在等待连接器运行闭环",
+        runtime_engine_unavailable:
+          "当前部署配置未安装所选的智能体运行时",
+      },
     },
     seed: {
       knowledgeCopilotName: "知识问答助手",
-      knowledgeCopilotObjective: "围绕默认 handbook 范围提供知识问答支持，并持续保持引用质量。",
+      knowledgeCopilotObjective:
+        "围绕默认 handbook 范围提供知识问答支持，并持续保持引用质量。",
       knowledgeCopilotInstructions:
         "只使用知识检索结果作答，保持回答简洁，引用相关来源分块；当证据不足时必须升级处理，不得猜测。",
       documentReviewerName: "文档接入审核助手",
-      documentReviewerObjective: "复核新索引内容、标记薄弱元数据，并协同文档操作页推进后续重建索引。",
+      documentReviewerObjective:
+        "复核新索引内容、标记薄弱元数据，并协同文档操作页推进后续重建索引。",
       documentReviewerInstructions:
         "先检查接入状态，再总结索引健康度；任何失败都要移交给工作流操作页处理，不要自行臆测根因。",
       workflowResponderName: "工作流恢复协调助手",
-      workflowResponderObjective: "跟踪失败的文档接入运行，并在重试前准备面向运营员的恢复步骤。",
+      workflowResponderObjective:
+        "跟踪失败的文档接入运行，并在重试前准备面向运营员的恢复步骤。",
       workflowResponderInstructions:
-        "始终聚焦失败队列，复核重试链路；任何破坏性动作前都必须要求显式治理确认。"
-    }
+        "始终聚焦失败队列，复核重试链路；任何破坏性动作前都必须要求显式治理确认。",
+    },
   },
   operations: {
     access: {
       retryEnabled: "允许重试",
-      readOnly: "只读重试模式"
+      readOnly: "只读重试模式",
     },
     title: "运行中心",
     navigation: {
       overview: "运行概览",
       queue: "任务队列",
-      detail: "运行详情"
+      detail: "运行详情",
     },
     header: {
       eyebrow: "Execution Control",
       title: "运营操作台",
-      description: "在租户级别监督工作流执行、排查失败队列，并在受控条件下发起重试，不再依赖工作台里的通用视图。"
+      description:
+        "在租户级别监督工作流执行、排查失败队列，并在受控条件下发起重试，不再依赖工作台里的通用视图。",
     },
     status: {
       loading: "正在加载运营操作台...",
@@ -802,12 +937,13 @@ const zhCN = {
       detailFailed: "工作流详情加载失败。",
       retrying: "正在排入工作流重试...",
       retryQueued: "工作流重试已进入队列。",
-      retryQueuedFocused: "工作流重试已进入队列，当前运营操作台已经切到重试分区并聚焦该运行。",
+      retryQueuedFocused:
+        "工作流重试已进入队列，当前运营操作台已经切到重试分区并聚焦该运行。",
       retryFailed: "工作流重试失败。",
       savingWorkflowNotes: "正在保存工作流备注...",
       workflowNotesSaved: "工作流备注已保存。",
       workflowNotesSaveFailed: "工作流备注保存失败。",
-      lastRefreshed: "最近刷新 {value}"
+      lastRefreshed: "最近刷新 {value}",
     },
     actions: {
       refresh: "刷新",
@@ -816,7 +952,7 @@ const zhCN = {
       openQueue: "打开队列",
       retryRun: "重试运行",
       openWorkspaceRun: "在工作台中打开",
-      openSubject: "打开关联对象"
+      openSubject: "打开关联对象",
     },
     metrics: {
       total: "运行总数",
@@ -826,11 +962,12 @@ const zhCN = {
       failed: "失败运行",
       failedHint: "当前需要排查或受控重试的失败任务。",
       activeAgents: "启用智能体",
-      agentsHint: "当前可用于后续运营恢复协同的启用智能体定义数量。"
+      agentsHint: "当前可用于后续运营恢复协同的启用智能体定义数量。",
     },
     lanes: {
       title: "执行分区",
-      description: "把运营监督稳定拆分为总览、失败恢复、重试队列和执行压力几个固定分区。",
+      description:
+        "把运营监督稳定拆分为总览、失败恢复、重试队列和执行压力几个固定分区。",
       overview: "总览",
       overviewDescription: "在同一条监督分区里查看当前租户的全部工作流体量。",
       failed: "失败运行",
@@ -838,18 +975,19 @@ const zhCN = {
       retries: "重试队列",
       retriesDescription: "查看已经从历史失败中重新发起的运行。",
       pressure: "执行压力",
-      pressureDescription: "关注已进入通道、仍在等待或执行中的运行压力。"
+      pressureDescription: "关注已进入通道、仍在等待或执行中的运行压力。",
     },
     scope: {
       title: "执行范围",
-      description: "运营操作台以租户为监督范围，同时保留与智能体和工作区目录的联动。",
+      description:
+        "运营操作台以租户为监督范围，同时保留与智能体和工作区目录的联动。",
       currentTenant: "当前租户",
       notAvailable: "暂无",
       recoveryAgent: "恢复智能体",
       selectRecoveryAgent: "选择恢复智能体",
       workspaces: "{count} 个工作区",
       agentDrafts: "{count} 个智能体",
-      toolEnabledAgents: "{count} 个已接工具"
+      toolEnabledAgents: "{count} 个已接工具",
     },
     filters: {
       tenant: "选择租户",
@@ -859,7 +997,7 @@ const zhCN = {
       allRetries: "全部运行",
       originals: "原始运行",
       retries: "重试运行",
-      searchPlaceholder: "按对象、工作流 ID 或失败上下文搜索"
+      searchPlaceholder: "按对象、工作流 ID 或失败上下文搜索",
     },
     queues: {
       queued: "排队中",
@@ -867,18 +1005,19 @@ const zhCN = {
       failed: "失败",
       retries: "重试",
       completed: "已完成",
-      pending: "待处理"
+      pending: "待处理",
     },
     statusSummary: {
-      title: "运行状态摘要"
+      title: "运行状态摘要",
     },
     directory: {
       title: "工作流目录",
-      description: "当前租户下近期的工作流执行记录，适合做排查、分流与后续处理。",
+      description:
+        "当前租户下近期的工作流执行记录，适合做排查、分流与后续处理。",
       empty: "当前筛选条件下没有匹配的工作流运行。",
       retryRun: "重试运行",
       noError: "当前运行没有记录阻塞性错误信息。",
-      updatedAt: "更新于 {value}"
+      updatedAt: "更新于 {value}",
     },
     focus: {
       title: "执行焦点",
@@ -890,13 +1029,16 @@ const zhCN = {
       retryReady: "当前运行满足受控重试条件，可以发起重试。",
       retryBlocked: "当前运行暂时不满足重试条件。",
       nextStep: "下一步动作",
-      nextStepFailed: "这条失败运行应继续留在恢复分区，先确认阻塞原因和源作用域，再决定是否继续重试。",
-      nextStepCompleted: "这条运行已经成功完成，建议继续到工作台对话或文档复核中确认下游检索是否已经就绪。",
-      nextStepActive: "这条运行仍处于活跃状态，建议继续留在工作流监督中观察队列压力和步骤进度。",
+      nextStepFailed:
+        "这条失败运行应继续留在恢复分区，先确认阻塞原因和源作用域，再决定是否继续重试。",
+      nextStepCompleted:
+        "这条运行已经成功完成，建议继续到工作台对话或文档复核中确认下游检索是否已经就绪。",
+      nextStepActive:
+        "这条运行仍处于活跃状态，建议继续留在工作流监督中观察队列压力和步骤进度。",
       nextStepEmpty: "请先选择一条工作流运行，再解锁后续交接动作。",
       openChatFollowUp: "打开对话跟进",
       openWorkflowFollowUp: "打开工作流跟进",
-      openSubjectFollowUp: "打开关联对象跟进"
+      openSubjectFollowUp: "打开关联对象跟进",
     },
     detail: {
       title: "工作流详情",
@@ -912,8 +1054,10 @@ const zhCN = {
       retryOf: "重试来源",
       temporalWorkflowId: "Temporal 工作流 ID",
       operatorNotes: "运营备注",
-      operatorNotesDescription: "把这条运行的人工判断、重试护栏或源范围结论沉淀在这里，方便后续继续接手。",
-      operatorNotesPlaceholder: "为这条工作流运行补充一条可持续复用的运营备注...",
+      operatorNotesDescription:
+        "把这条运行的人工判断、重试护栏或源范围结论沉淀在这里，方便后续继续接手。",
+      operatorNotesPlaceholder:
+        "为这条工作流运行补充一条可持续复用的运营备注...",
       operatorNotesEmpty: "当前这条工作流运行还没有保存运营备注。",
       operatorNotesSaved: "当前运营备注已绑定到这条工作流运行。",
       saveOperatorNotes: "保存备注",
@@ -921,13 +1065,14 @@ const zhCN = {
       steps: "执行步骤",
       noSteps: "当前还没有记录执行步骤。",
       attemptCount: "{count} 次尝试",
-      notAvailable: "暂无"
+      notAvailable: "暂无",
     },
     recoveryAgents: {
       title: "恢复型智能体",
       description: "当前租户下可用于失败运行恢复链路的启用智能体。",
       activeCount: "启用恢复智能体",
-      activeReady: "这些智能体可以在运营员重新进入失败队列前先被复核或直接打开。",
+      activeReady:
+        "这些智能体可以在运营员重新进入失败队列前先被复核或直接打开。",
       activeEmpty: "当前租户范围内还没有可用的启用恢复型智能体。",
       runtimePacket: "运行包",
       noObjective: "这个恢复型智能体还没有明确的恢复目标说明。",
@@ -954,21 +1099,29 @@ const zhCN = {
       lastConnectorPreview: "最近连接器预检：{status} · {value}",
       providerLane: "Provider 通道",
       providerUnknown: "未知模型提供方",
-      providerLaneReady: "当前有 {runtimeReady} 个运行就绪端点、{activeAgents} 个活跃智能体，其中 {attentionAgents} 个仍处于关注状态。",
+      providerLaneReady:
+        "当前有 {runtimeReady} 个运行就绪端点、{activeAgents} 个活跃智能体，其中 {attentionAgents} 个仍处于关注状态。",
       openAgents: "打开恢复智能体",
-      openFailedQueue: "打开失败队列"
+      openFailedQueue: "打开失败队列",
     },
     runtimeTaskPacket: {
       title: "运行任务包",
-      description: "在离开运营操作面之前，先把当前恢复交接整理成一个正式任务包。",
+      description:
+        "在离开运营操作面之前，先把当前恢复交接整理成一个正式任务包。",
       emptyTitle: "当前没有活跃运行任务",
       emptyDetail: "请选择一条工作流运行或恢复智能体，再生成下一条运行任务包。",
-      monitoringDetail: "当前范围内仍有排队、运行中或重试中的执行，建议继续留在运营操作面保持监督。",
-      intakeDetail: "当前没有需要恢复的活跃运行，可以回到文档接入面继续补充内容，再等待新的执行进入监督链路。",
-      activeDetail: "当前执行还应留在受监督的工作流跟进面中，直到队列姿态和重试条件足够清晰。",
-      completedDetail: "当前执行已经完成，可以继续进入下游知识问答或文档复核做验证。",
-      failedDetail: "这条需要恢复处理的执行应继续带着工作流和源对象上下文一起推进，再决定是否继续重试。",
-      agentOnlyDetail: "当前已选中恢复智能体，但还没有聚焦具体工作流运行，建议先把治理、提示词和范围准备好。",
+      monitoringDetail:
+        "当前范围内仍有排队、运行中或重试中的执行，建议继续留在运营操作面保持监督。",
+      intakeDetail:
+        "当前没有需要恢复的活跃运行，可以回到文档接入面继续补充内容，再等待新的执行进入监督链路。",
+      activeDetail:
+        "当前执行还应留在受监督的工作流跟进面中，直到队列姿态和重试条件足够清晰。",
+      completedDetail:
+        "当前执行已经完成，可以继续进入下游知识问答或文档复核做验证。",
+      failedDetail:
+        "这条需要恢复处理的执行应继续带着工作流和源对象上下文一起推进，再决定是否继续重试。",
+      agentOnlyDetail:
+        "当前已选中恢复智能体，但还没有聚焦具体工作流运行，建议先把治理、提示词和范围准备好。",
       noObjective: "当前还没有补齐正式恢复目标。",
       noPrompt: "当前还没有可用的恢复启动提示词。",
       pending: "待定",
@@ -979,12 +1132,12 @@ const zhCN = {
       statuses: {
         attention: "需关注",
         ready: "已就绪",
-        review: "待复核"
+        review: "待复核",
       },
       targets: {
         chat: "知识问答",
         documents: "文档接入",
-        workflows: "工作流跟进"
+        workflows: "工作流跟进",
       },
       fields: {
         target: "目标页面",
@@ -993,12 +1146,13 @@ const zhCN = {
         workspace: "工作区",
         knowledgeBase: "知识库",
         objective: "恢复目标",
-        prompt: "恢复提示词"
-      }
+        prompt: "恢复提示词",
+      },
     },
     agentRuntime: {
       title: "运营运行观测",
-      description: "把已经进入运营操作面的智能体启动记录并到当前执行台，便于恢复、排队和治理交接一起观察。",
+      description:
+        "把已经进入运营操作面的智能体启动记录并到当前执行台，便于恢复、排队和治理交接一起观察。",
       openAgents: "打开智能体",
       totalRuns: "运营启动总数",
       selectedAgent: "当前恢复智能体",
@@ -1010,7 +1164,7 @@ const zhCN = {
       noSourceMix: "当前还没有可用于分析来源的运营启动记录。",
       recentRuns: "最近运营启动",
       empty: "当前范围内还没有进入运营操作面的智能体运行记录。",
-      unknownAgent: "未知智能体定义"
+      unknownAgent: "未知智能体定义",
     },
     agentExecutions: {
       title: "恢复执行任务",
@@ -1020,74 +1174,83 @@ const zhCN = {
       openRuntimeSettings: "打开运行设置",
       openImpactedAgents: "打开受影响智能体",
       pending: "执行仍在处理中，或还没有形成最终摘要。",
-      empty: "当前范围内还没有可见的工作流恢复执行任务。"
+      empty: "当前范围内还没有可见的工作流恢复执行任务。",
     },
     executionPackets: {
       title: "执行包",
-      description: "把当前租户直接导向恢复、重试监督、运行交接和工作台回流，不需要手动重新拼上下文。",
+      description:
+        "把当前租户直接导向恢复、重试监督、运行交接和工作台回流，不需要手动重新拼上下文。",
       statuses: {
         attention: "需关注",
         review: "待复核",
-        healthy: "健康"
+        healthy: "健康",
       },
       recovery: {
         title: "恢复执行包",
         metric: "范围内恢复运行",
-        failedDetail: "当前租户范围内还有 {count} 条工作流恢复运行需要主动处理。",
+        failedDetail:
+          "当前租户范围内还有 {count} 条工作流恢复运行需要主动处理。",
         healthyDetail: "当前租户暂时没有可见的工作流恢复压力。",
         primaryAction: "打开恢复分区",
         secondaryDocuments: "打开失败文档",
-        secondaryAdmin: "打开治理后台"
+        secondaryAdmin: "打开治理后台",
       },
       retry: {
         title: "重试执行包",
         metric: "范围内重试运行",
-        readyDetail: "当前已有 {count} 条重试运行处于活动范围内，建议作为单独恢复队列继续监督。",
+        readyDetail:
+          "当前已有 {count} 条重试运行处于活动范围内，建议作为单独恢复队列继续监督。",
         emptyDetail: "当前租户范围内暂时没有可见的重试运行。",
         primaryAction: "打开重试分区",
         secondaryQueued: "打开排队分区",
-        secondaryRunning: "打开运行中分区"
+        secondaryRunning: "打开运行中分区",
       },
       agent: {
         title: "智能体交接包",
         metric: "已设范围恢复智能体",
-        readyDetail: "当前 {totalCount} 个启用恢复智能体中，已有 {scopedCount} 个具备明确运行范围边界。",
+        readyDetail:
+          "当前 {totalCount} 个启用恢复智能体中，已有 {scopedCount} 个具备明确运行范围边界。",
         emptyDetail: "当前租户范围内还没有可用于恢复交接的启用智能体。",
         primaryAction: "打开恢复交接",
         secondaryDefinitions: "打开智能体定义",
-        secondaryBrief: "打开恢复简报"
+        secondaryBrief: "打开恢复简报",
       },
       governance: {
         title: "治理交接包",
         metric: "当前恢复负责人",
-        readyDetail: "{name} 已经对齐到受范围约束的恢复路线，可以继续保持和治理复核联动。",
-        pendingDetail: "当前可见 {count} 个启用恢复智能体，但治理侧还需要继续收口范围和访问姿态。",
+        readyDetail:
+          "{name} 已经对齐到受范围约束的恢复路线，可以继续保持和治理复核联动。",
+        pendingDetail:
+          "当前可见 {count} 个启用恢复智能体，但治理侧还需要继续收口范围和访问姿态。",
         emptyDetail: "当前租户范围内还没有可交接到治理复核的启用恢复智能体。",
         unassigned: "尚未选择恢复负责人",
         primaryAction: "打开治理交接",
         secondaryDefinitions: "打开恢复定义",
-        secondaryAccess: "打开访问复核"
+        secondaryAccess: "打开访问复核",
       },
       followUp: {
         title: "工作台回流包",
         metric: "当前执行对象",
-        completedDetail: "当前选中运行已经完成，建议回到工作台继续确认下游检索与知识使用是否已就绪。",
-        failedDetail: "当前选中运行已经失败，建议把工作流面和关联对象面放在一起继续排查，再决定是否重试。",
-        activeDetail: "当前选中运行仍在活跃中，建议保持监督面与工作台回流面同步观察。",
+        completedDetail:
+          "当前选中运行已经完成，建议回到工作台继续确认下游检索与知识使用是否已就绪。",
+        failedDetail:
+          "当前选中运行已经失败，建议把工作流面和关联对象面放在一起继续排查，再决定是否重试。",
+        activeDetail:
+          "当前选中运行仍在活跃中，建议保持监督面与工作台回流面同步观察。",
         emptyDetail: "请先选择一条工作流运行，再把当前执行回流到工作台页面。",
         notSelected: "尚未选择运行",
         primaryAction: "打开工作台回流",
         secondaryWorkspace: "打开工作流页面",
-        secondarySubject: "打开关联对象页面"
-      }
-    }
+        secondarySubject: "打开关联对象页面",
+      },
+    },
   },
   settings: {
     title: "系统设置",
     navigation: {
       profile: "个人资料",
       sessions: "会话管理",
-      security: "安全中心"
+      security: "安全中心",
     },
     security: {
       title: "安全中心",
@@ -1098,18 +1261,21 @@ const zhCN = {
       activeSessions: "活跃会话",
       recentFailedSignIns: "近期失败登录",
       credentials: "登录凭据",
-      passwordManaged: "当前认证方式支持密码修改。建议定期更新密码并避免重复使用。",
-      externallyManaged: "当前账号由外部身份系统或免密方式管理，密码不能在此处修改。",
+      passwordManaged:
+        "当前认证方式支持密码修改。建议定期更新密码并避免重复使用。",
+      externallyManaged:
+        "当前账号由外部身份系统或免密方式管理，密码不能在此处修改。",
       currentSignIn: "当前登录",
       role: "角色",
       lastSignedIn: "最近登录",
       sessionExpires: "会话到期",
-      manageSessions: "管理全部会话"
+      manageSessions: "管理全部会话",
     },
     header: {
       eyebrow: "运营设置",
       title: "会话与平台设置",
-      description: "把本地会话、治理入口和仓库入口收拢到一起，不去虚构暂时还不存在的设置项。"
+      description:
+        "把本地会话、治理入口和仓库入口收拢到一起，不去虚构暂时还不存在的设置项。",
     },
     sections: {
       sessionTitle: "个人资料",
@@ -1119,7 +1285,7 @@ const zhCN = {
       accessTitle: "访问活动",
       accessDescription: "仅面向当前登录成员展示最近登录与成员治理事件。",
       platformTitle: "平台入口",
-      platformDescription: "快速进入当前已经完成的控制面、本地 API 与仓库。"
+      platformDescription: "快速进入当前已经完成的控制面、本地 API 与仓库。",
     },
     fields: {
       name: "显示名称",
@@ -1136,9 +1302,12 @@ const zhCN = {
       membershipAccessReady: "可用",
       membershipAccessBlocked: "受阻",
       membershipAccessBootstrap: "初始化",
-      membershipAccessReadyDescription: "当前会话至少绑定了一个活动中的租户成员关系。",
-      membershipAccessBlockedDescription: "当前会话只关联了 invited 或 suspended 的成员关系，不应继续保持登录。",
-      membershipAccessBootstrapDescription: "当前还没有绑定租户成员关系，因此会话仍处于初始化模式。",
+      membershipAccessReadyDescription:
+        "当前会话至少绑定了一个活动中的租户成员关系。",
+      membershipAccessBlockedDescription:
+        "当前会话只关联了 invited 或 suspended 的成员关系，不应继续保持登录。",
+      membershipAccessBootstrapDescription:
+        "当前还没有绑定租户成员关系，因此会话仍处于初始化模式。",
       pendingRole: "待生效会话角色",
       adminAccess: "管理台权限",
       adminAllowed: "可访问",
@@ -1159,10 +1328,11 @@ const zhCN = {
       chatModel: "对话模型",
       chatModelHint: "当前由 API 健康接口暴露的默认模型名称。",
       optionalRuntimes: "可选运行时",
-      optionalRuntimesHint: "用于确认当前 API 环境是否已经真正具备加载这些 pilot 技术链路的能力。",
+      optionalRuntimesHint:
+        "用于确认当前 API 环境是否已经真正具备加载这些 pilot 技术链路的能力。",
       runtimeReady: "已就绪",
       runtimePending: "待安装",
-      runtimeUnavailable: "暂不可用"
+      runtimeUnavailable: "暂不可用",
     },
     status: {
       profileSaved: "资料已更新。",
@@ -1175,7 +1345,7 @@ const zhCN = {
       accessEventsFailed: "访问活动加载失败。",
       activeSessionsFailed: "活跃会话加载失败。",
       sessionRefreshFailed: "会话刷新失败。",
-      runtimeHealthFailed: "运行健康状态加载失败。"
+      runtimeHealthFailed: "运行健康状态加载失败。",
     },
     actions: {
       saveProfile: "保存资料",
@@ -1193,7 +1363,7 @@ const zhCN = {
       openChat: "打开对话",
       openAdmin: "打开管理后台",
       openRepository: "打开仓库",
-      signOut: "退出登录"
+      signOut: "退出登录",
     },
     activity: {
       latestEvent: "最近事件",
@@ -1228,11 +1398,12 @@ const zhCN = {
       reason: "原因",
       loginModeBootstrap: "初始引导",
       loginModeDirectory: "目录登录",
-      loginModeInvitationActivation: "邀请激活"
+      loginModeInvitationActivation: "邀请激活",
     },
     sessions: {
       title: "会话管理",
-      description: "查看当前账号的登录状态与近期安全活动，并管理仍然有效的设备会话。",
+      description:
+        "查看当前账号的登录状态与近期安全活动，并管理仍然有效的设备会话。",
       current: "当前",
       other: "其他会话",
       startedAt: "开始时间",
@@ -1254,8 +1425,8 @@ const zhCN = {
         devices: "设备数",
         devicesHint: "当前活跃后端会话里识别出的设备标签数量。",
         ips: "IP 数",
-        ipsHint: "当前活跃会话仍然覆盖的来源 IP 数量。"
-      }
+        ipsHint: "当前活跃会话仍然覆盖的来源 IP 数量。",
+      },
     },
     passwordDialog: {
       title: "修改密码",
@@ -1268,25 +1439,28 @@ const zhCN = {
       confirmPasswordPlaceholder: "再次输入新密码",
       cancel: "取消",
       submit: "更新密码",
-      saving: "更新中..."
+      saving: "更新中...",
     },
     posture: {
       activeMemberships: "活动成员关系",
-      activeMembershipsHint: "当前可以直接打开受保护运营页面的租户成员关系数量。",
+      activeMembershipsHint:
+        "当前可以直接打开受保护运营页面的租户成员关系数量。",
       invitedMemberships: "受邀成员关系",
       invitedMembershipsHint: "当前仍依赖邀请码激活的租户成员关系数量。",
       recentFailedSignIns: "失败登录",
       recentFailedSignInsHint: "当前审查窗口内记录到的失败登录次数。",
       failedInvitationActivations: "激活失败",
-      failedInvitationActivationsHint: "当前审查窗口内记录到的邀请激活失败次数。",
+      failedInvitationActivationsHint:
+        "当前审查窗口内记录到的邀请激活失败次数。",
       expiringInvitations: "邀请风险",
       expiringInvitationsHint: "已经过期或将在 72 小时内过期的邀请数量。",
       sensitiveEvents: "敏感事件",
-      sensitiveEventsHint: "当前成员可见的最近撤销、暂停和移除事件数量。"
+      sensitiveEventsHint: "当前成员可见的最近撤销、暂停和移除事件数量。",
     },
     governance: {
       title: "运行治理",
-      description: "把可持久化的模型端点、工具注册和检索策略一起收进平台控制面，为后续对话、智能体与执行链路打底。",
+      description:
+        "把可持久化的模型端点、工具注册和检索策略一起收进平台控制面，为后续对话、智能体与执行链路打底。",
       overview: {
         title: "治理焦点",
         loading: "正在加载受治理运行态总览...",
@@ -1300,19 +1474,25 @@ const zhCN = {
           governedDefaultModels: "受治理默认模型",
           approvalTools: "审批工具",
           pendingMcpTools: "待接入 MCP 工具",
-          blockedConnectors: "阻塞连接器"
+          blockedConnectors: "阻塞连接器",
         },
         reasons: {
           stable: "模型、工具和连接器当前整体处于稳定的受治理运行姿态。",
-          unconfigured_model_endpoint: "仍有启用中的模型端点没有补齐运行配置，正式交付前需要先收口。",
-          disabled_bound_model_endpoint: "至少有一个已绑定模型端点处于禁用状态，继续交付前应先恢复。",
-          approval_required_tool: "仍有已绑定工具处在审批边界之后，运营依赖它之前应先完成复核。",
-          mcp_integration_pending_tool: "有预留的 MCP 工具还在等待连接器交接，正式扩展运行链路前应先补齐。",
-          integration_blocked_connector: "至少有一个 MCP 连接器正在阻塞下游工具交付，建议优先修复。"
-        }
+          unconfigured_model_endpoint:
+            "仍有启用中的模型端点没有补齐运行配置，正式交付前需要先收口。",
+          disabled_bound_model_endpoint:
+            "至少有一个已绑定模型端点处于禁用状态，继续交付前应先恢复。",
+          approval_required_tool:
+            "仍有已绑定工具处在审批边界之后，运营依赖它之前应先完成复核。",
+          mcp_integration_pending_tool:
+            "有预留的 MCP 工具还在等待连接器交接，正式扩展运行链路前应先补齐。",
+          integration_blocked_connector:
+            "至少有一个 MCP 连接器正在阻塞下游工具交付，建议优先修复。",
+        },
       },
       returnToValidation: "返回验证",
-      counts: "{models} 个模型 / {tools} 个工具 / {retrievalProfiles} 个检索策略",
+      counts:
+        "{models} 个模型 / {tools} 个工具 / {retrievalProfiles} 个检索策略",
       loaded: "已加载 {models} 个模型端点和 {tools} 个工具注册。",
       loading: "正在加载运行治理配置...",
       ready: "运行治理配置已就绪。",
@@ -1336,78 +1516,86 @@ const zhCN = {
         defaultModel: "默认模型",
         enabledTools: "启用工具",
         retrievalProfiles: "检索策略",
-        adminApproval: "审批工具"
+        adminApproval: "审批工具",
       },
       posture: {
         disabledBoundModels: "已禁用但仍绑定的模型",
-        disabledBoundModelsHint: "已经停用、但仍挂在智能体定义上的模型端点数量。",
+        disabledBoundModelsHint:
+          "已经停用、但仍挂在智能体定义上的模型端点数量。",
         disabledBoundTools: "已禁用但仍绑定的工具",
-        disabledBoundToolsHint: "已经停用、但仍被智能体定义引用的工具注册数量。",
+        disabledBoundToolsHint:
+          "已经停用、但仍被智能体定义引用的工具注册数量。",
         approvalGatedTools: "审批边界工具",
         approvalGatedToolsHint: "当前仍处于显式审批边界之后的工具注册数量。",
         unboundEnabledRuntime: "未绑定的启用运行资源",
-        unboundEnabledRuntimeHint: "已经启用、但还没有接入智能体交付链路的模型与工具数量。",
+        unboundEnabledRuntimeHint:
+          "已经启用、但还没有接入智能体交付链路的模型与工具数量。",
         quickActions: "治理跟进",
-        quickActionsDescription: "直接从运行资源态势跳到智能体或后台页面，继续处理下一步治理动作。",
+        quickActionsDescription:
+          "直接从运行资源态势跳到智能体或后台页面，继续处理下一步治理动作。",
         issueActions: "问题过滤",
         openAttentionAgents: "打开待关注智能体",
         openAdminOverview: "打开后台总览",
-        openActiveAgents: "打开启用智能体"
+        openActiveAgents: "打开启用智能体",
       },
       events: {
         title: "最近运行时治理事件",
-        description: "查看模型、工具、MCP 连接器和检索策略上的最新持久化治理动作。",
+        description:
+          "查看模型、工具、MCP 连接器和检索策略上的最新持久化治理动作。",
         empty: "当前还没有记录任何运行时治理事件。",
         systemActor: "系统角色",
         resources: {
           modelEndpoint: "模型端点",
           toolRegistration: "工具注册",
           mcpConnector: "MCP 连接器",
-          retrievalProfile: "检索策略"
-        }
-      }
+          retrievalProfile: "检索策略",
+        },
+      },
     },
     models: {
       title: "模型端点",
-        description: "登记面向提供方的模型端点，并把正式产品所需的模型契约先固定下来。",
-        governance: {
-          runtimeReady: "运行就绪端点",
-          disabledBound: "{count} 个禁用且已绑定端点",
-          localOllama: "Ollama 端点",
-          localVllm: "{count} 个 vLLM 端点",
-          missingBaseUrl: "缺失基础地址",
-          envCredential: "{count} 个环境变量凭据端点",
-          governedDefault: "默认治理链路",
-          settingsFallbackExposed: "当前默认对话链路仍在依赖 settings fallback。",
-          settingsFallbackCovered: "当前默认对话链路已经由可运行的治理默认模型覆盖。"
+      description:
+        "登记面向提供方的模型端点，并把正式产品所需的模型契约先固定下来。",
+      governance: {
+        runtimeReady: "运行就绪端点",
+        disabledBound: "{count} 个禁用且已绑定端点",
+        localOllama: "Ollama 端点",
+        localVllm: "{count} 个 vLLM 端点",
+        missingBaseUrl: "缺失基础地址",
+        envCredential: "{count} 个环境变量凭据端点",
+        governedDefault: "默认治理链路",
+        settingsFallbackExposed: "当前默认对话链路仍在依赖 settings fallback。",
+        settingsFallbackCovered:
+          "当前默认对话链路已经由可运行的治理默认模型覆盖。",
+      },
+      compatibility: {
+        title: "提供方兼容性",
+        description:
+          "在继续扩展本地或私有模型能力之前，先把每类提供方的治理运行契约看清楚。",
+        postureStatuses: {
+          ready: "已就绪",
+          attention: "待复核",
+          setup_required: "待配置",
         },
-        compatibility: {
-          title: "提供方兼容性",
-          description: "在继续扩展本地或私有模型能力之前，先把每类提供方的治理运行契约看清楚。",
-          postureStatuses: {
-            ready: "已就绪",
-            attention: "待复核",
-            setup_required: "待配置"
-          },
-          runtimeReadyEndpoints: "运行就绪端点",
-          activeAgents: "启用智能体",
-          attentionAgents: "待关注智能体",
-          baseUrl: "基础地址",
-          baseUrlRequired: "必填",
-          baseUrlNotRequired: "无需填写",
-          baseUrlRequiredHint: "必填，例如 {value}",
-          credentials: "凭据模式",
-          preview: "实时预检",
-          previewAvailable: "可用",
-          previewUnavailable: "不可用",
-          openProviderModels: "打开该提供方模型",
-          openRuntimeAttention: "打开运行关注项",
-          routingStyles: {
-            builtin: "内建",
-            native_http: "原生 HTTP",
-            openai_compatible: "OpenAI 兼容"
-          }
+        runtimeReadyEndpoints: "运行就绪端点",
+        activeAgents: "启用智能体",
+        attentionAgents: "待关注智能体",
+        baseUrl: "基础地址",
+        baseUrlRequired: "必填",
+        baseUrlNotRequired: "无需填写",
+        baseUrlRequiredHint: "必填，例如 {value}",
+        credentials: "凭据模式",
+        preview: "实时预检",
+        previewAvailable: "可用",
+        previewUnavailable: "不可用",
+        openProviderModels: "打开该提供方模型",
+        openRuntimeAttention: "打开运行关注项",
+        routingStyles: {
+          builtin: "内建",
+          native_http: "原生 HTTP",
+          openai_compatible: "OpenAI 兼容",
         },
+      },
       filters: {
         all: "全部模型",
         allProviders: "全部提供方",
@@ -1415,15 +1603,15 @@ const zhCN = {
         disabledBound: "已禁用绑定",
         missingBaseUrl: "缺失基础地址",
         managedReserved: "托管预留",
-        empty: "当前治理筛选下没有匹配的模型端点。"
+        empty: "当前治理筛选下没有匹配的模型端点。",
       },
-        new: "新建模型",
-        newOllama: "新建 Ollama",
-        newVllm: "新建 vLLM",
-        empty: "当前还没有模型端点。",
-        createdDraft: "新的模型端点草稿已创建。",
-        createdOllamaDraft: "新的 Ollama 模型端点草稿已创建。",
-        createdVllmDraft: "新的 vLLM 模型端点草稿已创建。",
+      new: "新建模型",
+      newOllama: "新建 Ollama",
+      newVllm: "新建 vLLM",
+      empty: "当前还没有模型端点。",
+      createdDraft: "新的模型端点草稿已创建。",
+      createdOllamaDraft: "新的 Ollama 模型端点草稿已创建。",
+      createdVllmDraft: "新的 vLLM 模型端点草稿已创建。",
       saved: "{name} 已保存。",
       saveFailed: "模型端点保存失败。",
       preview: "验证端点",
@@ -1439,7 +1627,7 @@ const zhCN = {
       previewStatuses: {
         completed: "已完成",
         blocked: "被阻止",
-        failed: "失败"
+        failed: "失败",
       },
       deleteConfirm: "确定删除模型端点 {name} 吗？",
       deleted: "{name} 已删除。",
@@ -1449,11 +1637,13 @@ const zhCN = {
       name: "名称",
       slug: "标识",
       provider: "提供方",
-        modelName: "模型名称",
-        baseUrl: "基础地址",
-        ollamaHint: "RAGPilot 会通过 Ollama 原生的 /api/chat 接口发起调用，基础地址可填写 http://127.0.0.1:11434。",
-        vllmHint: "RAGPilot 会通过 vLLM 提供的 OpenAI 兼容 /v1/chat/completions 接口发起调用，基础地址可填写 http://127.0.0.1:8001/v1。",
-        credentialMode: "凭据模式",
+      modelName: "模型名称",
+      baseUrl: "基础地址",
+      ollamaHint:
+        "RAGPilot 会通过 Ollama 原生的 /api/chat 接口发起调用，基础地址可填写 http://127.0.0.1:11434。",
+      vllmHint:
+        "RAGPilot 会通过 vLLM 提供的 OpenAI 兼容 /v1/chat/completions 接口发起调用，基础地址可填写 http://127.0.0.1:8001/v1。",
+      credentialMode: "凭据模式",
       credentialKeyHint: "凭据键提示",
       capabilities: "能力",
       notes: "运营备注",
@@ -1463,28 +1653,29 @@ const zhCN = {
         ollama: "Ollama",
         ollama_reserved: "Ollama",
         vllm: "vLLM",
-        vllm_reserved: "vLLM"
+        vllm_reserved: "vLLM",
       },
       credentialModes: {
         none: "无凭据",
         environment: "环境变量",
-        managed_reserved: "托管预留"
+        managed_reserved: "托管预留",
       },
       actions: {
         enable: "启用端点",
         disable: "停用端点",
-        promoteDefault: "设为默认"
+        promoteDefault: "设为默认",
       },
       openBoundAgents: "打开受影响智能体",
       openImpactedAgents: "打开禁用模型智能体",
       capabilityLabels: {
         chat: "对话",
-        embeddings: "向量"
-      }
+        embeddings: "向量",
+      },
     },
     tools: {
       title: "工具注册",
-      description: "在未来智能体运行时和 MCP 扩展真正消费这些工具之前，先把工具治理登记清楚。",
+      description:
+        "在未来智能体运行时和 MCP 扩展真正消费这些工具之前，先把工具治理登记清楚。",
       governance: {
         nativeTools: "内置工具",
         httpTools: "HTTP 工具",
@@ -1495,7 +1686,7 @@ const zhCN = {
         integrationPending: "{count} 个待接入",
         connectorConfigured: "{count} 个已配置连接器",
         connectorUnhealthy: "{count} 个连接器异常",
-        runtimeReady: "{count} 个运行就绪"
+        runtimeReady: "{count} 个运行就绪",
       },
       filters: {
         all: "全部工具",
@@ -1506,7 +1697,7 @@ const zhCN = {
         integrationPending: "待接入",
         connectorConfigured: "已配置连接器",
         connectorUnhealthy: "连接器异常",
-        empty: "当前治理筛选下没有匹配的工具注册。"
+        empty: "当前治理筛选下没有匹配的工具注册。",
       },
       new: "新建工具",
       empty: "当前还没有工具注册。",
@@ -1524,7 +1715,8 @@ const zhCN = {
       connectorReference: "连接器引用",
       noConnectorReference: "未配置连接器引用",
       connectorReferencePlaceholder: "mcp.browser.primary",
-      connectorReferenceHint: "为这个预留工具记录未来 MCP 连接器的标识或路由键。",
+      connectorReferenceHint:
+        "为这个预留工具记录未来 MCP 连接器的标识或路由键。",
       connectorConfiguredBadge: "已配置连接器",
       capabilities: "能力清单",
       descriptionField: "描述",
@@ -1533,7 +1725,8 @@ const zhCN = {
       directUseHint: "运行时开放后，这个工具可以直接被调用。",
       governanceActions: {
         title: "治理动作",
-        description: "直接执行核心运行时治理动作，而不必先手动修改整张工具配置表单。",
+        description:
+          "直接执行核心运行时治理动作，而不必先手动修改整张工具配置表单。",
         disable: "停用工具",
         enable: "启用工具",
         requireApproval: "改为需审批",
@@ -1547,8 +1740,9 @@ const zhCN = {
         reviewBoundaryApplied: "{name} 已移回 MCP 边界复核。",
         readyBoundaryApplied: "{name} 已标记为 MCP 集成就绪。",
         quarantineBoundaryApplied: "{name} 已在 MCP 边界隔离。",
-        connectorRequired: "请先为这个预留 MCP 工具配置连接器引用，再进入可集成状态。",
-        applyFailed: "工具治理动作执行失败。"
+        connectorRequired:
+          "请先为这个预留 MCP 工具配置连接器引用，再进入可集成状态。",
+        applyFailed: "工具治理动作执行失败。",
       },
       preview: "预览工具",
       previewing: "预览中...",
@@ -1575,18 +1769,19 @@ const zhCN = {
         openImpactedAgents: "打开受影响智能体",
         reviewReservedTransport: "复核预留 MCP 边界",
         reviewIntegrationPending: "复核待接入的 MCP 集成",
-        reviewToolRuntime: "复核运行配置"
+        reviewToolRuntime: "复核运行配置",
       },
       auditFilters: {
         all: "全部轨迹",
         failed: "失败",
         blocked: "被阻止",
         reserved: "预留",
-        unavailable: "不可用"
+        unavailable: "不可用",
       },
       mcpWorklist: {
         title: "MCP 边界队列",
-        ready: "当前有 {count} 个已绑定的保留工具，累计 {traces} 条最近保留轨迹，已可进入边界治理。",
+        ready:
+          "当前有 {count} 个已绑定的保留工具，累计 {traces} 条最近保留轨迹，已可进入边界治理。",
         scopeMissing: "查看 MCP 边界队列前，需要先有一个可用租户范围。",
         total: "{count} 个保留工具",
         bound: "{count} 个绑定智能体",
@@ -1599,13 +1794,13 @@ const zhCN = {
         statuses: {
           reviewing: "复核中",
           quarantined: "已隔离",
-          ready_for_integration: "可集成"
+          ready_for_integration: "可集成",
         },
         actions: {
           review: "移回复核",
           ready: "标记可集成",
-          quarantine: "隔离边界"
-        }
+          quarantine: "隔离边界",
+        },
       },
       previewStatuses: {
         completed: "已完成",
@@ -1613,19 +1808,19 @@ const zhCN = {
         reserved: "预留",
         unavailable: "不可用",
         failed: "失败",
-        skipped: "跳过"
+        skipped: "跳过",
       },
       transports: {
         native: "内置",
         http: "HTTP",
-        mcp_reserved: "MCP 预留"
+        mcp_reserved: "MCP 预留",
       },
       surfaces: {
         chat: "对话",
         documents: "文档",
         operations: "运行中心",
         admin: "管理后台",
-        agents: "智能体"
+        agents: "智能体",
       },
       openBoundAgents: "打开受影响智能体",
       openImpactedAgents: "打开禁用工具智能体",
@@ -1636,12 +1831,18 @@ const zhCN = {
         title: "工具运行任务包",
         statusAttention: "需关注",
         statusReview: "待复核",
-        healthyDetail: "这个工具当前整体较稳定，可以继续留在受治理的运行资源清单中。",
-        disabledDetail: "已出现禁用相关轨迹，当前更适合先进入受影响智能体清理链路。",
-        approvalDetail: "当前仍有审批边界轨迹，需要先复核审批策略再继续扩大运行使用。",
-        reservedDetail: "预留 MCP 轨迹仍需要完成连接器侧运行闭环，这个工具还不适合直接前推。",
-        integrationPendingDetail: "这个工具已经指向连接器，但 MCP 运行接入链路还没有真正收口。",
-        failedDetail: "近期失败轨迹说明需要先复核运行配置，再继续让运营面依赖这个工具。",
+        healthyDetail:
+          "这个工具当前整体较稳定，可以继续留在受治理的运行资源清单中。",
+        disabledDetail:
+          "已出现禁用相关轨迹，当前更适合先进入受影响智能体清理链路。",
+        approvalDetail:
+          "当前仍有审批边界轨迹，需要先复核审批策略再继续扩大运行使用。",
+        reservedDetail:
+          "预留 MCP 轨迹仍需要完成连接器侧运行闭环，这个工具还不适合直接前推。",
+        integrationPendingDetail:
+          "这个工具已经指向连接器，但 MCP 运行接入链路还没有真正收口。",
+        failedDetail:
+          "近期失败轨迹说明需要先复核运行配置，再继续让运营面依赖这个工具。",
         metricReady: "运行就绪",
         metricDisabled: "{count} 条禁用轨迹",
         metricApproval: "{count} 条审批轨迹",
@@ -1650,8 +1851,8 @@ const zhCN = {
         metricFailed: "{count} 条失败轨迹",
         primaryOpenSettings: "打开运行配置",
         primaryOpenImpactedAgents: "打开受影响智能体",
-        primaryOpenApprovalAgents: "打开审批智能体"
-      }
+        primaryOpenApprovalAgents: "打开审批智能体",
+      },
     },
     mcpConnectors: {
       title: "MCP 连接器",
@@ -1684,7 +1885,7 @@ const zhCN = {
         runtimeReady: "运行就绪",
         missingBaseUrl: "缺少基础地址",
         managedReserved: "托管预留",
-        empty: "当前治理筛选下没有匹配的 MCP 连接器。"
+        empty: "当前治理筛选下没有匹配的 MCP 连接器。",
       },
       governance: {
         total: "连接器资产",
@@ -1695,22 +1896,22 @@ const zhCN = {
         missingBaseUrlLabel: "缺少基础地址",
         missingCredentialHint: "{count} 个缺少凭证提示",
         managedReserved: "{count} 个托管预留",
-        enabled: "{count} 个已启用"
+        enabled: "{count} 个已启用",
       },
       types: {
         streamable_http: "Streamable HTTP",
         sse: "SSE",
-        managed_reserved: "托管预留"
+        managed_reserved: "托管预留",
       },
       authModes: {
         none: "无凭证",
         environment: "环境变量",
-        managed_reserved: "托管预留"
+        managed_reserved: "托管预留",
       },
       previewStatuses: {
         completed: "已完成",
         blocked: "被阻止",
-        failed: "失败"
+        failed: "失败",
       },
       previewRequestMeta: "请求元数据",
       previewResponseMeta: "响应元数据",
@@ -1718,16 +1919,20 @@ const zhCN = {
         title: "连接器运行任务包",
         statusAttention: "需关注",
         statusReview: "待复核",
-        healthyDetail: "这个连接器已经进入治理链路，可以继续承接受控的 MCP 运行接入。",
-        configurationDetail: "这个连接器还缺少关键运行配置，暂时还不适合承接预留 MCP 工具。",
-        reservedDetail: "仍有预留 MCP 智能体依赖这条连接器关系，需要先完成边界治理清理。",
-        pendingDetail: "已经有待接入的 MCP 智能体在等待这条连接器关系进入真实运行时接入。",
+        healthyDetail:
+          "这个连接器已经进入治理链路，可以继续承接受控的 MCP 运行接入。",
+        configurationDetail:
+          "这个连接器还缺少关键运行配置，暂时还不适合承接预留 MCP 工具。",
+        reservedDetail:
+          "仍有预留 MCP 智能体依赖这条连接器关系，需要先完成边界治理清理。",
+        pendingDetail:
+          "已经有待接入的 MCP 智能体在等待这条连接器关系进入真实运行时接入。",
         metricReady: "{count} 个关联工具",
         metricConfiguration: "需要补配置",
         metricReserved: "{count} 个预留智能体",
         metricPending: "{count} 个待接入智能体",
         primaryOpenLinkedTools: "打开关联工具",
-        primaryPreviewConnector: "预检连接器"
+        primaryPreviewConnector: "预检连接器",
       },
       followUp: {
         referencedTools: "关联工具",
@@ -1738,16 +1943,17 @@ const zhCN = {
         openLinkedTools: "打开关联工具",
         openBoundAgents: "打开受影响智能体",
         openPendingAgents: "打开待接入智能体",
-        openReservedAgents: "打开预留边界智能体"
+        openReservedAgents: "打开预留边界智能体",
       },
       actions: {
         enable: "启用连接器",
-        disable: "停用连接器"
-      }
+        disable: "停用连接器",
+      },
     },
     retrievalProfiles: {
       title: "检索策略",
-      description: "定义受治理的检索行为，让知识库、知识问答和智能体执行预览在运行时都能按同一套策略解析。",
+      description:
+        "定义受治理的检索行为，让知识库、知识问答和智能体执行预览在运行时都能按同一套策略解析。",
       new: "新建策略",
       empty: "当前还没有检索策略。",
       createdDraft: "新的检索策略草稿已创建。",
@@ -1772,13 +1978,13 @@ const zhCN = {
       modes: {
         hybrid: "混合",
         vector: "向量",
-        lexical: "词法"
+        lexical: "词法",
       },
       actions: {
         enable: "启用策略",
         disable: "停用策略",
-        promoteDefault: "设为默认"
-      }
+        promoteDefault: "设为默认",
+      },
     },
     eventTypes: {
       signInSucceeded: "登录成功",
@@ -1789,15 +1995,15 @@ const zhCN = {
       invitationRevoked: "已撤销邀请",
       membershipActive: "成员已激活",
       membershipSuspended: "成员已暂停",
-      membershipDeleted: "成员已移除"
-    }
+      membershipDeleted: "成员已移除",
+    },
   },
   home: {
     title: "首页 | RAGPilot",
     welcome: {
       title: "欢迎回来，{name}",
       fallbackName: "欢迎使用",
-      description: "从这里继续你的知识问答、文档处理和智能体工作。"
+      description: "从这里继续你的知识问答、文档处理和智能体工作。",
     },
     entry: {
       eyebrow: "内部入口",
@@ -1806,12 +2012,13 @@ const zhCN = {
       openLogin: "打开登录",
       openConsole: "进入控制台",
       sessionActive: "本地会话已激活",
-      loginHint: "请先通过登录入口创建本地会话，再进入受保护页面。"
+      loginHint: "请先通过登录入口创建本地会话，再进入受保护页面。",
     },
     hero: {
       eyebrow: "开源 AI 知识平台",
       title: "面向生产的知识与智能体运营平台入口。",
-      description: "RAGPilot 将知识问答、文档运营、智能体设计与平台治理整合在统一控制面中，服务于正式业务场景。",
+      description:
+        "RAGPilot 将知识问答、文档运营、智能体设计与平台治理整合在统一控制面中，服务于正式业务场景。",
       openChat: "打开对话",
       openDocuments: "打开文档",
       openWorkflows: "打开工作流",
@@ -1825,8 +2032,9 @@ const zhCN = {
       openAdmin: "打开管理后台",
       openAgents: "打开智能体",
       currentScope: "当前操作范围",
-      currentScopeDescription: "首页会跟随当前租户、工作区和知识库变化，同时保持为平台级入口，而不是重复后台功能。",
-      metricsTitle: "平台规模"
+      currentScopeDescription:
+        "首页会跟随当前租户、工作区和知识库变化，同时保持为平台级入口，而不是重复后台功能。",
+      metricsTitle: "平台规模",
     },
     status: {
       loading: "正在加载平台首页...",
@@ -1836,11 +2044,13 @@ const zhCN = {
       failed: "首页总览加载失败。",
       scopedFailed: "当前作用域总览加载失败。",
       noTenants: "当前还没有可用租户。",
-      loaded: "已加载 {tenantCount} 个租户、{workspaceCount} 个工作区、{knowledgeBaseCount} 个知识库。"
+      loaded:
+        "已加载 {tenantCount} 个租户、{workspaceCount} 个工作区、{knowledgeBaseCount} 个知识库。",
     },
     scope: {
       title: "实时范围选择",
-      description: "首页保持简洁，但会同步当前租户、工作区和知识库范围，以确保入口与平台状态一致。",
+      description:
+        "首页保持简洁，但会同步当前租户、工作区和知识库范围，以确保入口与平台状态一致。",
       notAvailable: "暂无",
       selectTenant: "选择租户",
       selectWorkspace: "选择工作区",
@@ -1851,14 +2061,15 @@ const zhCN = {
       workspace: "工作区",
       knowledgeBase: "知识库",
       liveScope: "实时范围",
-      liveScopeDescription: "当前范围将驱动首页中的统计、平台状态与运营上下文。"
+      liveScopeDescription:
+        "当前范围将驱动首页中的统计、平台状态与运营上下文。",
     },
     metrics: {
       tenants: "租户",
       workspaces: "工作区",
       knowledgeBases: "知识库",
       messages: "消息",
-      agentRuns: "智能体运行"
+      agentRuns: "智能体运行",
     },
     overview: {
       chats: "聊天",
@@ -1870,66 +2081,76 @@ const zhCN = {
       emptyDocuments: "当前范围内还没有文档。",
       emptyAgents: "当前范围内还没有启用中的智能体。",
       messageCount: "{count} 条消息",
-      noAgentObjective: "这个智能体还没有填写业务目标。"
+      noAgentObjective: "这个智能体还没有填写业务目标。",
     },
     architecture: {
       title: "业务构架总览",
-      description: "沿着 RAGPilot 的真实业务链路查看治理、知识准备、执行恢复、知识回答与后续智能体扩展。",
+      description:
+        "沿着 RAGPilot 的真实业务链路查看治理、知识准备、执行恢复、知识回答与后续智能体扩展。",
       stage: "阶段 {index}",
       openStage: "打开阶段",
       govern: {
         title: "治理范围",
-        description: "当前平台已纳入 {tenantCount} 个租户、{workspaceCount} 个工作区的治理范围。",
-        value: "{count} 个知识范围"
+        description:
+          "当前平台已纳入 {tenantCount} 个租户、{workspaceCount} 个工作区的治理范围。",
+        value: "{count} 个知识范围",
       },
       knowledge: {
         title: "知识准备",
         description: "当前知识范围内已登记 {count} 篇文档。",
-        value: "{count} 篇可检索"
+        value: "{count} 篇可检索",
       },
       ingest: {
         title: "接入执行",
         description: "当前有 {count} 篇文档处于接入或索引处理通道中。",
-        value: "{count} 条失败运行"
+        value: "{count} 条失败运行",
       },
       answer: {
         title: "知识回答",
         description: "当前工作区范围内已有 {count} 个持久化会话。",
-        value: "{count} 条已存消息"
+        value: "{count} 条已存消息",
       },
       extend: {
         title: "智能体扩展",
-        description: "当前已有 {count} 个已接工具的智能体定义可以继续投递运行。",
-        value: "{count} 个启用智能体"
-      }
+        description:
+          "当前已有 {count} 个已接工具的智能体定义可以继续投递运行。",
+        value: "{count} 个启用智能体",
+      },
     },
     commandCenter: {
       title: "任务交接包",
-      description: "基于当前租户和知识范围，直接进入下一条真实运营链路，而不是在每个页面重新起步。",
+      description:
+        "基于当前租户和知识范围，直接进入下一条真实运营链路，而不是在每个页面重新起步。",
       recovery: {
         title: "恢复交接包",
         metric: "待恢复事项",
         healthyDetail: "当前范围内没有失败工作流或失败文档正在形成恢复压力。",
-        attentionDetail: "当前范围内有 {workflowCount} 条失败工作流和 {documentCount} 篇失败文档仍需继续跟进。",
+        attentionDetail:
+          "当前范围内有 {workflowCount} 条失败工作流和 {documentCount} 篇失败文档仍需继续跟进。",
         primaryFailedWorkflows: "打开失败工作流",
         primaryOperations: "打开运营操作",
         secondaryFailedDocuments: "检查失败文档",
-        secondaryDocuments: "打开文档"
+        secondaryDocuments: "打开文档",
       },
       retrieval: {
         title: "检索交接包",
         metric: "可检索文档",
         validationMetric: "验证状态",
         readyDetail: "当前知识范围内已有 {count} 篇文档可以支撑带引用回答。",
-        validatedDetail: "当前已有 {count} 篇可检索文档完成了实时验证，可以继续进入知识问答。",
-        reviewDetail: "当前已有 {count} 篇可检索文档，但最近一次验证结果仍需要人工复核后，才适合把知识问答作为默认链路。",
-        blockedDetail: "最近一次验证没有放行知识问答，请先复核来源证据或接入状态，再重新进入回答链路。",
-        pendingDetail: "当前还没有可检索文档，需要继续推进接入和索引后，再依赖知识回答。",
-        unresolvedDetail: "请先解析一个真实知识库范围，让检索就绪度绑定到明确资产边界上。",
+        validatedDetail:
+          "当前已有 {count} 篇可检索文档完成了实时验证，可以继续进入知识问答。",
+        reviewDetail:
+          "当前已有 {count} 篇可检索文档，但最近一次验证结果仍需要人工复核后，才适合把知识问答作为默认链路。",
+        blockedDetail:
+          "最近一次验证没有放行知识问答，请先复核来源证据或接入状态，再重新进入回答链路。",
+        pendingDetail:
+          "当前还没有可检索文档，需要继续推进接入和索引后，再依赖知识回答。",
+        unresolvedDetail:
+          "请先解析一个真实知识库范围，让检索就绪度绑定到明确资产边界上。",
         primaryChat: "打开知识问答",
         primaryDocuments: "打开文档",
         secondaryDocuments: "检查文档通道",
-        secondaryOperations: "检查工作流通道"
+        secondaryOperations: "检查工作流通道",
       },
       agents: {
         title: "智能体交接包",
@@ -1941,23 +2162,25 @@ const zhCN = {
         primaryDefinition: "打开智能体定义",
         primaryAgents: "打开智能体",
         secondaryDefinition: "复核定义",
-        secondaryAdmin: "打开治理"
+        secondaryAdmin: "打开治理",
       },
       governance: {
         title: "治理交接包",
         metric: "待关注运行智能体",
-        attentionDetail: "当前有 {count} 个启用智能体仍需继续处理运行治理问题后，才能更干净地交付。",
+        attentionDetail:
+          "当前有 {count} 个启用智能体仍需继续处理运行治理问题后，才能更干净地交付。",
         reviewDetail: "当前有 {count} 个已注册工具仍停留在审批边界之后。",
         healthyDetail: "当前租户范围内的运行治理姿态稳定。",
         primaryAttentionAgents: "打开待关注智能体",
         primarySettings: "打开设置",
         secondaryAdmin: "打开后台",
-        secondaryActiveAgents: "打开启用智能体"
-      }
+        secondaryActiveAgents: "打开启用智能体",
+      },
     },
     core: {
       title: "核心入口",
-      description: "首页只保留三条主产品链路，直接进入对话、文档或工作流，不再堆其他控制面。",
+      description:
+        "首页只保留三条主产品链路，直接进入对话、文档或工作流，不再堆其他控制面。",
       flowStateEmpty: "空状态",
       flowStatePending: "待推进",
       flowStateMonitoring: "处理中",
@@ -1967,54 +2190,72 @@ const zhCN = {
       chatsTitle: "Chats",
       chatsMetric: "会话数量",
       chatsDetail: "当前已持久化 {messageCount} 条消息。最近活动：{activity}。",
-      chatsScopePending: "请先选定有效的知识范围，再从正确的租户、工作区和知识库进入知识问答。",
-      chatsDocumentsPending: "知识问答还在等待可检索文档。先把文档接入做完，再回来验证带引用答案。",
-      chatsReadyToStart: "当前知识范围已经就绪，可以直接启动第一条带引用的知识问答线程。",
+      chatsScopePending:
+        "请先选定有效的知识范围，再从正确的租户、工作区和知识库进入知识问答。",
+      chatsDocumentsPending:
+        "知识问答还在等待可检索文档。先把文档接入做完，再回来验证带引用答案。",
+      chatsReadyToStart:
+        "当前知识范围已经就绪，可以直接启动第一条带引用的知识问答线程。",
       documentsTitle: "Documents",
       documentsMetric: "文档数量",
-      documentsDetail: "当前范围共有 {total} 篇文档，{ready} 篇就绪，{failed} 篇失败。",
-      documentsEmpty: "当前知识范围还没有登记文档。先进入文档页完成首批接入，再继续主链路。",
-      documentsRecovery: "当前还有 {failed} 篇文档需要恢复，处理完后这条范围链路才适合继续做知识问答。",
-      documentsMonitoring: "当前还有 {active} 篇文档在接入或索引中，建议继续盯住文档处理链路。",
-      documentsReady: "当前范围已有 {ready} 篇文档进入可检索状态，可以继续做知识验证。",
+      documentsDetail:
+        "当前范围共有 {total} 篇文档，{ready} 篇就绪，{failed} 篇失败。",
+      documentsEmpty:
+        "当前知识范围还没有登记文档。先进入文档页完成首批接入，再继续主链路。",
+      documentsRecovery:
+        "当前还有 {failed} 篇文档需要恢复，处理完后这条范围链路才适合继续做知识问答。",
+      documentsMonitoring:
+        "当前还有 {active} 篇文档在接入或索引中，建议继续盯住文档处理链路。",
+      documentsReady:
+        "当前范围已有 {ready} 篇文档进入可检索状态，可以继续做知识验证。",
       workflowsTitle: "Workflows",
       workflowsMetric: "工作流数量",
-      workflowsDetail: "当前范围共有 {total} 条运行，{active} 条活跃，{failed} 条失败，{cancelled} 条已取消。",
-      workflowsEmpty: "当前范围还没有工作流运行记录。只要文档接入开始推进，这条监督链路就会自动激活。",
-      workflowsRecovery: "当前还有 {failed} 条失败运行和 {cancelled} 条已取消运行需要收口后，这条执行链路才会稳定。",
-      workflowsMonitoring: "当前还有 {active} 条活跃、{queued} 条排队、{running} 条运行中的工作流，需要继续监督。",
-      workflowsReady: "当前范围已有 {total} 条完成的工作流运行，可作为稳定的验证链路继续推进。",
+      workflowsDetail:
+        "当前范围共有 {total} 条运行，{active} 条活跃，{failed} 条失败，{cancelled} 条已取消。",
+      workflowsEmpty:
+        "当前范围还没有工作流运行记录。只要文档接入开始推进，这条监督链路就会自动激活。",
+      workflowsRecovery:
+        "当前还有 {failed} 条失败运行和 {cancelled} 条已取消运行需要收口后，这条执行链路才会稳定。",
+      workflowsMonitoring:
+        "当前还有 {active} 条活跃、{queued} 条排队、{running} 条运行中的工作流，需要继续监督。",
+      workflowsReady:
+        "当前范围已有 {total} 条完成的工作流运行，可作为稳定的验证链路继续推进。",
       executionOutputCount: "{count} 个产出",
       executionFollowUpCount: "{count} 个后续动作",
-      noActivity: "暂无活动"
+      noActivity: "暂无活动",
     },
     runtime: {
       title: "模型运行时关注项",
-      description: "当默认运行链路或当前租户仍存在模型运行配置收口问题时，首页会直接给出治理入口。",
+      description:
+        "当默认运行链路或当前租户仍存在模型运行配置收口问题时，首页会直接给出治理入口。",
       openSettings: "打开模型设置",
       openAgents: "打开受影响智能体",
       providerAttentionTitle: "{provider} 运行链路需要收口",
-      providerAttentionDetail: "当前有 {runtimeReady} 个运行就绪端点、{activeAgents} 个活跃智能体，其中 {attentionAgents} 个仍处于关注状态。",
+      providerAttentionDetail:
+        "当前有 {runtimeReady} 个运行就绪端点、{activeAgents} 个活跃智能体，其中 {attentionAgents} 个仍处于关注状态。",
       defaultAttentionTitle: "默认运行链路需要收口",
       defaultAttentionDetail: "当前平台入口还没有可直接执行的默认模型端点。",
       defaultReadyLabel: "默认就绪端点",
       defaultReadyHint: "平台级默认模型端点中，当前真正可运行的数量。",
       tenantAttentionLabel: "租户运行关注项",
-      tenantAttentionHint: "当前租户内，仍绑定不完整模型运行链路的活跃智能体数量。",
-      statusAttention: "需关注"
+      tenantAttentionHint:
+        "当前租户内，仍绑定不完整模型运行链路的活跃智能体数量。",
+      statusAttention: "需关注",
     },
     capabilities: {
       title: "核心平台能力",
-      description: "首页仅保留核心入口，每一项都会进入对应的正式页面，而不会在首页重复后台操作。",
+      description:
+        "首页仅保留核心入口，每一项都会进入对应的正式页面，而不会在首页重复后台操作。",
       openSurface: "打开页面",
       chatDescription: "带持久化会话与引用能力的知识问答入口。",
       documentsDescription: "文档接入、索引状态与检索资产复核入口。",
       agentsDescription: "智能体设计、工具接入与执行控制入口。",
-      adminDescription: "租户治理、发布控制和平台管理入口。"
+      adminDescription: "租户治理、发布控制和平台管理入口。",
     },
     platform: {
       title: "平台状态",
-      description: "这里只展示高层状态信号，用于快速判断平台是否处于可运营状态。",
+      description:
+        "这里只展示高层状态信号，用于快速判断平台是否处于可运营状态。",
       api: "API 连接",
       apiHealthy: "本地 API 可访问，首页正在读取实时平台数据。",
       apiAttention: "本地 API 需要先恢复，平台首页才能保持稳定。",
@@ -2023,8 +2264,10 @@ const zhCN = {
       scopePending: "请先选择租户与工作区，激活完整的平台范围。",
       retrieval: "检索面",
       retrievalHealthy: "当前知识范围内可见 {count} 篇已索引文档。",
-      retrievalValidated: "当前知识范围内已有 {count} 篇已索引文档完成了实时验证，可继续进入知识问答。",
-      retrievalReview: "当前已有可用检索证据，但最近一次验证状态仍为 {status}。",
+      retrievalValidated:
+        "当前知识范围内已有 {count} 篇已索引文档完成了实时验证，可继续进入知识问答。",
+      retrievalReview:
+        "当前已有可用检索证据，但最近一次验证状态仍为 {status}。",
       retrievalBlocked: "最近一次验证状态正在阻塞知识问答，需先复核来源证据。",
       retrievalPending: "当前还没有解析到可用知识库，暂时无法展示检索信号。",
       agents: "智能体通道",
@@ -2036,8 +2279,8 @@ const zhCN = {
       statuses: {
         healthy: "正常",
         attention: "关注",
-        pending: "待就绪"
-      }
+        pending: "待就绪",
+      },
     },
     signals: {
       title: "实时信号",
@@ -2053,11 +2296,12 @@ const zhCN = {
       noFailedWorkflows: "当前租户范围内没有失败工作流。",
       agentRuns: "智能体运行",
       agentRunsDetail: "已记录 {count} 次启动，最近一次在 {value}",
-      noAgentRuns: "当前租户范围内还没有记录任何智能体启动。"
+      noAgentRuns: "当前租户范围内还没有记录任何智能体启动。",
     },
     agentTelemetry: {
       title: "智能体运行活动",
-      description: "不离开首页，也能查看当前租户范围内最近记录的智能体启动活动。",
+      description:
+        "不离开首页，也能查看当前租户范围内最近记录的智能体启动活动。",
       openAgents: "打开智能体",
       latestLaunch: "最近启动于 {value}",
       noLatestLaunch: "当前还没有记录启动。",
@@ -2066,11 +2310,12 @@ const zhCN = {
       unknownAgent: "未知智能体定义",
       metricsTotalHint: "当前租户范围内记录的全部启动次数。",
       metricsChatHint: "进入知识问答页面的启动次数。",
-      metricsDocumentsHint: "进入文档操作页面的启动次数。"
+      metricsDocumentsHint: "进入文档操作页面的启动次数。",
     },
     agentExecutions: {
       title: "执行任务活动",
-      description: "把最近的智能体执行结果和绑定工具痕迹带到当前租户首页总览里。",
+      description:
+        "把最近的智能体执行结果和绑定工具痕迹带到当前租户首页总览里。",
       openOperations: "打开运营面",
       openExecutionRoute: "打开执行页面",
       recentExecutions: "最近执行任务",
@@ -2084,28 +2329,32 @@ const zhCN = {
         totalHint: "当前租户范围内记录的执行任务数量。",
         completed: "已完成任务",
         completedHint: "已经形成最终运行结果的执行任务数量。",
-        failed: "失败任务"
-      }
+        failed: "失败任务",
+      },
     },
     runtimeGovernance: {
       title: "运行治理",
-      description: "在进入后台或智能体交付页面之前，先从首页查看当前范围内模型与工具的治理压力。",
+      description:
+        "在进入后台或智能体交付页面之前，先从首页查看当前范围内模型与工具的治理压力。",
       openAttentionAgents: "打开待关注智能体",
       openSettings: "打开设置",
       openAdmin: "打开后台",
       openActiveAgents: "打开启用智能体",
       signals: "治理信号",
       actions: "后续动作",
-      actionsDescription: "直接进入已有治理页面处理范围、模型和工具压力，不需要手动重新拼接上下文。",
+      actionsDescription:
+        "直接进入已有治理页面处理范围、模型和工具压力，不需要手动重新拼接上下文。",
       metrics: {
         attentionAgents: "待关注智能体",
-        attentionAgentsHint: "当前租户范围内仍需处理范围、检索、模型或工具问题的启用智能体数量。",
+        attentionAgentsHint:
+          "当前租户范围内仍需处理范围、检索、模型或工具问题的启用智能体数量。",
         disabledBoundModels: "已禁用绑定模型",
         disabledBoundModelsHint: "已经禁用但仍连接到启用智能体的模型端点数量。",
         disabledBoundTools: "已禁用绑定工具",
         disabledBoundToolsHint: "已经禁用但仍连接到启用智能体的工具注册数量。",
         approvalGatedTools: "审批边界工具",
-        approvalGatedToolsHint: "当前仍停留在管理员审批边界后的已注册工具数量。"
+        approvalGatedToolsHint:
+          "当前仍停留在管理员审批边界后的已注册工具数量。",
       },
       signalValues: {
         activeAgentsWithoutScope: "{count} 个未设范围的启用智能体",
@@ -2113,8 +2362,8 @@ const zhCN = {
         disabledModelBindings: "{count} 个已禁用模型绑定",
         missingRetrievalBindings: "{count} 个缺失检索绑定",
         disabledRetrievalBindings: "{count} 个已禁用检索绑定",
-        disabledToolBindings: "{count} 个已禁用工具绑定"
-      }
+        disabledToolBindings: "{count} 个已禁用工具绑定",
+      },
     },
     activity: {
       title: "最近文档活动",
@@ -2124,7 +2373,7 @@ const zhCN = {
       updatedAt: "更新于 {value}",
       workflowState: "工作流 {value}",
       openDocument: "打开文档",
-      empty: "当前知识范围内还没有可见的最近文档活动。"
+      empty: "当前知识范围内还没有可见的最近文档活动。",
     },
     workflowLane: {
       title: "工作流队列快照",
@@ -2134,7 +2383,7 @@ const zhCN = {
       updatedAt: "更新于 {value}",
       noError: "当前运行没有记录阻塞性错误。",
       openRun: "打开运行",
-      empty: "当前租户范围内还没有可见的工作流运行。"
+      empty: "当前租户范围内还没有可见的工作流运行。",
     },
     agentLane: {
       title: "启用中的智能体",
@@ -2152,20 +2401,22 @@ const zhCN = {
       targets: {
         chat: "对话页面",
         documents: "文档页面",
-        workflows: "工作流页面"
+        workflows: "工作流页面",
       },
       openDefinition: "打开定义",
       openRecommended: "打开推荐页面",
       openBrief: "打开启动简报",
       inspectDocuments: "检查文档",
       openOperations: "打开运营操作",
-      empty: "当前租户范围内还没有启用中的智能体。"
+      empty: "当前租户范围内还没有启用中的智能体。",
     },
     retrievalInspector: {
       title: "检索诊断",
-      description: "直接对当前知识库执行一次实时混合检索检查，在正式验证知识回答或恢复链路前，先看命中结果。",
+      description:
+        "直接对当前知识库执行一次实时混合检索检查，在正式验证知识回答或恢复链路前，先看命中结果。",
       queryTitle: "检查检索结果",
-      queryDescription: "输入一个真实问题，查看当前检索链路最终会返回哪些 chunk。",
+      queryDescription:
+        "输入一个真实问题，查看当前检索链路最终会返回哪些 chunk。",
       queryLabel: "查询内容",
       queryPlaceholder: "输入政策、文档段落、工作流问题或产品事实",
       topKLabel: "返回条数",
@@ -2180,14 +2431,16 @@ const zhCN = {
       statusTitle: "检索状态",
       statusIdle: "已准备好检查当前知识范围。",
       statusRunning: "正在执行实时混合检索...",
-      compareStatusRunning: "正在对比 native 与 llamaindex_pilot 的实时检索输出...",
+      compareStatusRunning:
+        "正在对比 native 与 llamaindex_pilot 的实时检索输出...",
       statusLoaded: "已加载 {count} 条检索结果。",
       compareStatusLoaded: "对比已完成，共有 {shared} 条共同命中结果。",
       validationReady: "{count} 条检索命中已经可以支撑进入知识问答验证。",
       validationEmpty: "这次验证查询没有命中证据，请先回到来源链路复核。",
       statusEmpty: "当前知识范围内没有匹配到结果。",
       statusFailed: "检索诊断失败。",
-      scopeRequired: "请先选择租户、工作区和知识库，再执行检索诊断，确保结果绑定到真实范围。",
+      scopeRequired:
+        "请先选择租户、工作区和知识库，再执行检索诊断，确保结果绑定到真实范围。",
       waiting: "执行一次检索后，这里会显示排序结果、分数信号和对应文档路径。",
       noResults: "当前查询没有返回任何排序结果。",
       resultCount: "{count} 条结果",
@@ -2197,13 +2450,15 @@ const zhCN = {
       compareCandidateOnly: "仅 llamaindex {count}",
       topResultMatches: "首位结果一致",
       topResultDiffers: "首位结果不一致",
-        recentEvaluationsTitle: "最近评估",
-        recentEvaluationsEmpty: "当前范围内还没有已持久化的检索评估记录。",
-        selectedEvaluationTitle: "当前评估",
-        selectedEvaluationDescription: "把一条已保存的评估重新打开，直接回到治理、重跑或知识问答验证动作。",
-        selectedEvaluationEmpty: "请选择一条最近评估，查看它保存下来的后续处理上下文。",
-        selectedEvaluationNoSources: "这条评估没有保留下来源文档。",
-        tuningCandidatesTitle: "调优候选",
+      recentEvaluationsTitle: "最近评估",
+      recentEvaluationsEmpty: "当前范围内还没有已持久化的检索评估记录。",
+      selectedEvaluationTitle: "当前评估",
+      selectedEvaluationDescription:
+        "把一条已保存的评估重新打开，直接回到治理、重跑或知识问答验证动作。",
+      selectedEvaluationEmpty:
+        "请选择一条最近评估，查看它保存下来的后续处理上下文。",
+      selectedEvaluationNoSources: "这条评估没有保留下来源文档。",
+      tuningCandidatesTitle: "调优候选",
       tuningCandidatesEmpty: "当前范围内还没有重复出现的复核候选。",
       queryCount: "{count} 个查询",
       evaluationCount: "{count} 次评估",
@@ -2239,22 +2494,23 @@ const zhCN = {
       lexicalScore: "词法 {score}",
       lexicalNormalizedScore: "词法归一 {score}",
       tokenCount: "{count} 个 token",
-      chunkLabel: "Chunk {index}"
+      chunkLabel: "Chunk {index}",
     },
     resources: {
-      openDocuments: "打开文档"
-    }
+      openDocuments: "打开文档",
+    },
   },
   admin: {
     access: {
       fullAccess: "完整管理权限",
-      readOnly: "只读治理模式"
+      readOnly: "只读治理模式",
     },
     title: "管理后台",
     header: {
       eyebrow: "治理控制台",
       title: "平台管理",
-      description: "在同一个控制面里查看租户范围、工作区生命周期、知识库发布状态和平台监督信号。"
+      description:
+        "在同一个控制面里查看租户范围、工作区生命周期、知识库发布状态和平台监督信号。",
     },
     status: {
       loading: "正在加载治理目录...",
@@ -2263,7 +2519,8 @@ const zhCN = {
       lastRefreshed: "最近刷新：{value}",
       waitingForRefresh: "等待首次刷新。",
       noTenants: "当前还没有已创建租户。",
-      loaded: "已加载 {tenantCount} 个租户、{userCount} 个成员、{workspaceCount} 个工作区、{knowledgeBaseCount} 个知识库，以及当前范围内的会话活跃指标。",
+      loaded:
+        "已加载 {tenantCount} 个租户、{userCount} 个成员、{workspaceCount} 个工作区、{knowledgeBaseCount} 个知识库，以及当前范围内的会话活跃指标。",
       archiveWorkspace: "正在归档工作区...",
       restoreWorkspace: "正在恢复工作区...",
       workspaceArchived: "工作区 {name} 已归档。",
@@ -2306,17 +2563,17 @@ const zhCN = {
       membershipRemoved: "成员 {name} 已移出当前租户。",
       membershipRemoveFailed: "移出成员关系失败。",
       memberSessionRevoked: "成员会话已撤销。",
-      memberSessionRevokeFailed: "成员会话撤销失败。"
+      memberSessionRevokeFailed: "成员会话撤销失败。",
     },
     filters: {
-      tenantScope: "选择租户范围",
-      search: "搜索租户、工作区、知识库或检索策略",
+      tenantScope: "选择组织范围",
+      search: "搜索组织、工作区、知识库或检索策略",
       workspaceLifecycle: "工作区生命周期",
       knowledgePublication: "知识库发布状态",
       retrievalProfile: "检索策略",
       defaultFallbackRetrievalProfile: "平台默认回退策略",
       disabledAssignedRetrievalProfile: "已停用策略分配",
-      allTenants: "全部租户",
+      allTenants: "全部组织",
       allWorkspaces: "全部工作区",
       activeOnly: "仅活动",
       archivedOnly: "仅归档",
@@ -2328,11 +2585,11 @@ const zhCN = {
       refreshDirectory: "刷新目录",
       refreshingDirectory: "刷新中...",
       resourceFilters: "资源筛选",
-      memberFilters: "成员筛选"
+      memberFilters: "成员筛选",
     },
     actions: {
       edit: "编辑",
-      createTenant: "创建租户",
+      createTenant: "创建组织",
       createWorkspace: "创建工作区",
       createKnowledgeBase: "创建知识库",
       createMember: "创建成员",
@@ -2364,7 +2621,7 @@ const zhCN = {
       revokingInvitationCode: "撤销中...",
       issuingInvitationCode: "生成中...",
       suspend: "暂停",
-      suspending: "暂停中..."
+      suspending: "暂停中...",
     },
     metrics: {
       managedTenants: "管理中的租户",
@@ -2377,15 +2634,17 @@ const zhCN = {
       activeAgentsHint: "当前可参与治理与运营协同的启用智能体定义数量",
       pendingControls: "待处理控制项",
       pendingControlsHint: "仍需人工关注的治理项目",
-      openScope: "打开范围"
+      openScope: "打开范围",
     },
     resourceActions: {
       title: "资源操作",
-      description: "直接在管理后台中创建租户、工作区和知识库，不需要离开当前治理范围。"
+      description:
+        "直接在管理后台中创建租户、工作区和知识库，不需要离开当前治理范围。",
     },
     sections: {
       title: "治理分区",
-      description: "把平台管理明确拆分为管理概览、资源管理、成员与权限和 AI 运行配置。",
+      description:
+        "把平台管理明确拆分为管理概览、资源管理、成员与权限和 AI 运行配置。",
       overview: "管理概览",
       overviewDescription: "查看跨租户治理信号、关注项和平台对话活动。",
       directory: "资源管理",
@@ -2395,48 +2654,102 @@ const zhCN = {
       runtime: "AI 运行配置",
       runtimeDescription: "管理模型、工具、MCP 连接器和检索策略。",
       security: "安全复核",
-      securityDescription: "集中处理邀请时效、沉默账号和敏感治理事件。"
+      securityDescription: "集中处理邀请时效、沉默账号和敏感治理事件。",
     },
     runtimeResources: {
       title: "AI 运行配置",
       description: "配置、测试、启停并审计智能体和检索链路使用的运行资源。",
-      refresh: "刷新", create: "新建资源", search: "按名称、标识或资源 ID 搜索",
-      enabled: "已启用", disabled: "已停用", default: "默认", edit: "编辑", test: "测试", testConnection: "连接测试", moreActions: "更多操作",
-      enable: "启用", disable: "停用", makeDefault: "设为默认", empty: "当前视图没有匹配的资源。",
-      createTitle: "新建运行资源", editTitle: "编辑运行资源", cancel: "取消", save: "保存", saving: "保存中...",
-      saved: "运行资源已保存。", loading: "正在加载当前资源...", loadFailed: "运行资源加载失败。", saveFailed: "运行资源保存失败。",
+      refresh: "刷新",
+      create: "新建资源",
+      search: "按名称、标识或资源 ID 搜索",
+      enabled: "已启用",
+      disabled: "已停用",
+      runtimeUnavailable: "运行时不可用",
+      default: "默认",
+      edit: "编辑",
+      test: "测试",
+      testConnection: "连接测试",
+      moreActions: "更多操作",
+      enable: "启用",
+      disable: "停用",
+      makeDefault: "设为默认",
+      empty: "当前视图没有匹配的资源。",
+      createTitle: "新建运行资源",
+      editTitle: "编辑运行资源",
+      cancel: "取消",
+      save: "保存",
+      saving: "保存中...",
+      saved: "运行资源已保存。",
+      loading: "正在加载当前资源...",
+      loadFailed: "运行资源加载失败。",
+      saveFailed: "运行资源保存失败。",
       selectTenant: "测试工具前请先选择一个租户。",
-      previewComplete: "运行测试已完成。", actionComplete: "治理动作已完成。", actionFailed: "治理动作执行失败。",
-      disableTitle: "停用运行资源", disableDescription: "确定停用 {name} 吗？当前有 {count} 个关联对象可能受到影响。停用后，新请求将不能继续使用该资源。", confirmDisable: "确认停用",
-      deleteTitle: "删除运行资源", deleteDescription: "确定删除 {name} 吗？存在绑定关系时系统会拒绝删除。", delete: "删除", deleteFailed: "运行资源删除失败。",
-      kinds: { model_endpoint: "模型服务", tool_registration: "工具", mcp_connector: "MCP 连接器", retrieval_profile: "检索策略" },
+      previewComplete: "运行测试已完成。",
+      actionComplete: "治理动作已完成。",
+      actionFailed: "治理动作执行失败。",
+      disableTitle: "停用运行资源",
+      disableDescription:
+        "确定停用 {name} 吗？当前有 {count} 个关联对象可能受到影响。停用后，新请求将不能继续使用该资源。",
+      confirmDisable: "确认停用",
+      deleteTitle: "删除运行资源",
+      deleteDescription: "确定删除 {name} 吗？存在绑定关系时系统会拒绝删除。",
+      delete: "删除",
+      deleteFailed: "运行资源删除失败。",
+      kinds: {
+        model_endpoint: "模型服务",
+        tool_registration: "工具",
+        mcp_connector: "MCP 连接器",
+        retrieval_profile: "检索策略",
+      },
       fields: {
-        name: "名称", slug: "标识", provider: "提供商", modelName: "模型名称", baseUrl: "基础地址",
-        credentialMode: "凭据模式", credentialKey: "凭据环境变量名", capabilities: "能力（逗号分隔）",
-        transport: "传输方式", surface: "使用页面", endpointUrl: "端点地址", connectorReference: "连接器引用",
-        connectorType: "连接器类型", authMode: "认证方式", retrievalMode: "检索模式", notes: "备注 / 描述",
-        approval: "需要管理员审批", top_k: "Top K", vector_weight: "向量权重", lexical_weight: "关键词权重", hybrid_overlap_bonus: "重叠加权"
-      }
+        name: "名称",
+        slug: "标识",
+        provider: "提供商",
+        modelName: "模型名称",
+        baseUrl: "基础地址",
+        credentialMode: "凭据模式",
+        credentialKey: "凭据环境变量名",
+        capabilities: "能力（逗号分隔）",
+        transport: "传输方式",
+        surface: "使用页面",
+        endpointUrl: "端点地址",
+        connectorReference: "连接器引用",
+        connectorType: "连接器类型",
+        authMode: "认证方式",
+        retrievalMode: "检索模式",
+        retrievalEngine: "检索处理器",
+        engineVersion: "处理策略版本",
+        llamaindexSimilarityCutoff: "LlamaIndex 相似度阈值",
+        llamaindexLongContextReorder: "启用长上下文重排",
+        notes: "备注 / 描述",
+        approval: "需要管理员审批",
+        top_k: "Top K",
+        vector_weight: "向量权重",
+        lexical_weight: "关键词权重",
+        hybrid_overlap_bonus: "重叠加权",
+      },
     },
     overviewLanes: {
       title: "控制面通道",
-      description: "从总览页快速进入最贴近当前问题的治理通道，避免把所有管理动作挤在同一页面里。",
+      description:
+        "从总览页快速进入最贴近当前问题的治理通道，避免把所有管理动作挤在同一页面里。",
       openLane: "打开通道",
       directory: {
         title: "资源目录通道",
-        description: "当前治理范围内可见 {workspaceCount} 个工作区、{knowledgeBaseCount} 个知识库。",
-        value: "{agentCount} 个受治理智能体"
+        description:
+          "当前治理范围内可见 {workspaceCount} 个工作区、{knowledgeBaseCount} 个知识库。",
+        value: "{agentCount} 个受治理智能体",
       },
       access: {
         title: "访问控制通道",
         description: "当前管理范围内可见 {memberCount} 个持久化成员。",
-        value: "{invitedCount} 个邀请待激活"
+        value: "{invitedCount} 个邀请待激活",
       },
       security: {
         title: "安全复核通道",
         description: "当前可见 {eventCount} 条最近访问事件，便于做治理复核。",
-        value: "{count} 个态势项待复核"
-      }
+        value: "{count} 个态势项待复核",
+      },
     },
     accessSummary: {
       title: "访问态势",
@@ -2450,9 +2763,10 @@ const zhCN = {
       auditEvents: "最近事件",
       auditEventsHint: "当前治理窗口里可见的访问事件数量。",
       eventBreakdownTitle: "审计分布",
-      eventBreakdownDescription: "查看当前管理范围内由后端统一统计的事件类型总量，而不只是最近可见的少量事件列表。",
+      eventBreakdownDescription:
+        "查看当前管理范围内由后端统一统计的事件类型总量，而不只是最近可见的少量事件列表。",
       eventBreakdownEmpty: "当前范围内还没有可用的访问事件分布。",
-      openAuditSlice: "打开审计切片"
+      openAuditSlice: "打开审计切片",
     },
     securitySummary: {
       title: "安全态势",
@@ -2460,11 +2774,12 @@ const zhCN = {
       activeAccounts: "活动账号",
       activeAccountsHint: "当前仍可用于认证登录的持久化目录账号数量。",
       dormantAccounts: "沉默账号",
-      dormantAccountsHint: "当前活动账号中，从未登录或 30 天内未登录的账号数量。",
+      dormantAccountsHint:
+        "当前活动账号中，从未登录或 30 天内未登录的账号数量。",
       expiringInvitations: "邀请风险",
       expiringInvitationsHint: "已经过期或将在 72 小时内过期的邀请数量。",
       failedSignIns: "失败登录",
-      failedSignInsHint: "当前锁定审查窗口内记录到的失败登录次数。"
+      failedSignInsHint: "当前锁定审查窗口内记录到的失败登录次数。",
     },
     securityWatch: {
       title: "安全复核队列",
@@ -2473,31 +2788,40 @@ const zhCN = {
       expiredInvitationsDetail: "有 {count} 个受邀成员关系已经超过激活时效。",
       expiredInvitationsHealthy: "当前没有已经过期的受邀成员关系。",
       expiringInvitations: "即将过期邀请",
-      expiringInvitationsDetail: "有 {count} 个受邀成员关系将在未来 72 小时内过期。",
+      expiringInvitationsDetail:
+        "有 {count} 个受邀成员关系将在未来 72 小时内过期。",
       expiringInvitationsHealthy: "未来 72 小时内没有即将过期的邀请。",
       dormantAccounts: "沉默账号",
-      dormantAccountsDetail: "有 {count} 个活动账号近期没有登录，建议复核账号健康度。",
+      dormantAccountsDetail:
+        "有 {count} 个活动账号近期没有登录，建议复核账号健康度。",
       dormantAccountsHealthy: "当前范围内的活动账号都保持了较新的登录态势。",
       failedSignInPressure: "失败登录压力",
-      failedSignInPressureDetail: "有 {count} 个成员当前已经触发失败登录锁定阈值。",
+      failedSignInPressureDetail:
+        "有 {count} 个成员当前已经触发失败登录锁定阈值。",
       failedSignInPressureHealthy: "当前没有成员处于失败登录锁定压力中。",
       invitationActivationPressure: "邀请激活压力",
-      invitationActivationPressureDetail: "有 {count} 个受邀成员最近激活失败，可能需要继续跟进。",
-      invitationActivationPressureHealthy: "当前范围内没有需要跟进的邀请激活失败记录。",
+      invitationActivationPressureDetail:
+        "有 {count} 个受邀成员最近激活失败，可能需要继续跟进。",
+      invitationActivationPressureHealthy:
+        "当前范围内没有需要跟进的邀请激活失败记录。",
       sessionSpreadPressure: "会话扩散压力",
-      sessionSpreadPressureDetail: "有 {count} 个成员当前超过了会话数或设备分布审查阈值。",
-      sessionSpreadPressureHealthy: "当前没有成员超过会话数或设备分布审查阈值。",
+      sessionSpreadPressureDetail:
+        "有 {count} 个成员当前超过了会话数或设备分布审查阈值。",
+      sessionSpreadPressureHealthy:
+        "当前没有成员超过会话数或设备分布审查阈值。",
       suspendedMemberships: "已暂停成员关系",
-      suspendedMembershipsDetail: "有 {count} 个成员关系当前处于暂停状态，建议复核后续处理。",
+      suspendedMembershipsDetail:
+        "有 {count} 个成员关系当前处于暂停状态，建议复核后续处理。",
       suspendedMembershipsHealthy: "当前范围内没有待复核的暂停成员关系。",
       reviewInvitations: "复核邀请",
       reviewAccounts: "复核账号",
       reviewSuspended: "复核暂停关系",
-      reviewFailedSignIns: "复核锁定"
+      reviewFailedSignIns: "复核锁定",
     },
     currentActorSecurity: {
       title: "当前登录账号态势",
-      description: "把当前登录的管理员或审核员也放进同一条安全通道里，保证会话健康和治理访问保持联动。",
+      description:
+        "把当前登录的管理员或审核员也放进同一条安全通道里，保证会话健康和治理访问保持联动。",
       accountActive: "账号正常",
       accountInactive: "账号停用",
       lastSignedIn: "最近登录 {value}",
@@ -2508,12 +2832,23 @@ const zhCN = {
       openMember: "打开成员",
       openSettings: "打开设置",
       openAccess: "打开访问控制",
-      notAvailable: "当前登录账号无法从可见目录范围中解析出来。"
+      notAvailable: "当前登录账号无法从可见目录范围中解析出来。",
     },
     directory: {
-      title: "租户与工作区目录",
-      description: "查看归属范围、工作区生命周期与知识资产分布。",
+      title: "组织与资源目录",
+      description: "按组织、工作区和知识库的真实归属关系管理业务资源。",
       results: "{count} 条结果",
+      organization: "组织",
+      createOrganization: "新建组织",
+      resourceSummary: "{workspaces} 个工作区 · {knowledgeBases} 个知识库",
+      knowledgeBaseSummary: "{count} 个知识库",
+      knowledgeBaseList: "知识库",
+      knowledgeBaseListDescription: "当前工作区内的知识资产与检索策略。",
+      moreActions: "更多操作",
+      noKnowledgeBases: "当前工作区没有匹配的知识库。",
+      noWorkspacesInOrganization:
+        "当前组织没有匹配的工作区，可从右上角新建工作区。",
+      noOrganizations: "当前范围和搜索条件下没有匹配的组织资源。",
       tenant: "租户",
       workspace: "工作区",
       lifecycle: "生命周期",
@@ -2524,7 +2859,7 @@ const zhCN = {
       active: "活动中",
       archived: "已归档",
       openChat: "打开对话",
-      noWorkspaces: "当前范围和搜索条件下没有匹配工作区。"
+      noWorkspaces: "当前范围和搜索条件下没有匹配工作区。",
     },
     governance: {
       title: "知识库治理",
@@ -2538,11 +2873,12 @@ const zhCN = {
       unknownTenant: "未知租户",
       published: "已发布",
       draft: "草稿",
-      noKnowledgeBases: "当前范围和搜索条件下没有匹配知识库。"
+      noKnowledgeBases: "当前范围和搜索条件下没有匹配知识库。",
     },
     agents: {
       title: "智能体治理",
-      description: "在租户治理视角下复核已持久化的智能体定义，并把它们导向正确的运营页面。",
+      description:
+        "在租户治理视角下复核已持久化的智能体定义，并把它们导向正确的运营页面。",
       agent: "智能体",
       tenant: "租户",
       mode: "模式",
@@ -2553,11 +2889,12 @@ const zhCN = {
       unscoped: "未设范围",
       openAgent: "打开智能体",
       openOperations: "打开运营操作",
-      noAgents: "当前治理范围和搜索条件下没有匹配智能体。"
+      noAgents: "当前治理范围和搜索条件下没有匹配智能体。",
     },
     members: {
       title: "成员目录",
-      description: "查看成员在各租户中的覆盖情况，并在当前管理范围下直接维护成员关系边界。",
+      description:
+        "查看成员在各租户中的覆盖情况，并在当前管理范围下直接维护成员关系边界。",
       member: "成员",
       memberships: "成员关系",
       account: "账号",
@@ -2577,11 +2914,13 @@ const zhCN = {
       scopeRequired: "先选择租户范围",
       noMembers: "当前治理范围和搜索条件下没有匹配成员。",
       createTitle: "创建成员",
-      createDescription: "在管理后台创建持久化成员记录，并可同时绑定初始租户成员关系。",
+      createDescription:
+        "在管理后台创建持久化成员记录，并可同时绑定初始租户成员关系。",
       editTitle: "编辑成员",
       editDescription: "在不离开当前管理范围的情况下更新成员资料和账号状态。",
       passwordResetTitle: "密码重置",
-      passwordResetDescription: "当后端启用了本地密码登录模式时，可以直接为当前成员签发新的登录密码。",
+      passwordResetDescription:
+        "当后端启用了本地密码登录模式时，可以直接为当前成员签发新的登录密码。",
       passwordResetNewPassword: "新密码",
       passwordResetNewPasswordPlaceholder: "输入新密码",
       passwordResetConfirmPassword: "确认密码",
@@ -2602,17 +2941,20 @@ const zhCN = {
       invitationExpiresAt: "过期时间 {value}",
       invitationExpired: "已过期",
       accessPostureTitle: "访问态势",
-      accessPostureDescription: "在调整目录状态前，先统一查看当前成员最近访问活动、成员关系压力和会话态势。",
+      accessPostureDescription:
+        "在调整目录状态前，先统一查看当前成员最近访问活动、成员关系压力和会话态势。",
       accessPostureEmpty: "当前成员还没有可用的访问态势摘要。",
       accessEventsTitle: "成员访问事件",
-      accessEventsDescription: "直接在当前管理流程里查看该成员最近的登录、邀请、成员关系和会话治理事件。",
+      accessEventsDescription:
+        "直接在当前管理流程里查看该成员最近的登录、邀请、成员关系和会话治理事件。",
       accessEventsSearch: "搜索活动",
       accessEventsSearchPlaceholder: "按操作人、租户、事件或原因搜索",
       accessEventsEmpty: "当前成员暂时没有可见的最近访问事件。",
       accessEventAt: "记录时间",
       auditEventsSuffix: "条审计事件",
       sessionsTitle: "成员会话",
-      sessionsDescription: "直接在目录治理流程里查看该成员的后端会话，并撤销过期或多余的访问。",
+      sessionsDescription:
+        "直接在目录治理流程里查看该成员的后端会话，并撤销过期或多余的访问。",
       sessionsExpiringHint: "{count} 条会话将在 24 小时内过期",
       sessionsCurrent: "当前会话",
       sessionsOther: "其他会话",
@@ -2628,17 +2970,18 @@ const zhCN = {
         expiring: "即将过期",
         currentExpiry: "当前过期时间",
         devices: "设备数",
-        ips: "IP 数"
+        ips: "IP 数",
       },
       activationQueue: {
         title: "待激活成员队列",
-        description: "把受邀成员前置到访问控制通道中，直接完成签发、激活和撤销等后续操作。",
+        description:
+          "把受邀成员前置到访问控制通道中，直接完成签发、激活和撤销等后续操作。",
         empty: "当前访问范围内没有待处理的受邀成员。",
-        notIssued: "尚未签发"
+        notIssued: "尚未签发",
       },
       initialTenant: "初始租户",
       noInitialTenant: "暂不绑定租户",
-      initialMembershipStatus: "初始成员关系状态"
+      initialMembershipStatus: "初始成员关系状态",
     },
     audit: {
       title: "最近访问事件",
@@ -2666,8 +3009,8 @@ const zhCN = {
         invitationRevoked: "已撤销邀请",
         membershipActive: "成员关系已启用",
         membershipSuspended: "成员关系已暂停",
-        membershipDeleted: "成员关系已移除"
-      }
+        membershipDeleted: "成员关系已移除",
+      },
     },
     scopePanel: {
       title: "当前管理范围",
@@ -2676,7 +3019,8 @@ const zhCN = {
       allTenants: "全部租户",
       unknownTenant: "未知租户",
       visibleInventory: "可见资产",
-      inventoryCounts: "{workspaceCount} 个工作区 · {knowledgeBaseCount} 个知识库",
+      inventoryCounts:
+        "{workspaceCount} 个工作区 · {knowledgeBaseCount} 个知识库",
       searchResults: "搜索结果",
       query: "查询词：{value}",
       noDirectorySearch: "当前未应用目录搜索",
@@ -2688,15 +3032,17 @@ const zhCN = {
       allRetrievalProfiles: "全部检索策略",
       defaultFallbackRetrievalProfile: "平台默认回退策略",
       disabledAssignedRetrievalProfile: "已停用策略分配",
-      retrievalProfileAllDescription: "当前知识库治理还没有按检索姿态进一步收窄。",
-      retrievalProfileFilteredDescription: "当前知识库治理已经收窄到单一生效检索姿态。",
+      retrievalProfileAllDescription:
+        "当前知识库治理还没有按检索姿态进一步收窄。",
+      retrievalProfileFilteredDescription:
+        "当前知识库治理已经收窄到单一生效检索姿态。",
       publishedKnowledgeBases: "已发布知识库",
       draftKnowledgeBases: "草稿知识库",
       primaryRoute: "主入口",
       noScopedWorkspace: "当前没有作用域工作区",
       noScopedKnowledgeBase: "当前没有作用域知识库",
       failedDocuments: "失败文档",
-      failedWorkflows: "恢复工作流"
+      failedWorkflows: "恢复工作流",
     },
     chatScope: {
       title: "对话活动范围",
@@ -2706,11 +3052,12 @@ const zhCN = {
       messages: "消息数",
       latestActivity: "最近活动 {value}",
       noChatActivity: "该范围内还没有持久化对话活动。",
-      openScopedChatWorkspace: "打开当前对话工作区"
+      openScopedChatWorkspace: "打开当前对话工作区",
     },
     agentRuntime: {
       title: "智能体运行观测",
-      description: "在当前治理范围内查看已记录的智能体启动活动，让运行使用情况对管理后台保持可见。",
+      description:
+        "在当前治理范围内查看已记录的智能体启动活动，让运行使用情况对管理后台保持可见。",
       openAgents: "打开智能体",
       latestLaunch: "最近启动于 {value}",
       noLatestLaunch: "当前还没有记录启动。",
@@ -2723,12 +3070,13 @@ const zhCN = {
       metrics: {
         totalHint: "当前治理范围内累计记录的启动次数。",
         chatHint: "进入知识问答页面的启动次数。",
-        documentsHint: "进入文档操作页面的启动次数。"
-      }
+        documentsHint: "进入文档操作页面的启动次数。",
+      },
     },
     agentExecutions: {
       title: "执行痕迹观测",
-      description: "把跨租户的智能体执行结果和已绑定工具痕迹带进后台总览，再进入智能体或运营页面继续处理。",
+      description:
+        "把跨租户的智能体执行结果和已绑定工具痕迹带进后台总览，再进入智能体或运营页面继续处理。",
       openOperations: "打开运营面",
       openAgents: "打开智能体",
       openExecutionRoute: "打开执行页面",
@@ -2746,12 +3094,13 @@ const zhCN = {
         totalHint: "当前治理范围内累计的执行任务数量。",
         completed: "已完成任务",
         completedHint: "已经形成最终结果负载的执行任务数量。",
-        failed: "失败任务"
-      }
+        failed: "失败任务",
+      },
     },
     workflowRuntime: {
       title: "执行压力观测",
-      description: "从治理视角聚合跨租户工作流压力，直接进入失败恢复、排队监督和工作流跟进页面。",
+      description:
+        "从治理视角聚合跨租户工作流压力，直接进入失败恢复、排队监督和工作流跟进页面。",
       openOperations: "打开运营面",
       pressureSignals: "治理压力信号",
       tenantsWithFailures: "有失败租户",
@@ -2773,12 +3122,13 @@ const zhCN = {
         running: "运行中",
         runningHint: "仍在执行中的工作流数量。",
         retries: "重试运行",
-        retriesHint: "已经进入重试链路的工作流数量。"
-      }
+        retriesHint: "已经进入重试链路的工作流数量。",
+      },
     },
     documentRuntime: {
       title: "文档接入压力",
-      description: "从治理视角聚合跨租户文档接入、失败与完成情况，直接进入失败文档、文档面和运营面。",
+      description:
+        "从治理视角聚合跨租户文档接入、失败与完成情况，直接进入失败文档、文档面和运营面。",
       openDocuments: "打开文档",
       openOperations: "打开运营面",
       pressureSignals: "接入压力信号",
@@ -2798,15 +3148,17 @@ const zhCN = {
         completed: "已完成文档",
         completedHint: "已经完成接入并可继续进入检索面的文档数量。",
         total: "文档总数",
-        totalHint: "当前治理范围内登记的全部文档数量。"
-      }
+        totalHint: "当前治理范围内登记的全部文档数量。",
+      },
     },
     runtimeGovernance: {
       title: "运行治理态势",
-      description: "把模型与工具治理压力和智能体交付就绪度一起纳入后台总览，保持运行控制面可见。",
+      description:
+        "把模型与工具治理压力和智能体交付就绪度一起纳入后台总览，保持运行控制面可见。",
       signals: "治理信号",
       quickActions: "治理动作",
-      quickActionsDescription: "直接跳到当前启用智能体范围或运行资源管理，继续处理模型、工具和范围问题。",
+      quickActionsDescription:
+        "直接跳到当前启用智能体范围或运行资源管理，继续处理模型、工具和范围问题。",
       issueActions: "问题过滤",
       activeAgentsWithoutScope: "未设范围的启用智能体",
       missingModelBindings: "缺失模型绑定",
@@ -2822,7 +3174,7 @@ const zhCN = {
         runtimeReady: "运行就绪",
         activeAgents: "启用智能体",
         attentionAgents: "待关注智能体",
-        previewFailures: "预检失败"
+        previewFailures: "预检失败",
       },
       providerPreviewStatus: "最近一次预检 {status}，时间 {value}",
       providerPreviewEmpty: "当前提供方运行通道还没有最近预检记录。",
@@ -2834,7 +3186,8 @@ const zhCN = {
       openDisabledRetrievalAssignments: "打开已禁用检索绑定",
       metrics: {
         attentionAgents: "待关注智能体",
-        attentionAgentsHint: "当前后台范围内存在范围、检索、模型或工具治理问题的启用智能体数量。",
+        attentionAgentsHint:
+          "当前后台范围内存在范围、检索、模型或工具治理问题的启用智能体数量。",
         disabledBoundModels: "已禁用绑定模型",
         disabledBoundModelsHint: "已经禁用但仍连接到智能体定义的模型端点数量。",
         disabledBoundTools: "已禁用绑定工具",
@@ -2842,14 +3195,17 @@ const zhCN = {
         approvalGatedTools: "审批边界工具",
         approvalGatedToolsHint: "当前仍需要管理员显式审批的已注册工具数量。",
         disabledBoundRetrievalProfiles: "已禁用但仍绑定的检索策略",
-        disabledBoundRetrievalProfilesHint: "已经停用、但仍被当前治理范围内知识库引用的检索策略数量。",
+        disabledBoundRetrievalProfilesHint:
+          "已经停用、但仍被当前治理范围内知识库引用的检索策略数量。",
         defaultFallbackKnowledgeBases: "默认回退知识库",
-        defaultFallbackKnowledgeBasesHint: "当前仍在继承平台默认检索策略的知识库数量。"
-      }
+        defaultFallbackKnowledgeBasesHint:
+          "当前仍在继承平台默认检索策略的知识库数量。",
+      },
     },
     runtimeQueue: {
       title: "运行治理队列",
-      description: "把模型运行缺口、审批队列、MCP 集成，以及最近的运行治理变更收拢到一个更轻量的后台队列里。",
+      description:
+        "把模型运行缺口、审批队列、MCP 集成，以及最近的运行治理变更收拢到一个更轻量的后台队列里。",
       refresh: "刷新队列",
       worklistTitle: "待处理队列",
       eventsTitle: "最近变更",
@@ -2873,7 +3229,7 @@ const zhCN = {
         allSeverities: "全部严重级别",
         allResources: "全部资源",
         allActions: "全部动作",
-        allActors: "全部角色"
+        allActors: "全部角色",
       },
       metrics: {
         total: "队列项目",
@@ -2881,14 +3237,14 @@ const zhCN = {
         disabledBoundModels: "已禁用且仍绑定模型",
         approvalRequiredTools: "待审批工具",
         integrationPendingTools: "待接入 MCP 工具",
-        blockedConnectors: "受阻连接器"
+        blockedConnectors: "受阻连接器",
       },
       categories: {
         unconfiguredModelEndpoint: "未配置完整模型端点",
         disabledBoundModelEndpoint: "已禁用且仍绑定模型端点",
         approvalRequiredTool: "待审批工具",
         mcpIntegrationPendingTool: "待接入 MCP 工具",
-        integrationBlockedConnector: "受阻 MCP 连接器"
+        integrationBlockedConnector: "受阻 MCP 连接器",
       },
       actions: {
         completeModelRuntime: "补全模型运行配置",
@@ -2903,26 +3259,30 @@ const zhCN = {
         completeMcpIntegration: "完成 MCP 集成",
         openSettings: "打开治理详情",
         openAgents: "打开智能体",
-        applyFailed: "运行治理动作执行失败。"
-      }
+        applyFailed: "运行治理动作执行失败。",
+      },
     },
     retrievalProfiles: {
       title: "检索策略治理",
-      description: "把每个检索姿态当作治理资产来巡检，查看它绑定了哪些知识库，以及平台默认回退仍承载了多少范围。",
+      description:
+        "把每个检索姿态当作治理资产来巡检，查看它绑定了哪些知识库，以及平台默认回退仍承载了多少范围。",
       reviewKnowledgeBases: "查看知识库",
       openDefaultFallback: "打开默认回退",
       metrics: {
         assignedKnowledgeBases: "绑定知识库",
         workspaceCoverage: "{count} 个治理工作区",
         defaultFallbackCoverage: "默认回退覆盖",
-        publicationMix: "{published} 个已发布 · {draft} 个草稿"
+        publicationMix: "{published} 个已发布 · {draft} 个草稿",
       },
       status: {
-        disabledAssigned: "这个检索策略已经停用，但仍绑定在 {count} 个知识库上。",
-        defaultFallback: "这个检索策略当前作为默认回退，承载了 {count} 个知识库。",
+        disabledAssigned:
+          "这个检索策略已经停用，但仍绑定在 {count} 个知识库上。",
+        defaultFallback:
+          "这个检索策略当前作为默认回退，承载了 {count} 个知识库。",
         unused: "这个检索策略已经配置，但在当前后台范围内还没有被使用。",
-        healthyAssigned: "这个检索策略当前在后台范围内已稳定绑定到 {count} 个知识库。"
-      }
+        healthyAssigned:
+          "这个检索策略当前在后台范围内已稳定绑定到 {count} 个知识库。",
+      },
     },
     tenantChat: {
       title: "租户对话活动",
@@ -2937,14 +3297,15 @@ const zhCN = {
       failedDocs: "失败文档",
       failedWorkflows: "恢复工作流",
       governance: "治理视图",
-      noTenantActivity: "当前治理范围内没有可见的租户活动。"
+      noTenantActivity: "当前治理范围内没有可见的租户活动。",
     },
     chatSignals: {
       title: "对话信号",
       description: "基于当前租户对话活动快照整理出的简明治理信号。",
       mostActiveTenant: "最活跃租户",
       noTenantActivity: "暂无租户活动",
-      activeTenantDetail: "{messageCount} 条消息，分布在 {conversationCount} 个会话中",
+      activeTenantDetail:
+        "{messageCount} 条消息，分布在 {conversationCount} 个会话中",
       noPersistedMessages: "当前范围内还没有可见的持久化消息。",
       openTenantChat: "打开租户对话",
       staleChatTenants: "沉寂租户",
@@ -2952,7 +3313,7 @@ const zhCN = {
       reviewChatScope: "查看对话范围",
       idleConversationScope: "空闲会话范围",
       idleConversationDetail: "这些租户存在会话记录，但当前没有活跃线程。",
-      inspectIdleScope: "查看空闲范围"
+      inspectIdleScope: "查看空闲范围",
     },
     watchlist: {
       title: "治理关注列表",
@@ -2961,16 +3322,20 @@ const zhCN = {
       review: "待复核",
       healthy: "健康",
       workspaceLifecycleReview: "工作区生命周期复核",
-      workspaceLifecycleReviewDetail: "{count} 个归档工作区需要按保留策略继续复核。",
+      workspaceLifecycleReviewDetail:
+        "{count} 个归档工作区需要按保留策略继续复核。",
       workspaceLifecycleHealthy: "当前可见工作区均保持活动状态。",
       reviewArchived: "查看归档项",
       workflowRecoveryPressure: "工作流恢复压力",
-      workflowRecoveryPressureDetail: "当前还有 {count} 条工作流恢复运行分布在 {tenantCount} 个租户中，需要继续推进治理跟进。",
+      workflowRecoveryPressureDetail:
+        "当前还有 {count} 条工作流恢复运行分布在 {tenantCount} 个租户中，需要继续推进治理跟进。",
       workflowRecoveryHealthy: "当前治理范围内没有失败工作流恢复压力。",
       reviewWorkflowPressure: "查看恢复压力",
       documentRecoveryPressure: "文档恢复压力",
-      documentRecoveryPressureDetail: "当前还有 {count} 篇失败文档分布在 {tenantCount} 个租户中，需要继续推进接入恢复治理。",
-      documentIntakePressureDetail: "当前还有 {count} 篇文档分布在 {tenantCount} 个租户中处于接入处理中，需要继续观察执行链路。",
+      documentRecoveryPressureDetail:
+        "当前还有 {count} 篇失败文档分布在 {tenantCount} 个租户中，需要继续推进接入恢复治理。",
+      documentIntakePressureDetail:
+        "当前还有 {count} 篇文档分布在 {tenantCount} 个租户中处于接入处理中，需要继续观察执行链路。",
       documentRecoveryHealthy: "当前治理范围内没有文档接入或恢复压力。",
       reviewDocumentPressure: "查看文档压力",
       knowledgePublicationGate: "知识发布门禁",
@@ -2982,81 +3347,97 @@ const zhCN = {
       publishedRetrievalEmpty: "当前范围内没有可见的已发布知识库。",
       viewPublished: "查看已发布",
       retrievalGovernancePressure: "检索治理压力",
-      retrievalGovernanceDisabledDetail: "当前有 {count} 个知识库仍绑定到已禁用的检索策略。",
-      retrievalGovernanceDefaultFallbackDetail: "当前有 {count} 个知识库仍在依赖平台默认检索策略。",
+      retrievalGovernanceDisabledDetail:
+        "当前有 {count} 个知识库仍绑定到已禁用的检索策略。",
+      retrievalGovernanceDefaultFallbackDetail:
+        "当前有 {count} 个知识库仍在依赖平台默认检索策略。",
       retrievalGovernanceHealthy: "当前范围内的检索策略分配状态稳定。",
       reviewRetrievalGovernance: "查看检索治理",
       runtimeGovernancePressure: "运行治理压力",
-      runtimeGovernancePressureDetail: "当前有 {count} 个启用智能体绑定到了已禁用的运行资源。",
-      runtimeGovernanceMissingRetrievalDetail: "当前有 {count} 个启用智能体范围没有解析到有效的治理检索策略。",
-      runtimeGovernanceApprovalDetail: "当前有 {count} 个已注册工具仍处于审批边界之后。",
+      runtimeGovernancePressureDetail:
+        "当前有 {count} 个启用智能体绑定到了已禁用的运行资源。",
+      runtimeGovernanceMissingRetrievalDetail:
+        "当前有 {count} 个启用智能体范围没有解析到有效的治理检索策略。",
+      runtimeGovernanceApprovalDetail:
+        "当前有 {count} 个已注册工具仍处于审批边界之后。",
       runtimeGovernanceHealthy: "当前范围内的运行治理绑定状态稳定。",
       reviewRuntimeGovernance: "查看运行治理",
       agentGovernanceGate: "智能体治理门禁",
       agentGovernanceDetail: "{count} 个启用智能体缺少明确的知识范围边界。",
       agentDraftDetail: "{count} 个智能体草稿仍待治理复核。",
-      agentGovernanceHealthy: "当前可见智能体已具备范围约束，或仍保持非启用状态。",
+      agentGovernanceHealthy:
+        "当前可见智能体已具备范围约束，或仍保持非启用状态。",
       reviewAgents: "查看智能体",
       memberActivationQueue: "成员激活队列",
       memberActivationQueueDetail: "{count} 条租户邀请仍待成员激活。",
       memberActivationQueueHealthy: "当前没有待激活的成员邀请。",
-      reviewInvitations: "查看邀请"
+      reviewInvitations: "查看邀请",
     },
     executionPackets: {
       title: "执行包",
-      description: "把下一步治理动作打包成恢复、发布、运行交接和访问激活四条链路，不需要手动重新拼接作用域。",
+      description:
+        "把下一步治理动作打包成恢复、发布、运行交接和访问激活四条链路，不需要手动重新拼接作用域。",
       scopePendingValue: "作用域待补全",
       recovery: {
         title: "恢复执行包",
         metric: "主恢复范围",
-        readyDetail: "当前可以直接从 {workspace} / {knowledgeBase} 发起失败文档和失败工作流的恢复处理。",
-        pendingDetail: "请先补全主工作区和知识库范围，再把失败队列导向运行恢复链路。",
+        readyDetail:
+          "当前可以直接从 {workspace} / {knowledgeBase} 发起失败文档和失败工作流的恢复处理。",
+        pendingDetail:
+          "请先补全主工作区和知识库范围，再把失败队列导向运行恢复链路。",
         primaryAction: "打开失败工作流",
         secondaryFailedDocs: "打开失败文档",
-        secondaryOperations: "打开恢复通道"
+        secondaryOperations: "打开恢复通道",
       },
       publication: {
         title: "发布执行包",
         metric: "草稿知识库",
-        draftDetail: "当前还有 {count} 个知识库处于草稿状态，建议在扩大运营使用前继续复核。",
+        draftDetail:
+          "当前还有 {count} 个知识库处于草稿状态，建议在扩大运营使用前继续复核。",
         healthyDetail: "当前可见知识库都已经发布，可直接用于受治理的检索使用。",
         primaryAction: "复核草稿知识库",
         secondaryPublished: "打开已发布知识库",
-        secondaryDocuments: "打开文档清单"
+        secondaryDocuments: "打开文档清单",
       },
       runtime: {
         title: "运行交接包",
         metric: "已设范围运行路由",
-        readyDetail: "{total} 个启用智能体中，已有 {count} 个具备可直接投递的运行交接路由。",
-        pendingDetail: "当前可见 {total} 个启用智能体，但范围解析仍需继续治理复核后，才能形成干净的运行交接。",
+        readyDetail:
+          "{total} 个启用智能体中，已有 {count} 个具备可直接投递的运行交接路由。",
+        pendingDetail:
+          "当前可见 {total} 个启用智能体，但范围解析仍需继续治理复核后，才能形成干净的运行交接。",
         emptyDetail: "当前治理范围内还没有可用于运行交接的启用智能体。",
         primaryAction: "打开运行交接",
         secondaryDefinitions: "打开智能体定义",
-        secondaryOperations: "打开运营总览"
+        secondaryOperations: "打开运营总览",
       },
       recoveryRuntime: {
         title: "恢复运行包",
         metric: "已设范围恢复路由",
-        readyDetail: "当前 {total} 个可见恢复智能体中，已有 {count} 个具备可直接进入恢复运行面的路由。",
-        pendingDetail: "当前可见 {total} 个恢复智能体，但范围解析仍需治理清理后，才能形成干净的恢复运行链路。",
+        readyDetail:
+          "当前 {total} 个可见恢复智能体中，已有 {count} 个具备可直接进入恢复运行面的路由。",
+        pendingDetail:
+          "当前可见 {total} 个恢复智能体，但范围解析仍需治理清理后，才能形成干净的恢复运行链路。",
         emptyDetail: "当前治理范围内还没有可用于恢复运行的恢复智能体。",
         primaryAction: "打开恢复运行",
         secondaryDefinitions: "打开恢复定义",
-        secondaryOperations: "打开失败运营"
+        secondaryOperations: "打开失败运营",
       },
       access: {
         title: "访问激活包",
         metric: "待激活成员关系",
-        pendingDetail: "当前还有 {count} 条受邀成员关系待激活，完成前这些成员还不能完整进入受治理路由。",
+        pendingDetail:
+          "当前还有 {count} 条受邀成员关系待激活，完成前这些成员还不能完整进入受治理路由。",
         healthyDetail: "当前治理范围内没有待激活的成员关系。",
         primaryAction: "复核受邀成员",
         secondarySecurity: "打开安全复核",
-        secondaryMembers: "打开成员访问"
-      }
+        secondaryMembers: "打开成员访问",
+      },
     },
     runtimeRoutes: {
       title: "治理到执行",
-      description: "从治理复核直接进入已建执行页面，把活跃智能体投递到合适的运行面。",
+      description:
+        "从治理复核直接进入已建执行页面，把活跃智能体投递到合适的运行面。",
       scopeReady: "范围已就绪",
       scopePending: "范围待补全",
       retrievalMissing: "检索待复核",
@@ -3067,25 +3448,32 @@ const zhCN = {
       resolvedWorkspace: "工作区 {value}",
       resolvedKnowledgeBase: "知识库 {value}",
       retrievalProfile: "检索 {value}",
-      retrievalMissingDetail: "这条运行路由在启动前还需要补齐有效的治理检索策略。",
-      retrievalDisabledDetail: "{profile} 当前已停用，建议先修复后再启动这条运行路由。",
+      retrievalMissingDetail:
+        "这条运行路由在启动前还需要补齐有效的治理检索策略。",
+      retrievalDisabledDetail:
+        "{profile} 当前已停用，建议先修复后再启动这条运行路由。",
       launchPrompt: "启动提问",
       openRecommended: "打开推荐页面",
       openSecondary: "打开补充页面",
       openDefinition: "打开定义",
       openRetrievalGovernance: "打开检索治理",
       openRetrievalSettings: "打开检索设置",
-      empty: "当前治理范围内还没有可用于运行投递的启用智能体。"
+      empty: "当前治理范围内还没有可用于运行投递的启用智能体。",
     },
     runtimeTaskPacket: {
       title: "运行任务包",
-      description: "把下一条活跃智能体交接先整理成正式任务包，再进入具体执行页面。",
+      description:
+        "把下一条活跃智能体交接先整理成正式任务包，再进入具体执行页面。",
       emptyTitle: "当前没有活跃运行任务",
       emptyDetail: "当前还没有可从治理面提升到执行面的活跃智能体交接。",
-      readyDetail: "这条交接已经可以带着当前租户与知识上下文，直接进入 {surface}。",
-      scopeReviewDetail: "进入 {surface} 之前，建议先把当前运行范围补齐并复核。",
-      retrievalMissingDetail: "进入 {surface} 之前，建议先补齐当前交接的检索治理条件。",
-      retrievalDisabledDetail: "{profile} 当前已停用，建议先修复后再启动这条运行交接。",
+      readyDetail:
+        "这条交接已经可以带着当前租户与知识上下文，直接进入 {surface}。",
+      scopeReviewDetail:
+        "进入 {surface} 之前，建议先把当前运行范围补齐并复核。",
+      retrievalMissingDetail:
+        "进入 {surface} 之前，建议先补齐当前交接的检索治理条件。",
+      retrievalDisabledDetail:
+        "{profile} 当前已停用，建议先修复后再启动这条运行交接。",
       primaryAction: "打开运行路由",
       secondaryRoute: "打开补充路由",
       secondaryDefinition: "打开定义",
@@ -3096,12 +3484,12 @@ const zhCN = {
       unbound: "未绑定",
       statuses: {
         ready: "已就绪",
-        review: "待复核"
+        review: "待复核",
       },
       targets: {
         chat: "对话页面",
         documents: "文档页面",
-        operations: "工作流操作"
+        operations: "工作流操作",
       },
       fields: {
         mode: "模式",
@@ -3110,9 +3498,9 @@ const zhCN = {
         workspace: "工作区",
         knowledgeBase: "知识库",
         objective: "业务目标",
-        prompt: "启动提示词"
-      }
-    }
+        prompt: "启动提示词",
+      },
+    },
   },
   auth: {
     title: "登录",
@@ -3123,25 +3511,31 @@ const zhCN = {
     hero: {
       eyebrow: "运营访问",
       title: "受控进入知识运营平台",
-      description: "通过目录驱动的访问层进入 RAGPilot，让运营、治理和工作流监督始终运行在同一条受控控制台链路中。",
+      description:
+        "通过目录驱动的访问层进入 RAGPilot，让运营、治理和工作流监督始终运行在同一条受控控制台链路中。",
       groundedChatTitle: "知识问答",
-      groundedChatDescription: "围绕当前知识库范围持久化带引用的回答与会话记录。",
+      groundedChatDescription:
+        "围绕当前知识库范围持久化带引用的回答与会话记录。",
       documentOpsTitle: "文档运营",
-      documentOpsDescription: "在一个界面里完成上传、重建索引、版本检查和活动追踪。",
+      documentOpsDescription:
+        "在一个界面里完成上传、重建索引、版本检查和活动追踪。",
       workflowTitle: "持久化工作流",
-        workflowDescription: "沿着稳定的运营通道跟踪接入执行、重试链路和失败恢复。",
-        directoryTitle: "目录驱动访问",
-        directoryDescription: "当前会话态势、租户成员关系和邀请激活都直接来自持久化目录记录。",
-        accessPosture: "访问态势",
-        sessionRouting: "会话路由",
-        bootstrapOpen: "初始管理员引导仍然开放。",
-        bootstrapClosed: "目录引导已关闭，当前使用邀请制访问。",
-        returnTo: "返回目标 {value}"
-      },
+      workflowDescription:
+        "沿着稳定的运营通道跟踪接入执行、重试链路和失败恢复。",
+      directoryTitle: "目录驱动访问",
+      directoryDescription:
+        "当前会话态势、租户成员关系和邀请激活都直接来自持久化目录记录。",
+      accessPosture: "访问态势",
+      sessionRouting: "会话路由",
+      bootstrapOpen: "初始管理员引导仍然开放。",
+      bootstrapClosed: "目录引导已关闭，当前使用邀请制访问。",
+      returnTo: "返回目标 {value}",
+    },
     submit: "登录",
     submitting: "登录中...",
     localModeTitle: "本地会话",
-    localModeDescription: "浏览器仍会保存本地会话，但角色和租户访问范围现在跟随持久化目录记录。",
+    localModeDescription:
+      "浏览器仍会保存本地会话，但角色和租户访问范围现在跟随持久化目录记录。",
     fields: {
       profile: "登录身份",
       displayName: "显示名称",
@@ -3151,42 +3545,44 @@ const zhCN = {
       password: "密码",
       passwordPlaceholder: "请输入密码",
       invitationToken: "邀请码",
-      invitationTokenPlaceholder: "RP-AB12CD34"
+      invitationTokenPlaceholder: "RP-AB12CD34",
     },
     profiles: {
       admin: "管理员",
-      operator: "普通用户"
+      operator: "普通用户",
     },
     roles: {
       superAdmin: "超级管理员",
       operator: "运营员",
-      reviewer: "审核员"
+      reviewer: "审核员",
     },
     bootstrap: {
-      firstAdmin: "首次登录将成为初始超级管理员"
+      firstAdmin: "首次登录将成为初始超级管理员",
     },
     modes: {
       directory_local: "本地目录登录",
       password_local: "密码登录",
       oidc: "OIDC 登录",
-      saml: "SAML 登录"
+      saml: "SAML 登录",
     },
     modeFacts: {
       directory: "目录治理",
-      invitation: "邀请激活"
+      invitation: "邀请激活",
     },
     invitation: {
       title: "邀请已就绪",
-      description: "当前成员仍处于受邀状态。先激活受邀租户访问，再进入受保护控制台。",
+      description:
+        "当前成员仍处于受邀状态。先激活受邀租户访问，再进入受保护控制台。",
       activate: "激活受邀访问",
-      activating: "正在激活受邀访问..."
+      activating: "正在激活受邀访问...",
     },
     providerManaged: {
       title: "由身份提供方接管登录",
-      description: "当前环境已经配置为跳转式身份提供方登录模式，因此本地成员表单会被主动禁用。",
+      description:
+        "当前环境已经配置为跳转式身份提供方登录模式，因此本地成员表单会被主动禁用。",
       defaultProvider: "身份提供方",
       continue: "继续通过 {provider} 登录",
-      unavailable: "当前还没有配置可跳转的登录入口，请联系管理员。"
+      unavailable: "当前还没有配置可跳转的登录入口，请联系管理员。",
     },
     assessment: {
       title: "目录访问态势",
@@ -3195,7 +3591,8 @@ const zhCN = {
       signIn: "可登录",
       activateInvitation: "激活邀请",
       contactAdmin: "联系管理员",
-      bootstrapAvailable: "当前目录仍为空，这次登录可以成为平台的首个超级管理员。",
+      bootstrapAvailable:
+        "当前目录仍为空，这次登录可以成为平台的首个超级管理员。",
       ready: "当前成员已经具备目录访问能力，可以直接进入受保护控制台。",
       invited: "当前成员仍依赖邀请激活后，才能进入受保护页面。",
       inactiveAccount: "当前成员账号已停用，需要管理员处理后才能继续登录。",
@@ -3204,7 +3601,7 @@ const zhCN = {
       activeMemberships: "{count} 个活动",
       invitedMemberships: "{count} 个受邀",
       suspendedMemberships: "{count} 个暂停",
-      invitationRisk: "{count} 个邀请风险"
+      invitationRisk: "{count} 个邀请风险",
     },
     errors: {
       requiredFields: "显示名称和邮箱不能为空。",
@@ -3215,15 +3612,19 @@ const zhCN = {
       invalidInvitationToken: "当前邀请码对该成员无效。",
       expiredInvitationToken: "当前邀请码已过期，请联系管理员重新签发。",
       directorySyncFailed: "登录时同步成员目录失败。",
-      providerManagedOnly: "当前环境要求使用身份提供方接管登录，当前认证模式下不会开放本地成员表单。",
+      providerManagedOnly:
+        "当前环境要求使用身份提供方接管登录，当前认证模式下不会开放本地成员表单。",
       inactiveAccount: "当前成员账号已停用，请联系管理员重新启用后再登录。",
       invitedMembership: "当前成员只有受邀中的租户访问，请先激活邀请后再继续。",
       invitationTokenRequired: "请先输入邀请码，再激活租户访问。",
-      inactiveMembership: "当前成员还没有可用的活动租户成员关系，请联系管理员激活所属租户后再登录。",
-      sessionInactiveAccount: "你之前的会话已被关闭，因为当前目录账号已被停用。",
-      sessionInactiveMembership: "你之前的会话已被关闭，因为当前已经没有可用的活动租户成员关系。",
+      inactiveMembership:
+        "当前成员还没有可用的活动租户成员关系，请联系管理员激活所属租户后再登录。",
+      sessionInactiveAccount:
+        "你之前的会话已被关闭，因为当前目录账号已被停用。",
+      sessionInactiveMembership:
+        "你之前的会话已被关闭，因为当前已经没有可用的活动租户成员关系。",
       sessionRevoked: "你之前的会话已被撤销，请在访问调整完成后重新登录。",
-      sessionMissingDirectoryUser: "你之前的会话无法再从持久化成员目录中恢复。"
+      sessionMissingDirectoryUser: "你之前的会话无法再从持久化成员目录中恢复。",
     },
     guard: {
       restoringTitle: "正在恢复本地会话",
@@ -3234,9 +3635,10 @@ const zhCN = {
       redirectingStatus: "正在跳转到登录页...",
       unauthorizedPageTitle: "访问受限 | RAGPilot",
       unauthorizedTitle: "当前无权访问",
-      unauthorizedDescription: "当前本地会话没有权限进入这个运营页面，请切换到允许的角色，或先回到工作台继续操作。",
-      unauthorizedRole: "当前本地角色：{role}"
-    }
+      unauthorizedDescription:
+        "当前本地会话没有权限进入这个运营页面，请切换到允许的角色，或先回到工作台继续操作。",
+      unauthorizedRole: "当前本地角色：{role}",
+    },
   },
   workspace: {
     title: "工作台 | RAGPilot",
@@ -3245,25 +3647,27 @@ const zhCN = {
         browserTitle: "对话 | RAGPilot",
         eyebrow: "知识问答",
         title: "知识对话控制台",
-        description: "围绕当前知识库提问、查看引用证据，并持续处理已持久化的对话线程。"
+        description:
+          "围绕当前知识库提问、查看引用证据，并持续处理已持久化的对话线程。",
       },
       documents: {
         browserTitle: "文档 | RAGPilot",
         eyebrow: "文档操作",
         title: "文档清单与接入控制",
-        description: "跟踪文档接入状态、管理文档生命周期，并查看当前知识库里的检索资产。"
+        description:
+          "跟踪文档接入状态、管理文档生命周期，并查看当前知识库里的检索资产。",
       },
       operations: {
         browserTitle: "运营操作 | RAGPilot",
         eyebrow: "工作流操作",
         title: "工作流监督与恢复",
-        description: "集中查看耐久化执行链路、失败队列和文档接入恢复操作。"
-      }
+        description: "集中查看耐久化执行链路、失败队列和文档接入恢复操作。",
+      },
     },
     routePanel: {
       chat: "对话就绪情况",
       documents: "文档处理情况",
-      operations: "运营执行情况"
+      operations: "运营执行情况",
     },
     runtimeTaskPacket: {
       primaryOpenRecommended: "打开推荐页面",
@@ -3281,52 +3685,66 @@ const zhCN = {
           openRecovery: "打开恢复链路",
           openValidation: "打开知识验证",
           resumeValidation: "继续知识验证",
-          openEvidenceReview: "复核来源证据"
+          openEvidenceReview: "复核来源证据",
         },
         details: {
           intake: "先把第一份源文档接入当前知识库，再开始后续知识验证。",
-          monitoring: "当前还有 {count} 个进行中的接入或工作流项目，需要先保持可见并持续监控。",
-          recovery: "当前有 {count} 个失败的文档或工作流项目，需要先恢复，当前范围才算稳定。",
-          validation: "当前已有 {count} 份可检索文档，下一步可以进入对话验证带引用的知识回答。",
-          validationReady: "当前已有 {count} 份可检索文档通过了实时证据验证，可以继续进入对话确认带引用回答是否稳定。",
-          validationReview: "当前已有 {count} 份可检索文档，但最近一次验证结果仍需要运营侧复核后，才适合扩大默认问答使用。",
-          validationBlocked: "最近一次验证没有放行知识问答，先回到来源证据或接入链路复核，再继续带引用提问。"
+          monitoring:
+            "当前还有 {count} 个进行中的接入或工作流项目，需要先保持可见并持续监控。",
+          recovery:
+            "当前有 {count} 个失败的文档或工作流项目，需要先恢复，当前范围才算稳定。",
+          validation:
+            "当前已有 {count} 份可检索文档，下一步可以进入对话验证带引用的知识回答。",
+          validationReady:
+            "当前已有 {count} 份可检索文档通过了实时证据验证，可以继续进入对话确认带引用回答是否稳定。",
+          validationReview:
+            "当前已有 {count} 份可检索文档，但最近一次验证结果仍需要运营侧复核后，才适合扩大默认问答使用。",
+          validationBlocked:
+            "最近一次验证没有放行知识问答，先回到来源证据或接入链路复核，再继续带引用提问。",
         },
         objectives: {
           intake: "先把第一份文档落入当前知识库，建立可检索的知识资产。",
           monitoring: "持续盯住当前接入链路，直到排队和运行中的任务稳定下来。",
           recovery: "先解决失败的文档或工作流状态，再扩展下游使用。",
           validation: "通过知识问答确认当前知识库已经能稳定给出带引用的回答。",
-          validationReady: "继续用知识问答确认已验证通过的知识库，是否仍能稳定给出带引用回答。",
-          validationReview: "复核最近一次验证结果，再决定当前范围是否适合扩大知识问答使用。",
-          validationBlocked: "先恢复来源证据质量，再重新开启知识验证。"
-        }
+          validationReady:
+            "继续用知识问答确认已验证通过的知识库，是否仍能稳定给出带引用回答。",
+          validationReview:
+            "复核最近一次验证结果，再决定当前范围是否适合扩大知识问答使用。",
+          validationBlocked: "先恢复来源证据质量，再重新开启知识验证。",
+        },
       },
       statuses: {
         attention: "需关注",
         ready: "已就绪",
-        review: "待复核"
+        review: "待复核",
       },
       intents: {
         general: "通用工作台延续",
         agent_brief: "智能体简报交接",
         grounded_validation: "知识验证",
         document_recovery: "文档恢复",
-        workflow_recovery: "工作流恢复"
+        workflow_recovery: "工作流恢复",
       },
       details: {
-        general: "从 {source} 延续当前运营路径，同时保持范围与运行上下文不丢失。",
-        agent_brief: "直接使用当前传入的智能体简报和作用域，继续后续执行，不再重新拼上下文。",
-        grounded_validation: "在关闭本次执行链之前，先到知识问答里验证下游检索质量是否已经就绪。",
-        document_recovery: "把源文档状态、索引健康度和工作流谱系放在一起检查，再决定是否重新发起工作。",
-        workflow_recovery: "在恢复完全稳定之前，保持当前运行、重试姿态和执行上下文持续对齐。"
+        general:
+          "从 {source} 延续当前运营路径，同时保持范围与运行上下文不丢失。",
+        agent_brief:
+          "直接使用当前传入的智能体简报和作用域，继续后续执行，不再重新拼上下文。",
+        grounded_validation:
+          "在关闭本次执行链之前，先到知识问答里验证下游检索质量是否已经就绪。",
+        document_recovery:
+          "把源文档状态、索引健康度和工作流谱系放在一起检查，再决定是否重新发起工作。",
+        workflow_recovery:
+          "在恢复完全稳定之前，保持当前运行、重试姿态和执行上下文持续对齐。",
       },
       objectives: {
         general: "在当前作用域内继续推进这条工作台任务。",
         agent_brief: "基于当前智能体简报继续完成受范围约束的执行。",
         grounded_validation: "确认已完成执行已经产出可用于检索的知识行为。",
         document_recovery: "先解决源对象层面的问题，再进入下一次索引或重试。",
-        workflow_recovery: "先稳定失败或活跃中的工作流，再决定是否扩展执行动作。"
+        workflow_recovery:
+          "先稳定失败或活跃中的工作流，再决定是否扩展执行动作。",
       },
       fields: {
         currentSurface: "当前页面",
@@ -3342,18 +3760,19 @@ const zhCN = {
         validation: "验证状态",
         validatedHits: "验证命中",
         objective: "执行目标",
-        prompt: "工作提示词"
-      }
+        prompt: "工作提示词",
+      },
     },
     runtimeRunbook: {
       title: "执行操作手册",
-      description: "根据当前收到的交接意图，沿着统一的平台路径继续推进下一步动作。",
+      description:
+        "根据当前收到的交接意图，沿着统一的平台路径继续推进下一步动作。",
       metrics: {
         target: "目标页面",
         scope: "作用域",
         subject: "当前对象",
         owner: "当前负责人",
-        validation: "验证状态"
+        validation: "验证状态",
       },
       actions: {
         openRecommended: "打开推荐页面",
@@ -3362,62 +3781,87 @@ const zhCN = {
         openWorkflowLane: "打开工作流页面",
         openGovernance: "打开治理",
         openAgent: "打开智能体",
-        returnToSource: "返回来源"
+        returnToSource: "返回来源",
       },
       mainFlow: {
         ingestTitle: "接入当前源文档",
-        ingestDetail: "把新上传、重建索引和源对象检查都放在同一条文档链路里，避免范围漂移。",
+        ingestDetail:
+          "把新上传、重建索引和源对象检查都放在同一条文档链路里，避免范围漂移。",
         uploadFollowUp: "继续复核接入",
         monitorTitle: "监控执行健康度",
-        monitorFailureDetail: "当前存在恢复队列，需要先复核工作流压力和恢复状态，再回到验证环节。",
-        monitorActiveDetail: "当前仍有接入任务在运行，先留在工作流监督链路，等活跃队列稳定。",
-        monitorHealthyDetail: "当前范围没有失败阻塞项，工作流面现在更像一个检查点，而不是阻塞点。",
+        monitorFailureDetail:
+          "当前存在恢复队列，需要先复核工作流压力和恢复状态，再回到验证环节。",
+        monitorActiveDetail:
+          "当前仍有接入任务在运行，先留在工作流监督链路，等活跃队列稳定。",
+        monitorHealthyDetail:
+          "当前范围没有失败阻塞项，工作流面现在更像一个检查点，而不是阻塞点。",
         reviewFailedDocuments: "复核失败文档",
         reviewExecutionQueue: "复核执行队列",
         validateTitle: "验证知识回答",
-        validateReadyDetail: "当前已有可检索知识，可以进入对话验证回答、引用和整体运营可信度。",
-        validatePendingDetail: "至少要有一份文档完成接入和索引后，才适合开始知识验证。",
-        validateReviewDetail: "最近一次验证已经命中证据，但当前范围仍需要运营侧复核后，才适合作为默认知识问答链路。",
-        validateBlockedDetail: "最近一次验证没有支撑当前知识问答，请先复核来源证据和执行健康度，再重新进入回答验证。",
-        reviewReadySources: "复核就绪来源"
+        validateReadyDetail:
+          "当前已有可检索知识，可以进入对话验证回答、引用和整体运营可信度。",
+        validatePendingDetail:
+          "至少要有一份文档完成接入和索引后，才适合开始知识验证。",
+        validateReviewDetail:
+          "最近一次验证已经命中证据，但当前范围仍需要运营侧复核后，才适合作为默认知识问答链路。",
+        validateBlockedDetail:
+          "最近一次验证没有支撑当前知识问答，请先复核来源证据和执行健康度，再重新进入回答验证。",
+        reviewReadySources: "复核就绪来源",
       },
       agentBrief: {
         alignSurfaceTitle: "先对齐运行页面",
-        alignSurfaceDetail: "在操作员开始手工处理之前，先进入当前最合适的已建页面能力。",
+        alignSurfaceDetail:
+          "在操作员开始手工处理之前，先进入当前最合适的已建页面能力。",
         checkScopeTitle: "检查当前作用域资产",
-        checkScopeDetail: "先查看当前文档面，确保工作区范围仍然建立在可见的源对象状态上。",
+        checkScopeDetail:
+          "先查看当前文档面，确保工作区范围仍然建立在可见的源对象状态上。",
         closeLoopTitle: "保持定义链路联动",
-        closeLoopDetail: "在扩大发布范围或改变执行姿态前，先回到智能体或治理面完成复核。"
+        closeLoopDetail:
+          "在扩大发布范围或改变执行姿态前，先回到智能体或治理面完成复核。",
       },
       groundedValidation: {
         validateAnswerTitle: "验证知识回答链路",
-        validateAnswerDetail: "通过对话面确认这次已完成执行，是否已经产出可用于检索的回答与引用。",
-        validateAnswerReviewDetail: "最近一次验证已经返回证据，但这条回答链路仍需要人工复核后，才适合作为稳定路径继续使用。",
-        validateAnswerBlockedDetail: "最新证据检查阻塞了知识验证，请先回到文档面复核来源，再继续带引用回答。",
-        validateAnswerPendingDetail: "当前还没有挂上已完成的检索验证结果，先运行或继续验证，再依赖知识回答。",
+        validateAnswerDetail:
+          "通过对话面确认这次已完成执行，是否已经产出可用于检索的回答与引用。",
+        validateAnswerReviewDetail:
+          "最近一次验证已经返回证据，但这条回答链路仍需要人工复核后，才适合作为稳定路径继续使用。",
+        validateAnswerBlockedDetail:
+          "最新证据检查阻塞了知识验证，请先回到文档面复核来源，再继续带引用回答。",
+        validateAnswerPendingDetail:
+          "当前还没有挂上已完成的检索验证结果，先运行或继续验证，再依赖知识回答。",
         inspectSourcesTitle: "检查支撑来源",
-        inspectSourcesDetail: "打开文档面，确认回答背后的源对象、版本和检索上下文是否一致。",
-        inspectSourcesBlockedDetail: "先检查源对象和最近一次接入输出，让失败的验证信号能回溯到明确的证据状态。",
+        inspectSourcesDetail:
+          "打开文档面，确认回答背后的源对象、版本和检索上下文是否一致。",
+        inspectSourcesBlockedDetail:
+          "先检查源对象和最近一次接入输出，让失败的验证信号能回溯到明确的证据状态。",
         closeLoopTitle: "收回运营闭环",
-        closeLoopDetail: "把已验证结果带回治理面，继续完成对下游行为的正式复核。",
-        closeLoopPendingDetail: "在证据姿态真正就绪之前，先把这条验证闭环留在对话面或文档面，不要急着回治理面收口。"
+        closeLoopDetail:
+          "把已验证结果带回治理面，继续完成对下游行为的正式复核。",
+        closeLoopPendingDetail:
+          "在证据姿态真正就绪之前，先把这条验证闭环留在对话面或文档面，不要急着回治理面收口。",
       },
       documentRecovery: {
         inspectDocumentTitle: "检查失败文档链路",
-        inspectDocumentDetail: "先复核当前文档、索引状态和源对象准备情况，再决定是否重新发起工作。",
+        inspectDocumentDetail:
+          "先复核当前文档、索引状态和源对象准备情况，再决定是否重新发起工作。",
         reviewLineageTitle: "复核工作流谱系",
-        reviewLineageDetail: "通过工作流面查看围绕当前文档的重试链、阻塞步骤和执行姿态。",
+        reviewLineageDetail:
+          "通过工作流面查看围绕当前文档的重试链、阻塞步骤和执行姿态。",
         briefAgentTitle: "准备下一步运营简报",
-        briefAgentDetail: "通过对话或当前智能体定义，先总结恢复姿态，再进行下一步人工介入。"
+        briefAgentDetail:
+          "通过对话或当前智能体定义，先总结恢复姿态，再进行下一步人工介入。",
       },
       workflowRecovery: {
         stabilizeTitle: "先稳定工作流链路",
-        stabilizeDetail: "在阻塞状态和重试姿态足够明确之前，先让当前运行继续留在工作流监督面中。",
+        stabilizeDetail:
+          "在阻塞状态和重试姿态足够明确之前，先让当前运行继续留在工作流监督面中。",
         inspectDocumentTitle: "检查受影响的源对象",
-        inspectDocumentDetail: "打开文档面，把失败运行和底层源对象、知识范围放在一起对照检查。",
+        inspectDocumentDetail:
+          "打开文档面，把失败运行和底层源对象、知识范围放在一起对照检查。",
         closeLoopTitle: "完成治理收口",
-        closeLoopDetail: "当负责人、范围和访问姿态都清晰后，再把这条恢复路径带回治理面收口。"
-      }
+        closeLoopDetail:
+          "当负责人、范围和访问姿态都清晰后，再把这条恢复路径带回治理面收口。",
+      },
     },
     status: {
       loading: "正在加载工作台状态...",
@@ -3426,8 +3870,10 @@ const zhCN = {
       agentContextActivated: "已切换到智能体上下文 {name}。",
       agentContextActivatedForView: "智能体 {name} 已在 {view} 中启用。",
       executingRecommendedAgent: "正在使用 {name} 执行当前工作台上下文...",
-      agentExecutionCompletedForDocuments: "{name} 已完成接入复核，当前已自动切回文档后续处理链路。",
-      agentExecutionCompletedForWorkflows: "{name} 已完成恢复复核，当前已自动切回工作流监督链路。",
+      agentExecutionCompletedForDocuments:
+        "{name} 已完成接入复核，当前已自动切回文档后续处理链路。",
+      agentExecutionCompletedForWorkflows:
+        "{name} 已完成恢复复核，当前已自动切回工作流监督链路。",
       recommendedAgentExecutionFailed: "推荐智能体执行失败。",
       loadingConversations: "工作台已就绪，正在加载会话...",
       initializationFailed: "工作台初始化失败。",
@@ -3435,11 +3881,14 @@ const zhCN = {
       permanentlyDeletingDocument: "正在永久删除文档...",
       documentPermanentlyDeleted: "文档已永久删除。",
       documentPermanentDeleteFailed: "文档永久删除失败。",
-      documentWorkflowOpenedInOperations: "文档工作流需要恢复处理，当前已自动聚焦到对应运行。",
-      documentWorkflowMonitoring: "文档工作流当前仍处于 {status}，当前已自动聚焦到活跃运行。",
+      documentWorkflowOpenedInOperations:
+        "文档工作流需要恢复处理，当前已自动聚焦到对应运行。",
+      documentWorkflowMonitoring:
+        "文档工作流当前仍处于 {status}，当前已自动聚焦到活跃运行。",
       workflowFinishedWithStatus: "文档工作流已结束，状态为：{status}。",
       uploadFailed: "文档上传失败。",
-      someUploadFilesRejected: "部分文件因格式不支持或超过 25 MB 限制而未加入。",
+      someUploadFilesRejected:
+        "部分文件因格式不支持或超过 25 MB 限制而未加入。",
       switchingContext: "正在切换工作区上下文...",
       contextSwitchFailed: "工作区上下文切换失败。",
       creatingTenant: "正在创建租户...",
@@ -3504,16 +3953,21 @@ const zhCN = {
       restoringSelectedDocument: "正在恢复当前选中文档...",
       deletingSelectedDocument: "正在删除当前选中文档...",
       webImportFailed: "网页导入失败。",
-      queueingReindexSelectedDocuments: "正在为 {count} 个选中文档排队重建索引...",
+      queueingReindexSelectedDocuments:
+        "正在为 {count} 个选中文档排队重建索引...",
       restoringSelectedDocuments: "正在恢复 {count} 个选中文档...",
       recommendationPrompts: {
-        documentReady: "请围绕 {title} 作为核心来源，给我一份带引用的可检索结论摘要。",
-        workflowCompleted: "请总结 {label} 这条已完成执行链，并说明下游已经准备好的内容。",
-        workflowInProgress: "请复核 {label} 当前仍在进行中的执行，并告诉我下一步优先检查什么。",
-        agentObjective: "请围绕智能体 {name} 生成下一步运营简报。"
+        documentReady:
+          "请围绕 {title} 作为核心来源，给我一份带引用的可检索结论摘要。",
+        workflowCompleted:
+          "请总结 {label} 这条已完成执行链，并说明下游已经准备好的内容。",
+        workflowInProgress:
+          "请复核 {label} 当前仍在进行中的执行，并告诉我下一步优先检查什么。",
+        agentObjective: "请围绕智能体 {name} 生成下一步运营简报。",
       },
       deletingSelectedDocuments: "正在删除 {count} 个选中文档...",
-      documentActionPartial: "{successCount} 个文档已{actionResult}，另有 {failureCount} 个失败。",
+      documentActionPartial:
+        "{successCount} 个文档已{actionResult}，另有 {failureCount} 个失败。",
       documentDeleteCompleted: "已从当前知识库删除 {count} 个文档。",
       documentRestoreCompleted: "已将 {count} 个文档恢复到当前知识库。",
       documentReindexCompleted: "已为 {count} 个文档加入重建索引队列。",
@@ -3525,7 +3979,8 @@ const zhCN = {
       retryingWorkflow: "正在重试失败的工作流运行...",
       cancellingWorkflow: "正在取消工作流运行...",
       workflowRetryQueued: "工作流重试已进入队列。",
-      workflowRetryQueuedMonitoring: "工作流重试已进入队列，当前已经切到该重试运行的监督视图。",
+      workflowRetryQueuedMonitoring:
+        "工作流重试已进入队列，当前已经切到该重试运行的监督视图。",
       workflowRetryFinished: "工作流重试已结束，状态为：{status}。",
       workflowRetryFailed: "工作流重试失败。",
       workflowCancelFinished: "工作流运行已取消。",
@@ -3542,13 +3997,15 @@ const zhCN = {
       workflowRunDetailLoadFailed: "工作流运行详情加载失败。",
       workflowLineageLoadFailed: "工作流谱系加载失败。",
       feedbackValidationPrepared: "反馈候选已载入检索验证。",
-      feedbackComparisonPrepared: "反馈候选已载入检索对比。"
+      feedbackComparisonPrepared: "反馈候选已载入检索对比。",
     },
     retrievalInspector: {
       title: "检索诊断",
-      description: "直接基于当前知识库执行实时检索验证，并一键跳到知识问答或文档复核页面。",
+      description:
+        "直接基于当前知识库执行实时检索验证，并一键跳到知识问答或文档复核页面。",
       filtersTitle: "评估筛选",
-      filtersDescription: "按评估模式、验证状态或问题关键字筛选已保存的检索评估和调优候选。",
+      filtersDescription:
+        "按评估模式、验证状态或问题关键字筛选已保存的检索评估和调优候选。",
       modeFilterLabel: "评估模式",
       followUpFilterLabel: "跟进状态",
       statusFilterLabel: "验证状态",
@@ -3575,7 +4032,8 @@ const zhCN = {
       candidateResolvedToast: "候选问题队列已标记为已处理。",
       candidateReopenedToast: "候选问题队列已重新打开。",
       queryTitle: "验证检索行为",
-      queryDescription: "先验证操作员即将使用的问题路径，再决定是否继续收口当前执行链。",
+      queryDescription:
+        "先验证操作员即将使用的问题路径，再决定是否继续收口当前执行链。",
       quickFillTitle: "快速填充",
       queryLabel: "查询语句",
       queryPlaceholder: "请输入一个面向当前作用域的检索验证问题...",
@@ -3590,7 +4048,8 @@ const zhCN = {
       statusTitle: "诊断状态",
       statusIdle: "当前可以开始执行这条作用域下的检索诊断。",
       statusRunning: "正在基于当前知识库执行检索诊断。",
-      compareStatusRunning: "正在对比 native 与 llamaindex_pilot 的实时检索输出。",
+      compareStatusRunning:
+        "正在对比 native 与 llamaindex_pilot 的实时检索输出。",
       statusLoaded: "已加载 {count} 条检索结果，可继续复核。",
       compareStatusLoaded: "对比已完成，共有 {shared} 条共同命中结果。",
       statusEmpty: "当前查询没有命中任何检索结果。",
@@ -3605,13 +4064,15 @@ const zhCN = {
       compareCandidateOnly: "仅 llamaindex {count}",
       topResultMatches: "首位结果一致",
       topResultDiffers: "首位结果不一致",
-        recentEvaluationsTitle: "最近评估",
-        recentEvaluationsEmpty: "当前范围内还没有已持久化的检索评估记录。",
-        selectedEvaluationTitle: "当前评估",
-        selectedEvaluationDescription: "把一条已保存的评估重新打开，直接回到治理、重跑或知识问答验证动作。",
-        selectedEvaluationEmpty: "请选择一条最近评估，查看它保存下来的后续处理上下文。",
-        selectedEvaluationNoSources: "这条评估没有保留下来源文档。",
-        tuningCandidatesTitle: "调优候选",
+      recentEvaluationsTitle: "最近评估",
+      recentEvaluationsEmpty: "当前范围内还没有已持久化的检索评估记录。",
+      selectedEvaluationTitle: "当前评估",
+      selectedEvaluationDescription:
+        "把一条已保存的评估重新打开，直接回到治理、重跑或知识问答验证动作。",
+      selectedEvaluationEmpty:
+        "请选择一条最近评估，查看它保存下来的后续处理上下文。",
+      selectedEvaluationNoSources: "这条评估没有保留下来源文档。",
+      tuningCandidatesTitle: "调优候选",
       tuningCandidatesEmpty: "当前范围内还没有重复出现的复核候选。",
       queryCount: "{count} 个查询",
       evaluationCount: "{count} 次评估",
@@ -3652,16 +4113,22 @@ const zhCN = {
         composer: "当前输入草稿",
         latestUserQuestion: "最近一条用户问题",
         selectedDocument: "当前文档标题",
-        agentObjective: "当前智能体目标"
-      }
+        agentObjective: "当前智能体目标",
+      },
     },
     agentRecommendations: {
-      "document-ready-for-grounded-chat": "当前文档已经具备检索条件，下一步更适合交给知识问答型智能体继续处理。",
-      "document-needs-intake": "当前文档还在接入处理中，下一步更适合交给文档接入型智能体继续跟进。",
-      "document-needs-recovery": "当前文档已进入失败态，下一步更适合交给恢复处理型智能体接管。",
-      "workflow-completed": "当前工作流已经完成，下一步更适合交给知识问答型智能体承接后续使用。",
-      "workflow-in-progress": "当前工作流仍在执行中，更适合交给文档接入型智能体继续跟进执行链路。",
-      "workflow-failed": "当前工作流执行失败，更适合交给恢复处理型智能体继续接管。"
+      "document-ready-for-grounded-chat":
+        "当前文档已经具备检索条件，下一步更适合交给知识问答型智能体继续处理。",
+      "document-needs-intake":
+        "当前文档还在接入处理中，下一步更适合交给文档接入型智能体继续跟进。",
+      "document-needs-recovery":
+        "当前文档已进入失败态，下一步更适合交给恢复处理型智能体接管。",
+      "workflow-completed":
+        "当前工作流已经完成，下一步更适合交给知识问答型智能体承接后续使用。",
+      "workflow-in-progress":
+        "当前工作流仍在执行中，更适合交给文档接入型智能体继续跟进执行链路。",
+      "workflow-failed":
+        "当前工作流执行失败，更适合交给恢复处理型智能体继续接管。",
     },
     sharedRecommendations: {
       score: "评分 {count}",
@@ -3671,8 +4138,8 @@ const zhCN = {
       targets: {
         chat: "对话页面",
         documents: "文档页面",
-        workflows: "工作流页面"
-      }
+        workflows: "工作流页面",
+      },
     },
     sharedExecutionPacket: {
       title: "执行交接包",
@@ -3690,8 +4157,8 @@ const zhCN = {
       tones: {
         healthy: "健康",
         review: "待复核",
-        attention: "需关注"
-      }
+        attention: "需关注",
+      },
     },
     errors: {
       selectedTenantNotResolved: "无法解析所选租户。",
@@ -3700,7 +4167,7 @@ const zhCN = {
       tenantNameSlugRequired: "租户名称和标识为必填项。",
       workspaceNameSlugRequired: "工作区名称和标识为必填项。",
       knowledgeBaseNameSlugRequired: "知识库名称和标识为必填项。",
-      conversationTitleRequired: "会话标题不能为空。"
+      conversationTitleRequired: "会话标题不能为空。",
     },
     confirm: {
       deleteConversation: "确定删除 {title} 吗？这会移除它的持久化消息和引用。",
@@ -3708,23 +4175,28 @@ const zhCN = {
       deleteDocument: "确定从当前知识库中删除《{title}》吗？之后仍可恢复。",
       reindexDocument: "确定为《{title}》重新构建搜索索引吗？",
       restoreDocument: "确定将《{title}》恢复到有效文档列表吗？",
-      permanentDeleteDocument: "将永久删除《{title}》及其文件、版本、分块和向量数据。此操作无法恢复。",
+      permanentDeleteDocument:
+        "将永久删除《{title}》及其文件、版本、分块和向量数据。此操作无法恢复。",
       permanentDeleteLabel: "输入文档标题以确认",
       permanentDeleteHint: "标题必须完全一致；仍被回答引用的文档不能永久删除。",
-      deleteSelectedDocuments: "确定从当前知识库中软删除 {count} 篇选中文档吗？",
-      reindexSelectedDocuments: "确定为选中的 {count} 篇文档重新构建搜索索引吗？",
-      restoreSelectedDocuments: "确定将选中的 {count} 篇文档恢复到有效文档列表吗？"
+      deleteSelectedDocuments:
+        "确定从当前知识库中软删除 {count} 篇选中文档吗？",
+      reindexSelectedDocuments:
+        "确定为选中的 {count} 篇文档重新构建搜索索引吗？",
+      restoreSelectedDocuments:
+        "确定将选中的 {count} 篇文档恢复到有效文档列表吗？",
     },
     pageHeader: {
       eyebrow: "运营工作台",
       title: "知识运营工作台",
-      description: "知识问答、文档接入和工作流监督现在已经统一到同一个操作控制面中。"
+      description:
+        "知识问答、文档接入和工作流监督现在已经统一到同一个操作控制面中。",
     },
     pagination: {
       showing: "显示 {start}-{end} / 共 {total} 条",
       previous: "上一页",
       page: "第 {current} / {total} 页",
-      next: "下一页"
+      next: "下一页",
     },
     headerBar: {
       groundedChat: "知识问答",
@@ -3741,7 +4213,7 @@ const zhCN = {
         admin: "管理后台",
         operations: "运行中心",
         agents: "智能体",
-        workspace: "工作区"
+        workspace: "工作区",
       },
       searchConversations: "搜索会话",
       startConversationPlaceholder: "开始一个新会话",
@@ -3752,7 +4224,8 @@ const zhCN = {
       uploadTarget: "上传到",
       knowledgeScope: "知识范围",
       chooseKnowledgeScope: "选择知识范围",
-      chooseKnowledgeScopeDescription: "切换当前工作区和知识库。这里只负责选择，不包含新建或编辑管理。",
+      chooseKnowledgeScopeDescription:
+        "切换当前工作区和知识库。这里只负责选择，不包含新建或编辑管理。",
       workspaceLabel: "工作区",
       knowledgeBaseLabel: "知识库",
       knowledgeBaseHint: "文档列表、上传目标和检索范围都会跟随所选知识库切换。",
@@ -3789,11 +4262,11 @@ const zhCN = {
       openDefinition: "打开定义",
       hideControls: "隐藏控制项",
       contextControls: "上下文控制",
-      refreshWorkspace: "刷新工作区"
-      ,documentSearch: "搜索文档"
-      ,webImportTitlePlaceholder: "文档标题（可选）"
-      ,importPage: "导入网页"
-      ,filters: {
+      refreshWorkspace: "刷新工作区",
+      documentSearch: "搜索文档",
+      webImportTitlePlaceholder: "文档标题（可选）",
+      importPage: "导入网页",
+      filters: {
         all: "全部",
         allStatuses: "全部状态",
         allSources: "全部来源",
@@ -3812,8 +4285,8 @@ const zhCN = {
         createdAsc: "最早创建",
         titleAsc: "标题 A-Z",
         titleDesc: "标题 Z-A",
-        statusPriority: "状态优先"
-      }
+        statusPriority: "状态优先",
+      },
     },
     sharedAgentContext: {
       aligned: "页面已对齐",
@@ -3821,7 +4294,7 @@ const zhCN = {
       connectedCapabilities: "{count} 个连接能力",
       objective: "目标：",
       objectiveMissing: "当前智能体上下文没有附加明确目标。",
-      openDefinition: "打开定义"
+      openDefinition: "打开定义",
     },
     chatView: {
       workspaceConversations: "工作区会话",
@@ -3834,19 +4307,23 @@ const zhCN = {
       flowStateEmptyTitle: "当前还不能直接进入稳定的知识问答。",
       flowStateEmptyDescription:
         "先去文档页接入并索引来源内容，等知识库里有可检索资产后，再回到这里做带引用问答。",
-      flowStateRecoveryTitle: "当前范围还有恢复处理没有收口，先不要把这条链路交给聊天。",
+      flowStateRecoveryTitle:
+        "当前范围还有恢复处理没有收口，先不要把这条链路交给聊天。",
       flowStateRecoveryDescription:
         "这里仍挂着失败或已取消的工作流。先把工作流链路处理干净，再回到聊天完成知识验证。",
-      flowStateReviewTitle: "最近一次检索验证还需要复核，暂时不适合直接给出最终回答。",
+      flowStateReviewTitle:
+        "最近一次检索验证还需要复核，暂时不适合直接给出最终回答。",
       flowStateReviewDescription:
         "先检查来源文档或工作流证据，再重新做一次验证，让聊天回答建立在稳定引用之上。",
       flowStateReadyTitle: "当前聊天范围已经具备进入知识验证的条件。",
       flowStateReadyDescription:
         "现在可以直接使用建议验证问题，或者新建一条会话，围绕当前知识范围做带引用问答。",
-      flowStateValidatedTitle: "当前聊天范围已经验证通过，可以直接进行稳定的知识问答。",
+      flowStateValidatedTitle:
+        "当前聊天范围已经验证通过，可以直接进行稳定的知识问答。",
       flowStateValidatedDescription:
         "最近一次检索验证已经在当前范围通过。现在可以继续围绕当前知识范围提问，同时保持引用和来源复核能力随时可回看。",
-      flowStateConversationTitle: "聊天链路已经就绪，但当前会话还没有真正开始。",
+      flowStateConversationTitle:
+        "聊天链路已经就绪，但当前会话还没有真正开始。",
       flowStateConversationDescription:
         "从当前范围创建下一条知识问答线程后，就可以在不离开工作区上下文的情况下继续主链路。",
       workspaceMessages: "工作区消息",
@@ -3902,7 +4379,7 @@ const zhCN = {
         model_endpoint: "模型端点",
         agent_definition: "智能体定义",
         settings: "服务默认值",
-        settings_fallback: "设置回退"
+        settings_fallback: "设置回退",
       },
       answerReviewQueue: "回答复核",
       answerReviewTitle: "回答反馈队列",
@@ -3944,7 +4421,7 @@ const zhCN = {
       reopenCandidate: "重新打开候选",
       evaluationModes: {
         inspect: "检查",
-        compare: "对比"
+        compare: "对比",
       },
       feedbackAnswerQuality: "回答 {value}",
       feedbackCitationQuality: "引用 {value}",
@@ -3952,20 +4429,22 @@ const zhCN = {
       feedbackAnswerQualities: {
         helpful: "有帮助",
         partially_helpful: "部分有帮助",
-        not_helpful: "无帮助"
+        not_helpful: "无帮助",
       },
       feedbackCitationQualities: {
         grounded: "有依据",
         partial: "部分有依据",
-        broken: "引用异常"
+        broken: "引用异常",
       },
       citationWithoutQuote: "当前引用未保存片段预览。",
       inspectSource: "查看来源",
       openDocumentView: "打开文档视图",
       askKnowledgeBase: "向当前知识库提问",
-      askKnowledgeBaseDescription: "回答会基于 pgvector 检索生成，并带引用持久化，便于复核。",
+      askKnowledgeBaseDescription:
+        "回答会基于 pgvector 检索生成，并带引用持久化，便于复核。",
       validationTitle: "检索验证态势",
-      validationPendingDescription: "在发送最终知识问题前，先做一次聚焦检索验证，确认当前范围已经能命中真实证据。",
+      validationPendingDescription:
+        "在发送最终知识问题前，先做一次聚焦检索验证，确认当前范围已经能命中真实证据。",
       validationUseSuggestedQuery: "使用建议验证问题",
       validationQuery: "问题 {value}",
       validationResultCount: "{count} 个验证命中",
@@ -3974,7 +4453,7 @@ const zhCN = {
       validationProfile: "策略 {value}",
       validationModes: {
         inspect: "单引擎检查",
-        compare: "引擎对比"
+        compare: "引擎对比",
       },
       validationStatuses: {
         pending: "待验证",
@@ -3982,7 +4461,7 @@ const zhCN = {
         review: "需要复核",
         hold: "暂缓切换",
         empty: "没有命中证据",
-        failed: "验证失败"
+        failed: "验证失败",
       },
       retrievalIntelligenceTitle: "检索智能摘要",
       retrievalIntelligenceEvaluations: "评估次数",
@@ -3992,11 +4471,12 @@ const zhCN = {
       retrievalIntelligenceStatuses: {
         stable: "稳定",
         review: "待复核",
-        hold: "暂缓"
+        hold: "暂缓",
       },
       startOrSelectConversation: "先开始或选择一个会话，再进行知识问答...",
       welcomeTitle: "今天想了解什么？",
-      welcomeDescription: "基于当前知识库开始提问，首条消息发送后会自动创建会话。",
+      welcomeDescription:
+        "基于当前知识库开始提问，首条消息发送后会自动创建会话。",
       welcomePlaceholder: "输入你的问题...",
       uploadContentBeforeAsk: "请先上传并索引内容，再提出知识问题...",
       askGroundedQuestion: "请输入一个基于已索引内容的问题...",
@@ -4004,9 +4484,12 @@ const zhCN = {
       defaultScope: "工作区",
       agentHandoff: "智能体交接",
       agentHandoffTitle: "{name} 已附着到当前工作区会话。",
-      groundedAgentDescription: "这个智能体当前对齐的是知识问答链路，适合在这里完成带引用的回答，再按需要跳去文档或工作流继续处理证据。",
-      intakeAgentDescription: "这个智能体当前面向文档接入，建议先去文档面完成上传、检查和重建索引，再回到这里执行知识问答。",
-      recoveryAgentDescription: "这个智能体当前面向恢复处理，建议先检查失败或重试中的工作流运行，等知识库状态恢复健康后再回到聊天。",
+      groundedAgentDescription:
+        "这个智能体当前对齐的是知识问答链路，适合在这里完成带引用的回答，再按需要跳去文档或工作流继续处理证据。",
+      intakeAgentDescription:
+        "这个智能体当前面向文档接入，建议先去文档面完成上传、检查和重建索引，再回到这里执行知识问答。",
+      recoveryAgentDescription:
+        "这个智能体当前面向恢复处理，建议先检查失败或重试中的工作流运行，等知识库状态恢复健康后再回到聊天。",
       agentScope: "作用域 {scope}",
       openDocumentsSurface: "打开文档",
       openWorkflowSurface: "打开工作流",
@@ -4024,9 +4507,34 @@ const zhCN = {
       selectWorkflowToInspect: "选择一个工作流运行以查看执行详情。",
       workflowStepsAppear: "工作流开始执行后，这里会显示步骤记录。",
       noWorkflowRuns: "当前还没有工作流运行记录。",
-      workflowRuns: "工作流运行"
+      workflowRuns: "工作流运行",
     },
     documentsView: {
+      dataSources: {
+        title: "数据源",
+        description: "管理当前知识库的持久化连接器身份、增量游标与最近同步状态。",
+        add: "添加网页源",
+        create: "创建数据源",
+        createTitle: "添加公网网页数据源",
+        refresh: "刷新",
+        empty: "当前知识库还没有连接持久化数据源。",
+        name: "数据源名称",
+        url: "公网 URL",
+        urlHint: "仅接受公网 HTTP(S) 页面；私网、本地、带凭证地址及不安全重定向会被阻止。",
+        sync: "立即同步",
+        syncing: "同步中...",
+        neverRun: "尚未执行同步",
+        runSummary: "{changed} 个变更 · {unchanged} 个未变 · {deleted} 个删除",
+        loadFailed: "数据源加载失败。",
+        createFailed: "数据源创建失败。",
+        syncFailed: "数据源同步启动失败。",
+        status: {
+          never_synced: "尚未同步",
+          syncing: "同步中",
+          completed: "已完成",
+          failed: "失败"
+        }
+      },
       documents: "文档",
       documentDetails: "文档详情",
       closeDocumentDetails: "关闭文档详情",
@@ -4045,9 +4553,12 @@ const zhCN = {
       needsAttentionDescription: "处理失败、需要人工介入的文档。",
       agentHandoff: "智能体交接",
       agentHandoffTitle: "{name} 已附着到当前文档工作面。",
-      groundedAgentDescription: "这个智能体依赖已索引知识进行回答，建议先在这里完成文档处理，再回到聊天完成带引用的知识问答。",
-      intakeAgentDescription: "这个智能体当前负责文档接入，适合把文档列表、失败队列和版本检查放在同一条操作线上完成。",
-      recoveryAgentDescription: "这个智能体当前负责失败恢复与重试，建议把失败队列和工作流监督配合使用，让恢复处理保持在同一条运营链路里。",
+      groundedAgentDescription:
+        "这个智能体依赖已索引知识进行回答，建议先在这里完成文档处理，再回到聊天完成带引用的知识问答。",
+      intakeAgentDescription:
+        "这个智能体当前负责文档接入，适合把文档列表、失败队列和版本检查放在同一条操作线上完成。",
+      recoveryAgentDescription:
+        "这个智能体当前负责失败恢复与重试，建议把失败队列和工作流监督配合使用，让恢复处理保持在同一条运营链路里。",
       agentScope: "作用域 {scope}",
       openChatSurface: "打开聊天",
       openWorkflowSurface: "打开工作流",
@@ -4055,7 +4566,8 @@ const zhCN = {
       emptyRegistryTitle: "当前知识库还没有登记任何文档。",
       emptyRegistryDescription:
         "先打开上下文控制上传第一份源文件，再回到这里查看分块、重试和检索就绪状态。",
-      recoveryStateTitle: "当前还有文档未恢复，先不要直接把这条链路交给知识问答。",
+      recoveryStateTitle:
+        "当前还有文档未恢复，先不要直接把这条链路交给知识问答。",
       recoveryStateDescription:
         "建议先把失败文档和关联工作流放在同一条操作线上处理完，再回到知识问答做最终验证。",
       monitoringStateTitle: "文档仍在接入或索引过程中，链路还没有完全收敛。",
@@ -4067,9 +4579,12 @@ const zhCN = {
       openContextControls: "打开上下文控制",
       uploadFollowUpBadge: "上传后续处理",
       uploadFollowUpTitle: "已接收 {title}",
-      uploadFollowUpReady: "这份文档已经进入可验证状态，建议直接去知识问答确认引用答案是否稳定。",
-      uploadFollowUpFailed: "这份文档的执行链出现阻塞，建议先查看工作流运行，再继续恢复处理。",
-      uploadFollowUpMonitoring: "这份文档的执行链仍在推进中，建议继续留在工作流监督面等待状态收敛。",
+      uploadFollowUpReady:
+        "这份文档已经进入可验证状态，建议直接去知识问答确认引用答案是否稳定。",
+      uploadFollowUpFailed:
+        "这份文档的执行链出现阻塞，建议先查看工作流运行，再继续恢复处理。",
+      uploadFollowUpMonitoring:
+        "这份文档的执行链仍在推进中，建议继续留在工作流监督面等待状态收敛。",
       uploadInspectRun: "查看上传运行",
       uploadOpenChat: "去知识问答验证",
       uploadOpenWorkflows: "去工作流监督",
@@ -4081,7 +4596,7 @@ const zhCN = {
       backToDocument: "返回文档详情",
       noDocumentActivity: "当前文档还没有活动记录。",
       noRelatedWorkflowRuns: "当前文档还没有关联工作流记录。",
-      relatedWorkflowRuns: "关联工作流运行"
+      relatedWorkflowRuns: "关联工作流运行",
     },
     workflowsView: {
       workflowRuns: "工作流运行",
@@ -4104,9 +4619,12 @@ const zhCN = {
       failedDescription: "仍需人工处理或重试的运行。",
       agentHandoff: "智能体交接",
       agentHandoffTitle: "{name} 已附着到当前工作流工作面。",
-      groundedAgentDescription: "这个智能体主要面向知识问答，当回答质量依赖文档接入健康度时，可以先在这里处理工作流，再回到聊天。",
-      intakeAgentDescription: "这个智能体主要面向文档接入，适合在这里跟踪接入进度、检查失败运行，并确认文档已经准备好交接。",
-      recoveryAgentDescription: "这个智能体主要面向恢复处理，适合留在这里清理失败运行、跟踪重试，并把工作区恢复到健康状态。",
+      groundedAgentDescription:
+        "这个智能体主要面向知识问答，当回答质量依赖文档接入健康度时，可以先在这里处理工作流，再回到聊天。",
+      intakeAgentDescription:
+        "这个智能体主要面向文档接入，适合在这里跟踪接入进度、检查失败运行，并确认文档已经准备好交接。",
+      recoveryAgentDescription:
+        "这个智能体主要面向恢复处理，适合留在这里清理失败运行、跟踪重试，并把工作区恢复到健康状态。",
       agentScope: "作用域 {scope}",
       openChatSurface: "打开聊天",
       failureLane: "失败队列",
@@ -4127,7 +4645,8 @@ const zhCN = {
       openDocuments: "打开文档",
       openContextControls: "打开上下文控制",
       emptyQueueTitle: "当前范围内还没有任何工作流运行。",
-      emptyQueueDescription: "先从文档接入开始。只要上传、索引或重试开始流转，工作流监督就会立即变得有意义。",
+      emptyQueueDescription:
+        "先从文档接入开始。只要上传、索引或重试开始流转，工作流监督就会立即变得有意义。",
       recoveryStateTitle: "当前范围的首要任务是把失败工作流先收口。",
       recoveryStateDescription:
         "这里还有失败、取消或需要重试的运行。先清理恢复队列，再回到文档或知识问答继续主链路。",
@@ -4135,14 +4654,16 @@ const zhCN = {
       monitoringStateDescription:
         "建议先保持在优先队列或工作流时间线上，等执行稳定后，再进入文档复核或聊天验证。",
       healthyQueueTitle: "当前工作流链路整体稳定。",
-      healthyQueueDescription: "当前范围没有失败或活跃阻塞项，可以继续去聊天验证知识回答，或者回到文档面复核来源。",
+      healthyQueueDescription:
+        "当前范围没有失败或活跃阻塞项，可以继续去聊天验证知识回答，或者回到文档面复核来源。",
       selectWorkflowToInspect: "选择一个工作流运行以查看时间线。",
-      retryHelp: "只有当前知识库中仍然有效的失败文档接入运行，才允许重试。"
+      retryHelp: "只有当前知识库中仍然有效的失败文档接入运行，才允许重试。",
     },
     sidebar: {
       closeContextControls: "关闭上下文控制",
       contextControls: "上下文控制",
-      contextControlsDescription: "在同一个抽屉里管理租户、工作区、知识库和文档接入操作。",
+      contextControlsDescription:
+        "在同一个抽屉里管理租户、工作区、知识库和文档接入操作。",
       loadingTenant: "正在加载租户",
       waitingTenantScope: "等待租户作用域",
       loadingWorkspace: "正在加载工作区",
@@ -4169,7 +4690,8 @@ const zhCN = {
       publish: "发布",
       documentIngestion: "文档接入",
       supportedFormats: "TXT / MD / HTML / CSV / JSON / PDF / DOCX / XLSX",
-      chooseFile: "选择一个文本、Markdown、HTML、CSV、JSON、PDF、DOCX 或 XLSX 文件进行索引",
+      chooseFile:
+        "选择一个文本、Markdown、HTML、CSV、JSON、PDF、DOCX 或 XLSX 文件进行索引",
       indexingDocument: "文档索引中...",
       uploadAndIndex: "上传并索引",
       webImportTitle: "单页网页导入",
@@ -4194,7 +4716,8 @@ const zhCN = {
         tenantNamePlaceholder: "租户名称",
         tenantSlugPlaceholder: "tenant-slug",
         saveTenant: "保存租户",
-        tenantCreateDescription: "通过聚焦弹窗创建新的租户范围，而不是把抽屉继续展开。",
+        tenantCreateDescription:
+          "通过聚焦弹窗创建新的租户范围，而不是把抽屉继续展开。",
         tenantCreateTitle: "新建租户",
         createTenant: "创建租户",
         workspaceEditDescription: "在弹窗里编辑工作区资料，保持抽屉区域可读。",
@@ -4208,10 +4731,12 @@ const zhCN = {
         workspaceSlugPlaceholder: "workspace-slug",
         workspaceDescriptionPlaceholder: "工作区描述",
         saveWorkspace: "保存工作区",
-        workspaceCreateDescription: "通过独立弹窗创建工作区，避免挤占周边控制区域。",
+        workspaceCreateDescription:
+          "通过独立弹窗创建工作区，避免挤占周边控制区域。",
         workspaceCreateTitle: "新建工作区",
         createWorkspace: "创建工作区",
-        knowledgeBaseEditDescription: "在不把抽屉其他内容挤出视野的情况下编辑知识库。",
+        knowledgeBaseEditDescription:
+          "在不把抽屉其他内容挤出视野的情况下编辑知识库。",
         knowledgeBaseEditTitle: "编辑知识库",
         knowledgeBaseName: "知识库名称",
         knowledgeBaseSlug: "知识库标识",
@@ -4219,7 +4744,8 @@ const zhCN = {
         knowledgeBaseDescription: "知识库描述",
         knowledgeBaseDescriptionHint: "会显示在运营范围摘要和治理列表中。",
         knowledgeBaseRetrievalProfile: "检索策略",
-        knowledgeBaseRetrievalProfileHint: "把当前知识库绑定到一套正式检索策略，供对话、诊断和智能体执行共同复用。",
+        knowledgeBaseRetrievalProfileHint:
+          "把当前知识库绑定到一套正式检索策略，供对话、诊断和智能体执行共同复用。",
         knowledgeBaseRetrievalProfileDefault: "默认检索策略",
         knowledgeBaseNamePlaceholder: "知识库名称",
         knowledgeBaseSlugPlaceholder: "knowledge-base-slug",
@@ -4227,8 +4753,8 @@ const zhCN = {
         saveKnowledgeBase: "保存知识库",
         knowledgeBaseCreateDescription: "通过聚焦弹窗流程创建新的知识库。",
         knowledgeBaseCreateTitle: "新建知识库",
-        createKnowledgeBase: "创建知识库"
-      }
+        createKnowledgeBase: "创建知识库",
+      },
     },
     registry: {
       title: "文档列表",
@@ -4279,12 +4805,13 @@ const zhCN = {
       noVersionYet: "还没有版本",
       workflowFallback: "工作流",
       noWorkflowRecorded: "暂无工作流记录",
-      noDocumentsMatch: "当前筛选条件下没有匹配文档。"
+      noDocumentsMatch: "当前筛选条件下没有匹配文档。",
     },
     selectedDocument: {
       selectedDocument: "当前文档",
       recommendedAgents: "推荐智能体",
-      recommendedAgentsDescription: "根据当前文档状态，直接切换到更匹配的智能体上下文。",
+      recommendedAgentsDescription:
+        "根据当前文档状态，直接切换到更匹配的智能体上下文。",
       switchAgent: "切换智能体",
       activateInChat: "在对话中启用",
       activateInDocuments: "在文档中启用",
@@ -4325,11 +4852,14 @@ const zhCN = {
       noCompletedVersion: "还没有完成版本",
       awaitingSuccessfulIngestion: "等待成功接入",
       operatorNextStep: "下一步建议",
-      operatorNextStepDescription: "这份文档需要在失败队列或工作流监督里继续处理，才能回到健康的检索状态。",
+      operatorNextStepDescription:
+        "这份文档需要在失败队列或工作流监督里继续处理，才能回到健康的检索状态。",
       readyFollowUpTitle: "验证后续建议",
-      readyFollowUpDescription: "这份文档已经可以用于知识回答，下一步建议到对话中验证引用结果，同时保留工作流监督作为最终复核入口。",
+      readyFollowUpDescription:
+        "这份文档已经可以用于知识回答，下一步建议到对话中验证引用结果，同时保留工作流监督作为最终复核入口。",
       intakeFollowUpTitle: "接入后续建议",
-      intakeFollowUpDescription: "这份文档仍在接入或索引流转中，建议继续盯住最新运行，直到解析与工作流状态稳定。",
+      intakeFollowUpDescription:
+        "这份文档仍在接入或索引流转中，建议继续盯住最新运行，直到解析与工作流状态稳定。",
       continueInChat: "继续到对话",
       openFailedQueue: "打开失败队列",
       openWorkflowSupervision: "打开工作流监督",
@@ -4350,28 +4880,37 @@ const zhCN = {
       chunksAppearAfterIngestion: "接入完成后，这里会显示分块内容。",
       packet: {
         deletedState: "这份文档当前已被移出活动检索范围。",
-        deletedDescription: "先恢复这份文档，再把它送回知识问答或工作流验证链路。",
+        deletedDescription:
+          "先恢复这份文档，再把它送回知识问答或工作流验证链路。",
         failedState: "这份文档还需要恢复处理后，才能回到健康检索状态。",
-        failedDescription: "把当前文档送入失败处理链路，让重试、监督和源内容清理保持在同一条运营路径里。",
+        failedDescription:
+          "把当前文档送入失败处理链路，让重试、监督和源内容清理保持在同一条运营路径里。",
         readyState: "这份文档已经具备检索就绪状态，可用于带引用回答。",
-        readyDescription: "当前文档已经完成接入和索引，可以继续交接到对话或下游验证页面。",
+        readyDescription:
+          "当前文档已经完成接入和索引，可以继续交接到对话或下游验证页面。",
         intakeState: "这份文档仍在接入与索引链路中流转。",
-        intakeDescription: "在解析、索引和关联工作流稳定前，先把当前文档留在接入操作面持续跟进。"
-      }
+        intakeDescription:
+          "在解析、索引和关联工作流稳定前，先把当前文档留在接入操作面持续跟进。",
+      },
     },
     documentActionSummary: {
       summarySuffix: "结果摘要",
-      successLine: "{requestedCount} 个文档中已有 {successCount} 个{actionResult}。",
-      failureLine: "{failureCount} 个文档失败，仍保留在当前选择中等待后续处理。",
+      successLine:
+        "{requestedCount} 个文档中已有 {successCount} 个{actionResult}。",
+      failureLine:
+        "{failureCount} 个文档失败，仍保留在当前选择中等待后续处理。",
       allSucceeded: "所请求的文档操作已全部成功完成。",
       followUpRequired: "待继续处理",
       hiddenFailures: "还有 {count} 个失败文档保留在当前选择中，等待复核。",
       workflowFollowUp: "工作流后续处理",
-      workflowGuidance: "重新索引请求已经通过工作流监督进入队列，可前往工作流视图查看重试、运行步骤和最终完成状态。",
+      workflowGuidance:
+        "重新索引请求已经通过工作流监督进入队列，可前往工作流视图查看重试、运行步骤和最终完成状态。",
       chatFollowUp: "知识问答后续处理",
-      chatGuidance: "当刷新后的文档恢复健康后，可以回到知识问答中验证新的索引证据是否已经能够稳定支撑带引用回答。",
+      chatGuidance:
+        "当刷新后的文档恢复健康后，可以回到知识问答中验证新的索引证据是否已经能够稳定支撑带引用回答。",
       restoreFollowUp: "恢复后续处理",
-      restoreGuidance: "这份文档已经重新回到活动知识库范围，下一步建议重跑原始问题，确认引用是否重新稳定。",
+      restoreGuidance:
+        "这份文档已经重新回到活动知识库范围，下一步建议重跑原始问题，确认引用是否重新稳定。",
       inspectWorkflowRun: "查看工作流运行",
       openWorkflowSupervision: "打开工作流监督",
       openGroundedChat: "打开知识问答",
@@ -4382,12 +4921,13 @@ const zhCN = {
       failed: "失败数",
       deleted: "删除",
       restored: "恢复",
-      queuedForReindex: "加入重建索引队列"
+      queuedForReindex: "加入重建索引队列",
     },
     selectedWorkflow: {
       selectedWorkflowRun: "当前工作流运行",
       recommendedAgents: "推荐智能体",
-      recommendedAgentsDescription: "根据当前工作流状态，把执行链路切到更匹配的智能体上下文。",
+      recommendedAgentsDescription:
+        "根据当前工作流状态，把执行链路切到更匹配的智能体上下文。",
       switchAgent: "切换智能体",
       activateInChat: "在对话中启用",
       activateInDocuments: "在文档中启用",
@@ -4400,14 +4940,18 @@ const zhCN = {
       continueInChat: "继续到对话",
       continueInDocuments: "继续到文档",
       failedFollowUpTitle: "恢复处理建议",
-      failedFollowUpDescription: "这条运行仍需要人工介入。建议先查看失败队列、检查源文档，再在阻塞原因处理后发起重试。",
+      failedFollowUpDescription:
+        "这条运行仍需要人工介入。建议先查看失败队列、检查源文档，再在阻塞原因处理后发起重试。",
       activeFollowUpTitle: "执行跟进建议",
-      activeFollowUpDescription: "这条运行仍在执行链路中流转。建议留在工作流监督中继续观察排队、重试和下游就绪情况。",
+      activeFollowUpDescription:
+        "这条运行仍在执行链路中流转。建议留在工作流监督中继续观察排队、重试和下游就绪情况。",
       completedFollowUpTitle: "下游交接建议",
-      completedFollowUpDescription: "这条运行已经完成，可以继续进入知识问答或文档操作，验证当前作用域中哪些内容已经可被检索使用。",
+      completedFollowUpDescription:
+        "这条运行已经完成，可以继续进入知识问答或文档操作，验证当前作用域中哪些内容已经可被检索使用。",
       checkingRetry: "检查重试条件中...",
       cancelledFollowUpTitle: "取消后跟进建议",
-      cancelledFollowUpDescription: "这条运行已在完成前被取消。请先复核源对象范围和运行上下文，再决定是否重新发起接入。",
+      cancelledFollowUpDescription:
+        "这条运行已在完成前被取消。请先复核源对象范围和运行上下文，再决定是否重新发起接入。",
       cancellingRun: "取消中...",
       cancelRun: "取消运行",
       retryRun: "重试运行",
@@ -4438,7 +4982,7 @@ const zhCN = {
         latestFailedStep: "最近失败步骤",
         latestActiveStep: "最近活跃步骤",
         latestCompletedStep: "最近完成步骤",
-        highestAttemptStep: "最高重试步骤"
+        highestAttemptStep: "最高重试步骤",
       },
       unbound: "未绑定",
       notStarted: "未开始",
@@ -4449,8 +4993,10 @@ const zhCN = {
       completedValue: "完成于 {value}",
       workflowInput: "工作流输入",
       operatorNotes: "运营备注",
-      operatorNotesDescription: "把这条运行的人工判断、重试护栏或源范围结论沉淀在这里，方便后续继续接手。",
-      operatorNotesPlaceholder: "为这条工作流运行补充一条可持续复用的运营备注...",
+      operatorNotesDescription:
+        "把这条运行的人工判断、重试护栏或源范围结论沉淀在这里，方便后续继续接手。",
+      operatorNotesPlaceholder:
+        "为这条工作流运行补充一条可持续复用的运营备注...",
       operatorNotesEmpty: "当前这条工作流运行还没有保存运营备注。",
       operatorNotesSaved: "当前运营备注已绑定到这条工作流运行。",
       saveOperatorNotes: "保存备注",
@@ -4468,7 +5014,7 @@ const zhCN = {
           indexingFailure: "失败主要集中在索引写入或检索写回阶段。",
           runtimeTimeout: "这条工作流更像是被运行时超时阻塞了。",
           runtimeCapacity: "这条工作流更像是被模型或服务容量压力阻塞了。",
-          unknown: "这条失败需要人工继续检查工作流细节。"
+          unknown: "这条失败需要人工继续检查工作流细节。",
         },
         actions: {
           reviewDocumentSource: "检查文档来源",
@@ -4476,8 +5022,8 @@ const zhCN = {
           reviewRuntime: "检查运行时健康",
           reviewIndexing: "检查索引链路",
           retryWhenReady: "待运行时恢复后重试",
-          inspectWorkflow: "检查工作流详情"
-        }
+          inspectWorkflow: "检查工作流详情",
+        },
       },
       events: {
         title: "恢复事件",
@@ -4496,25 +5042,29 @@ const zhCN = {
         cancelRequestedFallback: "这条工作流运行已被人工取消。",
         operatorNotesUpdated: "已更新运营备注",
         operatorNotesUpdatedDetail: "最新备注：{value}",
-        operatorNotesUpdatedFallback: "这条工作流运行的运营备注已更新。"
+        operatorNotesUpdatedFallback: "这条工作流运行的运营备注已更新。",
       },
       packet: {
         pendingState: "当前还没有附着可执行的工作流状态。",
         pendingDescription: "先选择一个工作流运行，再组装正式的执行交接包。",
         failedState: "这条运行还需要人工介入后，恢复处理才能继续。",
-        failedDescription: "先把失败运行留在恢复链路中，等阻塞原因清理完，再决定下一条重试路径。",
+        failedDescription:
+          "先把失败运行留在恢复链路中，等阻塞原因清理完，再决定下一条重试路径。",
         activeState: "这条运行仍在执行链路中推进。",
-        activeDescription: "在队列推进、重试衍生和下游就绪仍未收口前，继续留在工作流监督面跟进。",
+        activeDescription:
+          "在队列推进、重试衍生和下游就绪仍未收口前，继续留在工作流监督面跟进。",
         completedState: "这条运行已经完成，可以继续向下游交接。",
-        completedDescription: "继续进入对话或文档验证页面，确认当前范围内哪些内容已经真正可用。",
+        completedDescription:
+          "继续进入对话或文档验证页面，确认当前范围内哪些内容已经真正可用。",
         cancelledState: "这条运行已经取消，接下来需要做一次干净的恢复复核。",
-        cancelledDescription: "先检查源对象范围和运行上下文，再决定是重新发起接入还是保持关闭。"
-      }
+        cancelledDescription:
+          "先检查源对象范围和运行上下文，再决定是重新发起接入还是保持关闭。",
+      },
     },
     recentWorkflowRuns: {
       title: "最近工作流运行",
       operatorNotes: "运营备注",
-      workflowFallback: "工作流"
+      workflowFallback: "工作流",
     },
     workflowTimeline: {
       title: "工作流时间线",
@@ -4547,7 +5097,7 @@ const zhCN = {
       notAvailable: "暂无",
       retryOf: "重试自 {id}",
       completedMarker: "已完成",
-      noRunsMatch: "当前筛选条件下没有匹配工作流。"
+      noRunsMatch: "当前筛选条件下没有匹配工作流。",
     },
     documentActivity: {
       title: "文档活动",
@@ -4562,13 +5112,14 @@ const zhCN = {
       workflowFailed: "工作流执行失败",
       workflowCancelled: "工作流已取消",
       retryOf: "重试自 {id}",
-      versionSnapshot: "v{version} · {parser} · {chunkCount} 个分块 · {tokenCount} 词元",
+      versionSnapshot:
+        "v{version} · {parser} · {chunkCount} 个分块 · {tokenCount} 词元",
       versions: "版本数",
       workflowRuns: "工作流数",
       retryRuns: "重试数",
-      failedEvents: "失败事件"
-    }
-  }
+      failedEvents: "失败事件",
+    },
+  },
 } as const;
 
 export default zhCN;

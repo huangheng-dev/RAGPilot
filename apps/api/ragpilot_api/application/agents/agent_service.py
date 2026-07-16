@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from ragpilot_api.application.errors import ResourceNotFoundError
+from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.contracts.http.agent_contracts import (
     AgentDefinitionCreateRequest,
     AgentDefinitionMetricsResponse,
@@ -11,6 +11,7 @@ from ragpilot_api.infrastructure.database.models import AgentDefinition
 from ragpilot_api.infrastructure.database.repositories.agent_repository import AgentRepository
 from ragpilot_api.infrastructure.database.repositories.model_endpoint_repository import ModelEndpointRepository
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
+from ragpilot_api.application.system.runtime_readiness import build_runtime_readiness_snapshot
 
 
 class AgentService:
@@ -25,6 +26,12 @@ class AgentService:
         self.tool_registration_repository = tool_registration_repository
 
     async def create_agent_definition(self, request: AgentDefinitionCreateRequest) -> AgentDefinitionResponse:
+        validate_agent_runtime_policy(
+            mode=request.mode,
+            status=request.status,
+            runtime_engine=request.runtime_engine,
+            runtime_version=request.runtime_version,
+        )
         await self._validate_governance_bindings(
             model_endpoint_id=request.model_endpoint_id,
             tool_registration_ids=request.tool_registration_ids,
@@ -35,6 +42,8 @@ class AgentService:
             slug=request.slug,
             mode=request.mode,
             status=request.status,
+            runtime_engine=request.runtime_engine,
+            runtime_version=request.runtime_version,
             model_strategy=request.model_strategy,
             model_endpoint_id=request.model_endpoint_id,
             objective=request.objective,
@@ -68,6 +77,24 @@ class AgentService:
         tenant_id: UUID,
         request: AgentDefinitionUpdateRequest,
     ) -> AgentDefinitionResponse | None:
+        existing_agent_definition = await self.agent_repository.get_agent_definition(
+            agent_definition_id=agent_definition_id,
+            tenant_id=tenant_id,
+        )
+        if existing_agent_definition is None:
+            return None
+        runtime_engine = request.runtime_engine or getattr(
+            existing_agent_definition, "runtime_engine", "native"
+        )
+        runtime_version = request.runtime_version or getattr(
+            existing_agent_definition, "runtime_version", "native_v1"
+        )
+        validate_agent_runtime_policy(
+            mode=request.mode,
+            status=request.status,
+            runtime_engine=runtime_engine,
+            runtime_version=runtime_version,
+        )
         await self._validate_governance_bindings(
             model_endpoint_id=request.model_endpoint_id,
             tool_registration_ids=request.tool_registration_ids,
@@ -79,6 +106,8 @@ class AgentService:
             slug=request.slug,
             mode=request.mode,
             status=request.status,
+            runtime_engine=runtime_engine,
+            runtime_version=runtime_version,
             model_strategy=request.model_strategy,
             model_endpoint_id=request.model_endpoint_id,
             objective=request.objective,
@@ -146,6 +175,8 @@ def build_agent_definition_response(agent_definition: AgentDefinition) -> AgentD
         slug=agent_definition.slug,
         mode=agent_definition.agent_mode,
         status=agent_definition.agent_status,
+        runtime_engine=getattr(agent_definition, "runtime_engine", "native"),
+        runtime_version=getattr(agent_definition, "runtime_version", "native_v1"),
         model_strategy=agent_definition.model_strategy,
         model_endpoint_id=agent_definition.model_endpoint_id,
         objective=agent_definition.objective,
@@ -156,3 +187,30 @@ def build_agent_definition_response(agent_definition: AgentDefinition) -> AgentD
         created_at=agent_definition.created_at,
         updated_at=agent_definition.updated_at,
     )
+
+
+def validate_agent_runtime_policy(
+    *, mode: str, status: str, runtime_engine: str, runtime_version: str
+) -> None:
+    supported_versions = {
+        "native": "native_v1",
+        "langgraph_pilot": "langgraph_v1",
+    }
+    expected_version = supported_versions.get(runtime_engine)
+    if expected_version is None or runtime_version != expected_version:
+        raise ResourceConflictError(
+            f"Runtime engine '{runtime_engine}' requires runtime version "
+            f"'{expected_version or 'a supported version'}'."
+        )
+    if runtime_engine == "langgraph_pilot" and mode not in {"document_intake", "workflow_recovery"}:
+        raise ResourceConflictError(
+            "LangGraph runtime is currently supported only for document intake and workflow recovery agents."
+        )
+    if (
+        runtime_engine == "langgraph_pilot"
+        and status == "active"
+        and not build_runtime_readiness_snapshot().langgraph_pilot_ready
+    ):
+        raise ResourceConflictError(
+            "Install the LangGraph Agent deployment profile before activating this agent."
+        )

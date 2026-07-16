@@ -71,7 +71,11 @@ async def retrieve_chunks(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant and knowledge base scope do not match.",
         )
-    return await build_retrieval_service(session).retrieve_chunks(request)
+    return await build_retrieval_service(session).retrieve_chunks(
+        request,
+        principal_user_id=actor.user_id,
+        acl_bypass=actor.role in {"super_admin", "reviewer"},
+    )
 
 
 @router.post("/compare", response_model=RetrievalCompareResponse, status_code=status.HTTP_200_OK)
@@ -97,7 +101,11 @@ async def compare_retrieval_engines(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant and knowledge base scope do not match.",
         )
-    return await build_retrieval_service(session).compare_chunks(request)
+    return await build_retrieval_service(session).compare_chunks(
+        request,
+        principal_user_id=actor.user_id,
+        acl_bypass=actor.role in {"super_admin", "reviewer"},
+    )
 
 
 @router.post("/evaluations", response_model=RetrievalEvaluationResponse, status_code=status.HTTP_201_CREATED)

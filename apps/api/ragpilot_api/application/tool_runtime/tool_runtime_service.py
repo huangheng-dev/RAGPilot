@@ -17,6 +17,8 @@ from ragpilot_api.presentation.http.request_actor import RequestActor
 from ragpilot_api.shared.settings import Settings
 from ragpilot_api.infrastructure.mcp.client import McpProtocolError, McpStreamableHttpClient
 from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import resolve_mcp_connector_environment_secret
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.observability import inject_trace_headers, traced
 
 
 class ToolRuntimeService:
@@ -28,6 +30,7 @@ class ToolRuntimeService:
         workflow_repository: WorkflowRepository,
         settings: Settings | None = None,
         mcp_connector_repository: McpConnectorRepository | None = None,
+        runtime_credential_service: RuntimeCredentialService | None = None,
     ) -> None:
         self.tool_registration_repository = tool_registration_repository
         self.conversation_repository = conversation_repository
@@ -35,7 +38,9 @@ class ToolRuntimeService:
         self.workflow_repository = workflow_repository
         self.settings = settings
         self.mcp_connector_repository = mcp_connector_repository
+        self.runtime_credential_service = runtime_credential_service
 
+    @traced("agent.tools.execute_bound")
     async def execute_bound_tools(
         self,
         *,
@@ -45,9 +50,16 @@ class ToolRuntimeService:
         knowledge_base_id: UUID | None,
         execution_input: str | None,
         actor: RequestActor,
+        approved_tool_registration_ids: set[UUID] | None = None,
+        allowed_tool_registration_ids: list[str] | None = None,
     ) -> ToolRuntimeSummaryResponse:
         traces: list[ToolInvocationResponse] = []
-        for tool_registration_id in agent_definition.tool_registration_ids_json or []:
+        tool_registration_ids = (
+            allowed_tool_registration_ids
+            if allowed_tool_registration_ids is not None
+            else list(agent_definition.tool_registration_ids_json or [])
+        )
+        for tool_registration_id in tool_registration_ids:
             traces.append(
                 await self._execute_tool_registration(
                     tool_registration_id=UUID(tool_registration_id),
@@ -56,6 +68,7 @@ class ToolRuntimeService:
                     knowledge_base_id=knowledge_base_id,
                     execution_input=execution_input,
                     actor=actor,
+                    approval_granted=UUID(tool_registration_id) in (approved_tool_registration_ids or set()),
                 )
             )
         return build_tool_runtime_summary(traces)
@@ -79,6 +92,7 @@ class ToolRuntimeService:
             actor=actor,
         )
 
+    @traced("tool.invoke.governed")
     async def _execute_tool_registration(
         self,
         *,
@@ -88,6 +102,7 @@ class ToolRuntimeService:
         knowledge_base_id: UUID | None,
         execution_input: str | None,
         actor: RequestActor,
+        approval_granted: bool = False,
     ) -> ToolInvocationResponse:
         tool_registration = await self.tool_registration_repository.get_tool_registration(
             tool_registration_id=tool_registration_id
@@ -102,7 +117,7 @@ class ToolRuntimeService:
                 summary="Tool registration is disabled and cannot be invoked.",
             )
 
-        if tool_registration.requires_admin_approval and actor.role != "super_admin":
+        if tool_registration.requires_admin_approval and actor.role != "super_admin" and not approval_granted:
             return build_tool_trace(
                 tool_registration,
                 invocation_status="blocked",
@@ -128,7 +143,7 @@ class ToolRuntimeService:
                 actor=actor,
             )
 
-        if tool_registration.requires_admin_approval:
+        if tool_registration.requires_admin_approval and not approval_granted:
             return build_tool_trace(
                 tool_registration,
                 invocation_status="reserved",
@@ -172,6 +187,7 @@ class ToolRuntimeService:
             },
         )
 
+    @traced("tool.invoke.mcp")
     async def _execute_mcp_tool(
         self,
         *,
@@ -185,22 +201,30 @@ class ToolRuntimeService:
         connector = await self.mcp_connector_repository.get_mcp_connector_by_slug(
             connector_slug=connector_reference,
         )
-        if connector is None or not connector.is_enabled or not connector.base_url:
+        if (connector is None or not connector.is_enabled or not connector.base_url
+                or getattr(connector, "governance_status", "approved") != "approved"):
             return build_tool_trace(
                 tool_registration,
                 invocation_status="unavailable",
                 governance_issue="mcp_integration_pending",
-                summary="The configured MCP connector is missing, disabled, or has no runtime URL.",
+                summary="The configured MCP connector is missing, disabled, unapproved, or has no runtime URL.",
                 response_metadata={"connector_reference": connector_reference, "connector_attached": False},
             )
 
         client = McpStreamableHttpClient(
             base_url=connector.base_url,
-            bearer_token=resolve_mcp_connector_environment_secret(connector.credential_key_hint),
+            bearer_token=await self._resolve_mcp_credential(connector),
             timeout_seconds=float(self._resolve_request_timeout_seconds()),
+            concurrency_limit=int(getattr(self.settings, "mcp_runtime_concurrency_limit", 16)),
+            requests_per_minute=int(getattr(self.settings, "mcp_runtime_requests_per_minute", 240)),
+            max_attempts=int(getattr(self.settings, "mcp_runtime_max_attempts", 2)),
+            retry_backoff_seconds=float(getattr(self.settings, "mcp_runtime_retry_backoff_seconds", 0.25)),
+            redis_url=getattr(self.settings, "redis_url", None),
+            redis_failure_mode=getattr(self.settings, "runtime_limit_redis_failure_mode", "local_fallback"),
+            concurrency_lease_seconds=float(getattr(self.settings, "runtime_limit_concurrency_lease_seconds", 300)),
         )
         try:
-            await client.initialize()
+            initialization = await client.initialize()
             tools = await client.list_tools()
             available_names = {
                 str(tool.get("name"))
@@ -265,19 +289,8 @@ class ToolRuntimeService:
                     },
                 )
 
-            max_attempts = self._resolve_max_attempts()
-            result = None
-            last_error: Exception | None = None
-            for attempt_count in range(1, max_attempts + 1):
-                try:
-                    result = await client.call_tool(name=requested_name, arguments=arguments)
-                    break
-                except (httpx.HTTPError, McpProtocolError) as error:
-                    last_error = error
-                    if attempt_count >= max_attempts:
-                        raise
-            if result is None:
-                raise McpProtocolError(str(last_error or "MCP tool invocation returned no result."))
+            result = await client.call_tool(name=requested_name, arguments=arguments)
+            attempt_count = 1
         except (httpx.HTTPError, McpProtocolError) as error:
             return build_tool_trace(
                 tool_registration,
@@ -301,8 +314,10 @@ class ToolRuntimeService:
             capability_results={"mcp_result": result},
             response_metadata={
                 "connector_reference": connector_reference,
+                "connector_id": str(connector.id),
                 "connector_attached": True,
                 "mcp_session_id": session_id,
+                "protocol_version": initialization.protocol_version,
                 "tool_name": requested_name,
                 "tool_name_source": "capability_mapping" if explicit_tool_name else "registration_slug",
                 "argument_keys": sorted(arguments),
@@ -438,6 +453,7 @@ class ToolRuntimeService:
             capability_results=capability_results,
         )
 
+    @traced("tool.invoke.http")
     async def _execute_http_tool(
         self,
         *,
@@ -487,7 +503,10 @@ class ToolRuntimeService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=request_timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=request_timeout_seconds,
+                headers=inject_trace_headers(),
+            ) as client:
                 for attempt_count in range(1, max_attempts + 1):
                     try:
                         response = await client.post(tool_registration.endpoint_url, json=request_payload)
@@ -579,6 +598,17 @@ class ToolRuntimeService:
                 },
                 error_message=str(error),
             )
+
+    async def _resolve_mcp_credential(self, connector) -> str | None:
+        if connector.auth_mode == "managed_encrypted":
+            if self.runtime_credential_service is None:
+                return None
+            return await self.runtime_credential_service.resolve(
+                resource_type="mcp_connector", resource_id=connector.id,
+            )
+        if connector.auth_mode == "environment":
+            return resolve_mcp_connector_environment_secret(connector.credential_key_hint)
+        return None
 
     def _resolve_request_timeout_seconds(self) -> int:
         if self.settings is None:
@@ -677,3 +707,4 @@ def build_tool_runtime_summary(traces: list[ToolInvocationResponse]) -> ToolRunt
         skipped_tools=sum(1 for trace in traces if trace.invocation_status == "skipped"),
         traces=traces,
     )
+from ragpilot_api.infrastructure.observability import inject_trace_headers

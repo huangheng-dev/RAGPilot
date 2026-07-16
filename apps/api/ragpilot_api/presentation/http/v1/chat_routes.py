@@ -1,7 +1,11 @@
+import asyncio
+import contextlib
+import json
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ragpilot_api.application.chat.chat_service import ChatService
@@ -36,6 +40,9 @@ from ragpilot_api.presentation.http.request_actor import (
     require_actor_tenant_access,
 )
 from ragpilot_api.shared.settings import get_settings
+from ragpilot_api.application.model_gateway.runtime_binding_resolver import RuntimeBindingResolver
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.database.repositories.runtime_credential_repository import RuntimeCredentialRepository
 
 
 router = APIRouter()
@@ -52,6 +59,10 @@ def build_chat_service(session: AsyncSession) -> ChatService:
         knowledge_base_repository=KnowledgeBaseRepository(session),
         retrieval_profile_repository=RetrievalProfileRepository(session),
         retrieval_evaluation_repository=RetrievalEvaluationRepository(session),
+        runtime_binding_resolver=RuntimeBindingResolver(
+            ModelEndpointRepository(session), get_settings(),
+            RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
+        ),
     )
 
 
@@ -88,7 +99,8 @@ async def ask_question(
     require_actor_tenant_access(actor, request.tenant_id)
     try:
         return await build_chat_service(session).ask_question(
-            request.model_copy(update={"created_by_user_id": actor.user_id})
+            request.model_copy(update={"created_by_user_id": actor.user_id}),
+            retrieval_acl_bypass=actor.role in {"super_admin", "reviewer"},
         )
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
@@ -104,6 +116,66 @@ async def ask_question(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The configured chat model is currently unavailable.",
         ) from error
+
+
+@router.post("/messages/stream", response_class=StreamingResponse)
+async def stream_question(
+    request_body: ChatAskRequest,
+    http_request: Request,
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> StreamingResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "send_chat_messages", RolePermissionRepository(session))
+    require_actor_tenant_access(actor, request_body.tenant_id)
+    service = build_chat_service(session)
+    scoped_request = request_body.model_copy(update={"created_by_user_id": actor.user_id})
+
+    async def events():
+        yield _sse("start", {"conversation_id": str(request_body.conversation_id) if request_body.conversation_id else None})
+        deltas: asyncio.Queue[str] = asyncio.Queue()
+        response_task = asyncio.create_task(service.ask_question(
+            scoped_request,
+            on_delta=deltas.put,
+            retrieval_acl_bypass=actor.role in {"super_admin", "reviewer"},
+        ))
+        try:
+            while not response_task.done() or not deltas.empty():
+                if await http_request.is_disconnected():
+                    response_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await response_task
+                    return
+                try:
+                    delta = await asyncio.wait_for(deltas.get(), timeout=0.1)
+                except TimeoutError:
+                    continue
+                yield _sse("delta", {"content": delta})
+            response = await response_task
+            yield _sse("complete", response.model_dump(mode="json"))
+        except ResourceNotFoundError as error:
+            yield _sse("error", {"status": 404, "detail": str(error)})
+        except ResourceConflictError as error:
+            yield _sse("error", {"status": 409, "detail": str(error)})
+        except httpx.ReadTimeout:
+            yield _sse("error", {"status": 504, "detail": "The configured chat model did not respond before the request timeout."})
+        except httpx.RequestError:
+            yield _sse("error", {"status": 503, "detail": "The configured chat model is currently unavailable."})
+        finally:
+            if not response_task.done():
+                response_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await response_task
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
 @router.get("/conversations", response_model=list[ConversationResponse], status_code=status.HTTP_200_OK)

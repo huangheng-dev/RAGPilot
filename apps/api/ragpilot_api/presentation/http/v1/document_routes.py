@@ -21,6 +21,7 @@ from ragpilot_api.contracts.http.document_contracts import (
     WebPageImportRequest,
 )
 from ragpilot_api.infrastructure.database.repositories.document_repository import DocumentRepository
+from ragpilot_api.infrastructure.database.repositories.data_source_repository import DataSourceRepository
 from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
 from ragpilot_api.infrastructure.database.repositories.workflow_repository import WorkflowRepository
@@ -35,13 +36,27 @@ from ragpilot_api.presentation.http.request_actor import (
 
 
 router = APIRouter()
+DOCUMENT_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+DOCUMENT_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 
 
 def build_document_service(session: AsyncSession) -> DocumentService:
     return DocumentService(
         DocumentRepository(session),
         workflow_repository=WorkflowRepository(session),
+        data_source_repository=DataSourceRepository(session),
     )
+
+
+async def read_upload_with_limit(file: UploadFile) -> bytes:
+    content = bytearray()
+    while True:
+        chunk = await file.read(DOCUMENT_UPLOAD_READ_CHUNK_BYTES)
+        if not chunk:
+            return bytes(content)
+        if len(content) + len(chunk) > DOCUMENT_UPLOAD_MAX_BYTES:
+            raise ValueError("Document upload exceeds the 50 MB size limit.")
+        content.extend(chunk)
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -301,7 +316,7 @@ async def upload_document(
         )
         if resolved_tenant_id is not None and resolved_tenant_id != tenant_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant and knowledge base scope do not match.")
-        content = await file.read()
+        content = await read_upload_with_limit(file)
         return await build_document_service(session).upload_document(
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,

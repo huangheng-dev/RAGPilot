@@ -292,7 +292,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
       const directoryUser = authenticatedSession?.user;
       const authenticatedDirectorySession = authenticatedSession?.session;
 
-      if (!hasDirectoryUserShape(directoryUser) || !authenticatedDirectorySession?.session_token || !authenticatedDirectorySession?.expires_at) {
+      if (!hasDirectoryUserShape(directoryUser) || !authenticatedDirectorySession?.expires_at) {
         throw new Error(t("auth.errors.directorySyncFailed"));
       }
 
@@ -315,7 +315,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
         displayName: directoryUser.display_name,
         email: directoryUser.email,
         role: directoryUser.role,
-        sessionToken: authenticatedDirectorySession.session_token,
+        sessionToken: null,
         sessionExpiresAt: authenticatedDirectorySession.expires_at,
         lastSignedInAt: directoryUser.last_signed_in_at,
         memberships: directoryUser.memberships,
@@ -359,7 +359,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
       const activatedUser = authenticatedSession?.user;
       const activatedDirectorySession = authenticatedSession?.session;
 
-      if (!hasDirectoryUserShape(activatedUser) || !activatedDirectorySession?.session_token || !activatedDirectorySession?.expires_at) {
+      if (!hasDirectoryUserShape(activatedUser) || !activatedDirectorySession?.expires_at) {
         throw new Error(t("auth.errors.directorySyncFailed"));
       }
 
@@ -368,7 +368,7 @@ export function LoginPage({ defaultReturnTo = "/" }: LoginPageProps) {
         displayName: activatedUser.display_name,
         email: activatedUser.email,
         role: activatedUser.role,
-        sessionToken: activatedDirectorySession.session_token,
+        sessionToken: null,
         sessionExpiresAt: activatedDirectorySession.expires_at,
         lastSignedInAt: activatedUser.last_signed_in_at,
         memberships: activatedUser.memberships,

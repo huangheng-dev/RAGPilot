@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -15,7 +16,15 @@ from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository
 from ragpilot_api.infrastructure.database.repositories.retrieval_profile_repository import RetrievalProfileRepository
 from ragpilot_api.infrastructure.database.repositories.retrieval_repository import RetrievalRepository
 from ragpilot_api.infrastructure.embeddings import build_deterministic_embedding, format_vector_literal
+from ragpilot_api.infrastructure.search.elasticsearch_retrieval_repository import (
+    ElasticsearchRetrievalError,
+    ElasticsearchRetrievalRepository,
+)
 from ragpilot_api.shared.settings import Settings
+from ragpilot_api.application.retrieval.reranker import NativeReranker, run_reranker
+from ragpilot_api.application.retrieval.evidence_validator import validate_retrieval_evidence
+from ragpilot_api.application.retrieval.query_planner import build_retrieval_plan
+from opentelemetry import trace
 
 
 @dataclass(frozen=True)
@@ -28,6 +37,10 @@ class ResolvedRetrievalProfile:
     lexical_weight: float
     hybrid_overlap_bonus: float
     profile_source: str
+    engine_name: str = "native"
+    engine_version: str = "native_v1"
+    llamaindex_similarity_cutoff: float = 0.0
+    llamaindex_long_context_reorder_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,13 @@ class RetrievalExecutionOutcome:
     rerank_strategy: str | None
     rerank_window: int | None
     results: list[dict[str, Any]]
+    rerank_metadata: dict[str, Any] = field(default_factory=dict)
+    retrieval_plan_metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_validation_metadata: dict[str, Any] = field(default_factory=dict)
+    engine_name: str = "native"
+    engine_version: str = "native_v1"
+    llamaindex_similarity_cutoff: float = 0.0
+    llamaindex_long_context_reorder_enabled: bool = True
 
 
 async def execute_retrieval(
@@ -52,16 +72,20 @@ async def execute_retrieval(
     knowledge_base_id: UUID,
     query_text: str,
     requested_top_k: int,
+    principal_user_id: UUID | None = None,
+    acl_bypass: bool = False,
     knowledge_base_repository: KnowledgeBaseRepository | None = None,
     retrieval_profile_repository: RetrievalProfileRepository | None = None,
+    resolved_profile: ResolvedRetrievalProfile | None = None,
 ) -> RetrievalExecutionOutcome:
-    resolved_profile = await resolve_retrieval_profile(
-        knowledge_base_id=knowledge_base_id,
-        requested_top_k=requested_top_k,
-        settings=settings,
-        knowledge_base_repository=knowledge_base_repository,
-        retrieval_profile_repository=retrieval_profile_repository,
-    )
+    if resolved_profile is None:
+        resolved_profile = await resolve_retrieval_profile(
+            knowledge_base_id=knowledge_base_id,
+            requested_top_k=requested_top_k,
+            settings=settings,
+            knowledge_base_repository=knowledge_base_repository,
+            retrieval_profile_repository=retrieval_profile_repository,
+        )
     rerank_strategy = resolve_rerank_strategy(settings)
     rerank_window = (
         resolve_rerank_window(
@@ -71,46 +95,115 @@ async def execute_retrieval(
         if rerank_strategy is not None
         else None
     )
-    candidate_top_k = rerank_window or resolved_profile.top_k
+    retrieval_plan = build_retrieval_plan(
+        query_text=query_text,
+        retrieval_mode=resolved_profile.retrieval_mode,
+        top_k=resolved_profile.top_k,
+        rerank_window=rerank_window,
+        candidate_limit=int(getattr(settings, "retrieval_candidate_limit", 50)),
+    )
+    candidate_top_k = retrieval_plan.candidate_top_k
 
-    vector_rows: list[dict[str, Any]] = []
+    vector_task = None
     if resolved_profile.retrieval_mode in {"hybrid", "vector"}:
         query_embedding = build_deterministic_embedding(
             text=query_text,
             dimension=settings.retrieval_embedding_dimension,
         )
-        vector_rows = await retrieval_repository.search_vector_document_chunks(
+        vector_task = asyncio.create_task(retrieval_repository.search_vector_document_chunks(
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
             query_embedding=format_vector_literal(query_embedding),
             embedding_model=settings.retrieval_embedding_model,
             top_k=candidate_top_k,
-        )
+            principal_user_id=principal_user_id,
+            acl_bypass=acl_bypass,
+        ))
 
     lexical_rows: list[dict[str, Any]] = []
     normalized_query = normalize_query_text(query_text)
     query_terms = build_query_terms(query_text)
     if resolved_profile.retrieval_mode in {"hybrid", "lexical"} and query_terms:
-        lexical_rows = await retrieval_repository.search_lexical_document_chunks(
-            tenant_id=tenant_id,
-            knowledge_base_id=knowledge_base_id,
-            normalized_query=normalized_query,
-            query_terms_text=" ".join(query_terms),
-            top_k=candidate_top_k,
-        )
+        if bool(getattr(settings, "elasticsearch_retrieval_enabled", False)):
+            elasticsearch_repository = ElasticsearchRetrievalRepository(
+                base_url=getattr(settings, "elasticsearch_url", "http://elasticsearch:9200"),
+                read_alias=f"{getattr(settings, 'elasticsearch_index_prefix', 'ragpilot-document-chunks').rstrip('-')}-read",
+                timeout_seconds=float(getattr(settings, "elasticsearch_request_timeout_seconds", 5.0)),
+            )
+            try:
+                lexical_rows = await elasticsearch_repository.search_lexical_document_chunks(
+                    tenant_id=tenant_id,
+                    knowledge_base_id=knowledge_base_id,
+                    query_text=query_text,
+                    top_k=candidate_top_k,
+                )
+                if not acl_bypass and lexical_rows:
+                    # Elasticsearch is a rebuildable recall projection, not an
+                    # authorization source. Finish the shared-session vector query,
+                    # then re-authorize every ES candidate against PostgreSQL ACL truth.
+                    if vector_task is not None:
+                        await vector_task
+                    authorized_chunk_ids = await retrieval_repository.filter_authorized_document_chunk_ids(
+                        tenant_id=tenant_id,
+                        knowledge_base_id=knowledge_base_id,
+                        document_chunk_ids=[UUID(str(row["document_chunk_id"])) for row in lexical_rows],
+                        principal_user_id=principal_user_id,
+                        acl_bypass=False,
+                    )
+                    lexical_rows = [
+                        row for row in lexical_rows
+                        if UUID(str(row["document_chunk_id"])) in authorized_chunk_ids
+                    ]
+            except ElasticsearchRetrievalError:
+                # AsyncSession does not support concurrent PostgreSQL operations.
+                # Finish the vector query before using the PostgreSQL lexical fallback.
+                if vector_task is not None:
+                    await vector_task
+                lexical_rows = await _search_postgresql_lexical(
+                    retrieval_repository=retrieval_repository,
+                    tenant_id=tenant_id,
+                    knowledge_base_id=knowledge_base_id,
+                    normalized_query=normalized_query,
+                    query_terms=query_terms,
+                    top_k=candidate_top_k,
+                    principal_user_id=principal_user_id,
+                    acl_bypass=acl_bypass,
+                )
+        else:
+            # AsyncSession/asyncpg cannot run two PostgreSQL operations concurrently
+            # on the same connection. Complete vector search before the local lexical query.
+            if vector_task is not None:
+                await vector_task
+            lexical_rows = await _search_postgresql_lexical(
+                retrieval_repository=retrieval_repository,
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+                normalized_query=normalized_query,
+                query_terms=query_terms,
+                top_k=candidate_top_k,
+                principal_user_id=principal_user_id,
+                acl_bypass=acl_bypass,
+            )
 
-    results = merge_retrieval_results(
-        vector_rows=vector_rows,
-        lexical_rows=lexical_rows,
-        top_k=candidate_top_k,
-        retrieval_mode=resolved_profile.retrieval_mode,
-        vector_weight=resolved_profile.vector_weight,
-        lexical_weight=resolved_profile.lexical_weight,
-        hybrid_overlap_bonus=resolved_profile.hybrid_overlap_bonus,
-    )
+    vector_rows = await vector_task if vector_task is not None else []
+
+    with trace.get_tracer("ragpilot.api").start_as_current_span("retrieval.fusion") as fusion_span:
+        fusion_span.set_attribute("retrieval.vector_candidate_count", len(vector_rows))
+        fusion_span.set_attribute("retrieval.lexical_candidate_count", len(lexical_rows))
+        results = merge_retrieval_results(
+            vector_rows=vector_rows, lexical_rows=lexical_rows, top_k=candidate_top_k,
+            retrieval_mode=resolved_profile.retrieval_mode, vector_weight=resolved_profile.vector_weight,
+            lexical_weight=resolved_profile.lexical_weight, hybrid_overlap_bonus=resolved_profile.hybrid_overlap_bonus,
+            score_normalization_strategy=str(getattr(settings, "retrieval_score_normalization_strategy", "rank_percentile_v1")),
+        )
     rerank_applied = False
+    rerank_metadata: dict[str, Any] = {}
     if rerank_strategy is not None and rerank_window is not None:
-        results, rerank_applied = rerank_retrieval_results(
+        native_reranker = NativeReranker()
+        results, rerank_applied, rerank_metadata = await run_reranker(
+            reranker=native_reranker,
+            fallback=native_reranker,
+            timeout_seconds=float(getattr(settings, "retrieval_rerank_timeout_seconds", 2.0)),
             rows=results,
             query_text=query_text,
             top_k=resolved_profile.top_k,
@@ -119,17 +212,55 @@ async def execute_retrieval(
     else:
         results = results[: resolved_profile.top_k]
 
+    validation = validate_retrieval_evidence(
+        rows=results,
+        query_text=query_text,
+        minimum_term_coverage=float(getattr(settings, "retrieval_evidence_minimum_term_coverage", 0.05)),
+        minimum_vector_score=float(getattr(settings, "retrieval_evidence_minimum_vector_score", 0.72)),
+        enabled=bool(getattr(settings, "retrieval_evidence_validation_enabled", True)),
+    )
+    results = validation.rows
+
     return RetrievalExecutionOutcome(
         retrieval_profile_id=resolved_profile.retrieval_profile_id,
         retrieval_profile_name=resolved_profile.retrieval_profile_name,
         retrieval_profile_source=resolved_profile.profile_source,
+        engine_name=resolved_profile.engine_name,
+        engine_version=resolved_profile.engine_version,
         retrieval_mode=resolved_profile.retrieval_mode,
         embedding_model=settings.retrieval_embedding_model,
         effective_top_k=resolved_profile.top_k,
         rerank_applied=rerank_applied,
         rerank_strategy=rerank_strategy,
         rerank_window=rerank_window,
+        rerank_metadata=rerank_metadata,
+        retrieval_plan_metadata=retrieval_plan.as_metadata(),
+        evidence_validation_metadata=validation.metadata,
+        llamaindex_similarity_cutoff=resolved_profile.llamaindex_similarity_cutoff,
+        llamaindex_long_context_reorder_enabled=resolved_profile.llamaindex_long_context_reorder_enabled,
         results=results,
+    )
+
+
+async def _search_postgresql_lexical(
+    *,
+    retrieval_repository: RetrievalRepository,
+    tenant_id: UUID,
+    knowledge_base_id: UUID,
+    normalized_query: str,
+    query_terms: list[str],
+    top_k: int,
+    principal_user_id: UUID | None,
+    acl_bypass: bool,
+) -> list[dict[str, Any]]:
+    return await retrieval_repository.search_lexical_document_chunks(
+        tenant_id=tenant_id,
+        knowledge_base_id=knowledge_base_id,
+        normalized_query=normalized_query,
+        query_terms_text=" ".join(query_terms),
+        top_k=top_k,
+        principal_user_id=principal_user_id,
+        acl_bypass=acl_bypass,
     )
 
 
@@ -153,11 +284,19 @@ async def resolve_retrieval_profile(
                 return ResolvedRetrievalProfile(
                     retrieval_profile_id=assigned_profile.id,
                     retrieval_profile_name=assigned_profile.name,
+                    engine_name=getattr(assigned_profile, "engine_name", "native"),
+                    engine_version=getattr(assigned_profile, "engine_version", "native_v1"),
                     retrieval_mode=assigned_profile.retrieval_mode,
                     top_k=max(1, min(requested_top_k, assigned_profile.top_k)),
                     vector_weight=float(assigned_profile.vector_weight),
                     lexical_weight=float(assigned_profile.lexical_weight),
                     hybrid_overlap_bonus=float(assigned_profile.hybrid_overlap_bonus),
+                    llamaindex_similarity_cutoff=float(
+                        getattr(assigned_profile, "llamaindex_similarity_cutoff", 0.0)
+                    ),
+                    llamaindex_long_context_reorder_enabled=bool(
+                        getattr(assigned_profile, "llamaindex_long_context_reorder_enabled", True)
+                    ),
                     profile_source="knowledge_base",
                 )
 
@@ -166,22 +305,46 @@ async def resolve_retrieval_profile(
             return ResolvedRetrievalProfile(
                 retrieval_profile_id=default_profile.id,
                 retrieval_profile_name=default_profile.name,
+                engine_name=getattr(default_profile, "engine_name", "native"),
+                engine_version=getattr(default_profile, "engine_version", "native_v1"),
                 retrieval_mode=default_profile.retrieval_mode,
                 top_k=max(1, min(requested_top_k, default_profile.top_k)),
                 vector_weight=float(default_profile.vector_weight),
                 lexical_weight=float(default_profile.lexical_weight),
                 hybrid_overlap_bonus=float(default_profile.hybrid_overlap_bonus),
+                llamaindex_similarity_cutoff=float(
+                    getattr(default_profile, "llamaindex_similarity_cutoff", 0.0)
+                ),
+                llamaindex_long_context_reorder_enabled=bool(
+                    getattr(default_profile, "llamaindex_long_context_reorder_enabled", True)
+                ),
                 profile_source="default",
             )
 
     return ResolvedRetrievalProfile(
         retrieval_profile_id=None,
         retrieval_profile_name=None,
+        engine_name=(
+            "llamaindex_pilot"
+            if str(getattr(settings, "retrieval_engine", "native") or "native").strip().lower()
+            in {"llamaindex_pilot", "llamaindex_reserved"}
+            else "native"
+        ),
+        engine_version=(
+            "llamaindex_authorized_context_v1"
+            if str(getattr(settings, "retrieval_engine", "native") or "native").strip().lower()
+            in {"llamaindex_pilot", "llamaindex_reserved"}
+            else "native_v1"
+        ),
         retrieval_mode="hybrid",
         top_k=max(1, requested_top_k),
         vector_weight=0.65,
         lexical_weight=0.35,
         hybrid_overlap_bonus=0.05,
+        llamaindex_similarity_cutoff=float(getattr(settings, "llamaindex_similarity_cutoff", 0.0)),
+        llamaindex_long_context_reorder_enabled=bool(
+            getattr(settings, "llamaindex_long_context_reorder_enabled", True)
+        ),
         profile_source="settings_fallback",
     )
 

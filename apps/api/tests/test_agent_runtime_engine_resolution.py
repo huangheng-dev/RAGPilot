@@ -10,6 +10,8 @@ from ragpilot_api.application.agents.agent_runtime_engines import (
     build_agent_runtime_engine,
     normalize_agent_runtime_engine_name,
 )
+from ragpilot_api.application.agents.agent_service import validate_agent_runtime_policy
+from ragpilot_api.application.errors import ResourceConflictError
 
 
 def test_build_agent_runtime_engine_returns_native_engine_by_default() -> None:
@@ -48,18 +50,43 @@ def test_build_agent_runtime_engine_rejects_unknown_engine() -> None:
         build_agent_runtime_engine(settings)
 
 
+def test_active_langgraph_agent_requires_deployment_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "ragpilot_api.application.agents.agent_service.build_runtime_readiness_snapshot",
+        lambda: SimpleNamespace(langgraph_pilot_ready=False),
+    )
+
+    with pytest.raises(ResourceConflictError, match="deployment profile"):
+        validate_agent_runtime_policy(
+            mode="workflow_recovery",
+            status="active",
+            runtime_engine="langgraph_pilot",
+            runtime_version="langgraph_v1",
+        )
+
+    validate_agent_runtime_policy(
+        mode="workflow_recovery",
+        status="draft",
+        runtime_engine="langgraph_pilot",
+        runtime_version="langgraph_v1",
+    )
+
+
 @pytest.mark.anyio
 async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_graph(monkeypatch) -> None:
     class FakeCompiledGraph:
-        def __init__(self, nodes, edges, start_node) -> None:
+        def __init__(self, nodes, edges, start_node, end_node) -> None:
             self.nodes = nodes
             self.edges = edges
             self.start_node = start_node
+            self.end_node = end_node
 
         async def ainvoke(self, initial_state):
             state = dict(initial_state)
             current_node = self.edges[self.start_node]
-            while current_node is not None:
+            while current_node is not None and current_node != self.end_node:
                 node_handler = self.nodes[current_node]
                 update = node_handler(state)
                 if inspect.isawaitable(update):
@@ -81,11 +108,12 @@ async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_
             self.edges[source] = target
 
         def compile(self):
-            return FakeCompiledGraph(self.nodes, self.edges, "__start__")
+            return FakeCompiledGraph(self.nodes, self.edges, "__start__", "__end__")
 
     fake_graph_module = SimpleNamespace(
         StateGraph=FakeStateGraph,
         START="__start__",
+        END="__end__",
     )
 
     monkeypatch.setattr(
@@ -153,9 +181,11 @@ async def test_langgraph_pilot_agent_runtime_executes_bounded_workflow_recovery_
     trace = payload["agent_runtime_graph"]["trace"]
     assert [entry["step"] for entry in trace] == [
         "collect_workflow_metrics",
-        "collect_failed_runs",
+        "classify_workflow_pressure",
         "compose_workflow_summary",
     ]
+    assert payload["agent_runtime_graph"]["risk_level"] == "high"
+    assert all(float(entry["duration_ms"]) >= 0 for entry in trace)
 
 
 @pytest.mark.anyio
@@ -184,3 +214,47 @@ async def test_langgraph_pilot_agent_runtime_falls_back_to_native_for_other_mode
     assert payload["agent_runtime_resolution"]["configured_engine"] == "langgraph_pilot"
     assert payload["agent_runtime_resolution"]["executed_engine"] == "native"
     assert payload["agent_runtime_resolution"]["fallback_applied"] is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("metrics", "expected_branch"),
+    [
+        ({"failed_documents": 2, "active_documents": 3}, "recover_failed"),
+        ({"failed_documents": 0, "active_documents": 3}, "review_processing"),
+        ({"failed_documents": 0, "active_documents": 0}, "release_ready"),
+    ],
+)
+async def test_langgraph_document_intake_uses_governed_branch(metrics, expected_branch) -> None:
+    engine = LangGraphPilotAgentRuntimeEngine()
+    service = SimpleNamespace(
+        _build_document_intake_result=AsyncMock(return_value=(
+            "Document intake graph completed.",
+            {"execution_lane": "document_intake", "document_metrics": metrics},
+        )),
+    )
+
+    summary, payload = await engine.execute(
+        service=service,
+        agent_definition=SimpleNamespace(agent_mode="document_intake"),
+        resolved_scope=SimpleNamespace(knowledge_base_id="kb-1"),
+        execution_input="Review document intake.",
+        runtime_binding=None,
+        tool_runtime_summary=None,
+    )
+
+    assert summary == "Document intake graph completed."
+    assert payload["agent_runtime_engine"] == "langgraph_pilot"
+    assert payload["agent_runtime_resolution"]["fallback_applied"] is False
+    assert payload["agent_runtime_graph"]["workflow"] == "document_intake"
+    assert payload["agent_runtime_graph"]["selected_branch"] == expected_branch
+    assert payload["intake_decision"]["branch"] == expected_branch
+    assert payload["intake_validation"]["status"] == "passed"
+    assert len(payload["recommended_actions"]) == 2
+    assert [entry["step"] for entry in payload["agent_runtime_graph"]["trace"]] == [
+        "collect_document_context",
+        "classify_intake_posture",
+        expected_branch,
+        "validate_intake_result",
+        "compose_document_intake",
+    ]

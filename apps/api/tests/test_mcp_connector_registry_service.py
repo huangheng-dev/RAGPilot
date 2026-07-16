@@ -20,10 +20,51 @@ def build_mcp_connector(**overrides):
         "credential_key_hint": None,
         "notes": "Primary browser connector.",
         "is_enabled": True,
+        "governance_status": "approved",
+        "approved_by_user_id": None,
+        "approved_at": None,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
     return SimpleNamespace(**{**defaults, **overrides})
+
+
+@pytest.mark.anyio
+async def test_mcp_connector_governance_approval_updates_state_and_actor() -> None:
+    connector = build_mcp_connector(governance_status="reviewing")
+    actor_id = uuid4()
+    connector_repository = SimpleNamespace(
+        get_mcp_connector=AsyncMock(return_value=connector),
+        set_governance_status=AsyncMock(side_effect=lambda **kwargs: SimpleNamespace(
+            **{**connector.__dict__, "governance_status": kwargs["governance_status"],
+               "approved_by_user_id": kwargs["actor_user_id"], "approved_at": datetime.now(timezone.utc)}
+        )),
+    )
+    service = McpConnectorRegistryService(
+        connector_repository, SimpleNamespace(list_tool_registrations=AsyncMock(return_value=[])),
+    )
+
+    response = await service.apply_mcp_connector_governance_action(
+        mcp_connector_id=connector.id, action_type="approve_connector", actor_user_id=actor_id,
+    )
+
+    assert response.mcp_connector.governance_status == "approved"
+    assert response.mcp_connector.approved_by_user_id == actor_id
+
+
+@pytest.mark.anyio
+async def test_mcp_compatibility_report_blocks_unapproved_connector_without_remote_call() -> None:
+    connector = build_mcp_connector(governance_status="reviewing")
+    service = McpConnectorRegistryService(
+        SimpleNamespace(get_mcp_connector=AsyncMock(return_value=connector)),
+        SimpleNamespace(list_tool_registrations=AsyncMock(return_value=[])),
+    )
+
+    report = await service.get_compatibility_report(mcp_connector_id=connector.id)
+
+    assert report.compatible is False
+    assert report.approval_ready is False
+    assert "governance_approval_required" in report.blockers
 
 
 def build_tool_registration(**overrides):

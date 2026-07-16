@@ -19,7 +19,9 @@ def test_retrieval_route_returns_hybrid_retrieval_payload(monkeypatch) -> None:
     document_chunk_id = uuid4()
 
     class FakeRetrievalService:
-        async def retrieve_chunks(self, request):
+        async def retrieve_chunks(self, request, *, principal_user_id, acl_bypass):
+            assert principal_user_id is not None
+            assert acl_bypass is False
             return {
                 "tenant_id": str(request.tenant_id),
                 "knowledge_base_id": str(request.knowledge_base_id),
@@ -119,7 +121,9 @@ def test_retrieval_compare_route_returns_engine_diagnostics(monkeypatch) -> None
     shared_chunk_id = uuid4()
 
     class FakeRetrievalService:
-        async def compare_chunks(self, request):
+        async def compare_chunks(self, request, *, principal_user_id, acl_bypass):
+            assert principal_user_id is not None
+            assert acl_bypass is False
             return {
                 "tenant_id": str(request.tenant_id),
                 "knowledge_base_id": str(request.knowledge_base_id),

@@ -6,6 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.application.mcp_connectors.mcp_connector_registry_service import McpConnectorRegistryService
 from ragpilot_api.application.runtime_governance.runtime_governance_event_service import RuntimeGovernanceEventService
+from ragpilot_api.application.runtime_governance.runtime_health import classify_runtime_health
+from ragpilot_api.contracts.http.runtime_governance_event_contracts import RuntimeGovernanceEventResponse
+from ragpilot_api.contracts.http.runtime_credential_contracts import RuntimeCredentialRotateRequest, RuntimeCredentialRotationResponse
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.database.repositories.runtime_credential_repository import RuntimeCredentialRepository
+from ragpilot_api.shared.settings import get_settings
 from ragpilot_api.contracts.http.mcp_connector_contracts import (
     McpConnectorCreateRequest,
     McpConnectorGovernanceActionRequest,
@@ -15,6 +21,7 @@ from ragpilot_api.contracts.http.mcp_connector_contracts import (
     McpConnectorUpdateRequest,
     McpConnectorGovernanceSummaryResponse,
     McpRemoteToolCatalogResponse,
+    McpConnectorCompatibilityResponse,
 )
 from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository import McpConnectorRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
@@ -35,12 +42,27 @@ from ragpilot_api.presentation.http.request_actor import (
 router = APIRouter()
 
 
+def _mcp_health_detail(response) -> dict[str, object]:
+    health = classify_runtime_health(
+        status=str(read_response_field(response, "preview_status")),
+        summary=read_response_field(response, "summary"),
+        error_message=read_response_field(response, "error_message"),
+    )
+    return {"health_category": health.category, "retryable": health.retryable, "operator_action": health.operator_action}
+
+
 def build_mcp_connector_registry_service(session: AsyncSession) -> McpConnectorRegistryService:
     return McpConnectorRegistryService(
         McpConnectorRepository(session),
         ToolRegistrationRepository(session),
         RuntimeGovernanceEventRepository(session),
+        get_settings(),
+        RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
     )
+
+
+def build_runtime_credential_service(session: AsyncSession) -> RuntimeCredentialService:
+    return RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings())
 
 def build_runtime_governance_event_service(session: AsyncSession) -> RuntimeGovernanceEventService:
     return RuntimeGovernanceEventService(RuntimeGovernanceEventRepository(session))
@@ -147,7 +169,44 @@ async def preview_mcp_connector(
             "error_message": read_response_field(response, "error_message"),
             "request_metadata": read_response_field(response, "request_metadata"),
             "response_metadata": read_response_field(response, "response_metadata"),
+            **_mcp_health_detail(response),
         },
+    )
+    return response
+
+
+@router.get("/{mcp_connector_id}/health-history", response_model=list[RuntimeGovernanceEventResponse])
+async def list_mcp_connector_health_history(
+    mcp_connector_id: UUID, limit: int = Query(default=20, ge=1, le=100),
+    actor: RequestActor = Depends(get_request_actor), session: AsyncSession = Depends(get_database_session),
+) -> list[RuntimeGovernanceEventResponse]:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "review_runtime_governance", RolePermissionRepository(session))
+    require_platform_wide_actor_scope(actor, detail="Platform MCP governance requires platform-wide access.")
+    return await build_runtime_governance_event_service(session).list_runtime_governance_events(
+        resource_type="mcp_connector", resource_id=mcp_connector_id, limit=limit,
+    )
+
+
+@router.post("/{mcp_connector_id}/credentials/rotate", response_model=RuntimeCredentialRotationResponse)
+async def rotate_mcp_connector_credential(
+    mcp_connector_id: UUID, request: RuntimeCredentialRotateRequest,
+    actor: RequestActor = Depends(get_request_actor), session: AsyncSession = Depends(get_database_session),
+) -> RuntimeCredentialRotationResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "manage_runtime_governance", RolePermissionRepository(session))
+    require_platform_wide_actor_scope(actor, detail="Platform MCP governance requires platform-wide access.")
+    if await McpConnectorRepository(session).get_mcp_connector(mcp_connector_id=mcp_connector_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP connector not found.")
+    response = await build_runtime_credential_service(session).rotate(
+        resource_type="mcp_connector", resource_id=mcp_connector_id,
+        secret=request.secret, actor_user_id=actor.user_id,
+    )
+    await build_runtime_governance_event_service(session).create_runtime_governance_event(
+        actor_user_id=actor.user_id, actor_role=actor.role, resource_type="mcp_connector",
+        resource_id=mcp_connector_id, resource_name=None, resource_slug=None,
+        action_type="credential_rotated",
+        detail={"key_version": response.key_version, "secret_hint": response.secret_hint},
     )
     return response
 
@@ -203,6 +262,7 @@ async def apply_mcp_connector_governance_action(
         response = await build_mcp_connector_registry_service(session).apply_mcp_connector_governance_action(
             mcp_connector_id=mcp_connector_id,
             action_type=request.action_type,
+            actor_user_id=actor.user_id,
         )
     except ResourceConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
@@ -223,6 +283,31 @@ async def apply_mcp_connector_governance_action(
             "is_enabled": read_response_field(read_response_field(response, "mcp_connector"), "is_enabled"),
             "base_url": read_response_field(read_response_field(response, "mcp_connector"), "base_url"),
         },
+    )
+    return response
+
+
+@router.get("/{mcp_connector_id}/compatibility", response_model=McpConnectorCompatibilityResponse)
+async def get_mcp_connector_compatibility(
+    mcp_connector_id: UUID,
+    actor: RequestActor = Depends(get_request_actor),
+    session: AsyncSession = Depends(get_database_session),
+) -> McpConnectorCompatibilityResponse:
+    require_authenticated_actor(actor)
+    await require_actor_capability_from_policy(actor, "review_runtime_governance", RolePermissionRepository(session))
+    require_platform_wide_actor_scope(actor, detail="Platform MCP governance requires platform-wide access.")
+    try:
+        response = await build_mcp_connector_registry_service(session).get_compatibility_report(
+            mcp_connector_id=mcp_connector_id,
+        )
+    except ResourceNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ResourceConflictError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    await build_runtime_governance_event_service(session).create_runtime_governance_event(
+        actor_user_id=actor.user_id, actor_role=actor.role, resource_type="mcp_connector",
+        resource_id=mcp_connector_id, resource_name=None, resource_slug=None,
+        action_type="compatibility_checked", detail=response.model_dump(mode="json"),
     )
     return response
 

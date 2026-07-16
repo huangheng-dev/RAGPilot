@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -195,6 +196,52 @@ def test_chat_message_route_rejects_reviewer_role(monkeypatch) -> None:
     assert response.status_code == 403
 
 
+def test_chat_stream_route_emits_sse_deltas_and_completion(monkeypatch) -> None:
+    tenant_id = uuid4()
+    workspace_id = uuid4()
+    knowledge_base_id = uuid4()
+
+    class FakeResponse:
+        assistant_message = SimpleNamespace(content="Temporal provides durable workflows.")
+
+        def model_dump(self, *, mode):
+            assert mode == "json"
+            return {
+                "conversation": {"id": str(uuid4())},
+                "user_message": {"content": "question"},
+                "assistant_message": {"content": self.assistant_message.content},
+            }
+
+    class FakeChatService:
+        async def ask_question(self, request, *, on_delta=None, retrieval_acl_bypass=False):
+            assert retrieval_acl_bypass is False
+            assert on_delta is not None
+            await on_delta("Temporal provides ")
+            await on_delta("durable workflows.")
+            return FakeResponse()
+
+    monkeypatch.setattr(chat_routes, "build_chat_service", lambda session: FakeChatService())
+    app.dependency_overrides[get_database_session] = override_database_session
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/chat/messages/stream",
+        json={
+            "tenant_id": str(tenant_id), "workspace_id": str(workspace_id),
+            "knowledge_base_id": str(knowledge_base_id), "question": "Which system is durable?",
+        },
+        headers={"Accept": "text/event-stream", "X-RAGPilot-Role": "operator", "X-RAGPilot-Actor-Id": str(uuid4())},
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: start" in response.text
+    assert "event: delta" in response.text
+    assert 'data: {"content":"Temporal provides "}' in response.text
+    assert 'data: {"content":"durable workflows."}' in response.text
+    assert "event: complete" in response.text
+
+
 def test_conversation_create_route_uses_database_policy_when_seeded(monkeypatch) -> None:
     class FakeRolePermissionRepository:
         def __init__(self, session) -> None:
@@ -237,7 +284,8 @@ def test_chat_message_route_forwards_agent_definition_id(monkeypatch) -> None:
     actor_user_id = uuid4()
 
     class FakeChatService:
-        async def ask_question(self, request):
+        async def ask_question(self, request, *, retrieval_acl_bypass=False):
+            assert retrieval_acl_bypass is False
             captured.update(
                 {
                     "tenant_id": request.tenant_id,

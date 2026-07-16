@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ragpilot_api.presentation.http.v1.api_router import api_router
 from ragpilot_api.shared.settings import get_settings
+from ragpilot_api.infrastructure.observability import configure_observability
 
 
 settings = get_settings()
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Total-Count", "X-Limit", "X-Offset", "X-Result-Count"],
 )
+configure_observability(app, settings)
 
 app.include_router(api_router, prefix="/api/v1")
 

@@ -1,15 +1,33 @@
 # RAGPilot MCP Server
 
-This service provides the dedicated `MCP`-compatible boundary for RAGPilot tool exposure.
+This package is the governed outbound MCP server boundary for RAGPilot. It runs over `stdio`, delegates authorization to the main API, and never bypasses API-key scopes, tenant membership, knowledge-base access, or backend audit policy.
 
-It keeps external tool delivery isolated from the main API and worker runtimes so governed connector and tool posture can evolve through a separate process boundary.
+## Exposed Tools
 
-## Service Role
+- `ragpilot_knowledge_search` performs governed hybrid retrieval in one tenant and knowledge base.
+- `ragpilot_document_get` reads document metadata, versions, and indexed chunks.
+- `ragpilot_workflow_get` reads workflow status and recovery diagnostics.
 
-The MCP server is the boundary where RAGPilot exposes:
+All current tools are read-only. Arbitrary remote calls and mutation tools are intentionally excluded.
 
-- controlled knowledge retrieval tools
-- document and workflow inspection tools
-- explicit agent-facing platform operations
+## Configuration
 
-The core platform already governs connector health, tool registration, and runtime approval through the main API; this service exists to deliver those capabilities through an MCP-compatible external surface.
+Create a tenant-scoped platform API key with only the capabilities required by the enabled tools: `access_chat` for knowledge search, `access_documents` for document inspection, and `access_operations` for workflow inspection. Then set:
+
+```text
+MCP_RAGPILOT_API_BASE_URL=http://localhost:8000/api/v1
+MCP_RAGPILOT_API_KEY=rpk_...
+MCP_RAGPILOT_REQUEST_TIMEOUT_MS=15000
+```
+
+The key remains in the server process environment and is never returned in tool output. The default API URL targets local stable mode.
+
+## Run and Verify
+
+```powershell
+npm run mcp:build
+npm run mcp:test
+npm run mcp:dev
+```
+
+An MCP host should spawn `npm run mcp:dev` or the built `dist/index.js` process and communicate over standard input/output. Remote Streamable HTTP serving is not currently exposed by this package.

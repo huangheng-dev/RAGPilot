@@ -19,6 +19,7 @@ from ragpilot_api.contracts.http.tool_registration_contracts import (
 from ragpilot_api.infrastructure.database.models import ToolRegistration
 from ragpilot_api.infrastructure.database.repositories.agent_repository import AgentRepository
 from ragpilot_api.infrastructure.database.repositories.mcp_connector_repository import McpConnectorRepository
+from ragpilot_api.infrastructure.observability import traced
 from ragpilot_api.infrastructure.database.repositories.runtime_governance_event_repository import RuntimeGovernanceEventRepository
 from ragpilot_api.infrastructure.database.repositories.tool_registration_repository import ToolRegistrationRepository
 from ragpilot_api.shared.settings import Settings, get_settings
@@ -131,6 +132,7 @@ class ToolRegistryService:
             preview_activity=preview_activity_by_tool_id.get(str(tool_registration.id)),
         )
 
+    @traced("approval.tool_governance.decision")
     async def apply_tool_governance_action(
         self,
         *,

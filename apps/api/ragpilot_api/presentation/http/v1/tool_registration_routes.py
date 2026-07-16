@@ -48,6 +48,8 @@ from ragpilot_api.presentation.http.request_actor import (
     require_actor_workspace_access,
 )
 from ragpilot_api.shared.settings import get_settings
+from ragpilot_api.application.runtime_governance.runtime_credential_service import RuntimeCredentialService
+from ragpilot_api.infrastructure.database.repositories.runtime_credential_repository import RuntimeCredentialRepository
 
 
 router = APIRouter()
@@ -70,6 +72,7 @@ def build_tool_runtime_service(session: AsyncSession) -> ToolRuntimeService:
         WorkflowRepository(session),
         get_settings(),
         mcp_connector_repository=McpConnectorRepository(session),
+        runtime_credential_service=RuntimeCredentialService(RuntimeCredentialRepository(session), get_settings()),
     )
 
 

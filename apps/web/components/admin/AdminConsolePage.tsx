@@ -13,7 +13,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { ArrowRight, Bot, Boxes, Building2, Library, RefreshCw, Search, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  Boxes,
+  Building2,
+  Library,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 
 import { AgentExecutionFollowUpActions } from "@/components/agents/AgentExecutionFollowUpActions";
 import { RuntimeResourcesPanel } from "@/components/admin/RuntimeResourcesPanel";
@@ -153,6 +164,7 @@ import {
   type AgentRuntimeGovernanceSummary,
 } from "@/lib/runtime-governance";
 import { useRuntimeHealth } from "@/lib/runtime-health";
+import { writeCurrentTenantId } from "@/lib/tenant-scope";
 import { buildAdminWorkspaceHref } from "@/lib/workspace-handoffs";
 import { cn } from "@/lib/utils";
 import { formatTimestamp } from "@/lib/workspace-formatters";
@@ -369,7 +381,8 @@ type AdminManagementPanel =
   | "user-edit"
   | null;
 
-type AdminSection = "overview" | "directory" | "access" | "runtime" | "security";
+type AdminSection =
+  "overview" | "directory" | "access" | "runtime" | "security";
 
 const WORKSPACE_LIFECYCLE_FILTER_VALUES = [
   "all",
@@ -456,6 +469,7 @@ const EMPTY_RUNTIME_GOVERNANCE_SUMMARY: AgentRuntimeGovernanceSummary = {
     model_runtime_unconfigured: 0,
     retrieval_profile_missing: 0,
     retrieval_profile_disabled: 0,
+    retrieval_engine_unavailable: 0,
     scope_missing: 0,
     scope_invalid: 0,
     tools_missing: 0,
@@ -463,6 +477,7 @@ const EMPTY_RUNTIME_GOVERNANCE_SUMMARY: AgentRuntimeGovernanceSummary = {
     tool_approval_required: 0,
     tool_mcp_reserved: 0,
     tool_mcp_integration_pending: 0,
+    runtime_engine_unavailable: 0,
   },
 };
 
@@ -561,7 +576,10 @@ function AdminManagementDialog({
     const layoutElement = rootLayout as ReactElement<{ children?: ReactNode }>;
     const layoutChildren = Children.toArray(layoutElement.props.children);
     const footerCandidate = layoutChildren.at(-1);
-    if (isValidElement(footerCandidate) && footerCandidate.type === DialogFormActions) {
+    if (
+      isValidElement(footerCandidate) &&
+      footerCandidate.type === DialogFormActions
+    ) {
       dialogFooter = footerCandidate;
       dialogContent = cloneElement(
         layoutElement,
@@ -622,7 +640,12 @@ function readAllowedFilterValue(
 }
 
 function readAllowedAdminSection(value: string | null): AdminSection {
-  if (value === "directory" || value === "access" || value === "runtime" || value === "security") {
+  if (
+    value === "directory" ||
+    value === "access" ||
+    value === "runtime" ||
+    value === "security"
+  ) {
     return value;
   }
 
@@ -920,20 +943,23 @@ async function revokeUserSession(
   });
 }
 
-async function loadAdminDirectory(filters: {
-  tenantId: string;
-  knowledgeBasePublicationStatusFilter: string;
-  workspaceLifecycleFilter: string;
-  memberAccountFilter: string;
-  memberRelationshipFilter: string;
-  auditEventFilter: string;
-  query: string;
-}, options?: { cache?: AdminDirectoryCache; force?: boolean }) {
+async function loadAdminDirectory(
+  filters: {
+    tenantId: string;
+    knowledgeBasePublicationStatusFilter: string;
+    workspaceLifecycleFilter: string;
+    memberAccountFilter: string;
+    memberRelationshipFilter: string;
+    auditEventFilter: string;
+    query: string;
+  },
+  options?: { cache?: AdminDirectoryCache; force?: boolean },
+) {
   const cache = options?.cache;
   const useCache = Boolean(cache) && !options?.force;
   const tenants =
     useCache && cache?.tenants !== null
-      ? cache?.tenants ?? []
+      ? (cache?.tenants ?? [])
       : await listTenants();
   if (cache) {
     cache.tenants = tenants;
@@ -987,9 +1013,12 @@ async function loadAdminDirectory(filters: {
         : undefined;
       const nextWorkspaces =
         cachedWorkspaces ??
-        (await apiRequest<Workspace[]>(`/workspaces?${searchParams.toString()}`));
+        (await apiRequest<Workspace[]>(
+          `/workspaces?${searchParams.toString()}`,
+        ));
       if (cache && (!useCache || cachedWorkspaces === undefined)) {
-        cache.workspacesByTenantAndLifecycle[workspaceCacheKey] = nextWorkspaces;
+        cache.workspacesByTenantAndLifecycle[workspaceCacheKey] =
+          nextWorkspaces;
       }
 
       return {
@@ -1695,9 +1724,12 @@ export default function AdminConsolePage() {
         ),
       );
       setRuntimeGovernanceQueueResourceFilter(
-        ["model_endpoint", "tool_registration", "retrieval_profile", "mcp_connector"].includes(
-          requestedRuntimeResource,
-        )
+        [
+          "model_endpoint",
+          "tool_registration",
+          "retrieval_profile",
+          "mcp_connector",
+        ].includes(requestedRuntimeResource)
           ? requestedRuntimeResource
           : "all",
       );
@@ -2439,13 +2471,16 @@ export default function AdminConsolePage() {
     setManagementPanel("tenant-create");
   }
 
-  function openCreateWorkspacePanel() {
+  function openCreateWorkspacePanel(tenantId?: string) {
     if (!hasAdminWriteAccess) {
       return;
     }
 
     setCreateWorkspaceTenantId(
-      selectedTenantId !== "all" ? selectedTenantId : (tenants[0]?.id ?? ""),
+      tenantId ??
+        (selectedTenantId !== "all"
+          ? selectedTenantId
+          : (tenants[0]?.id ?? "")),
     );
     setCreateWorkspaceName("");
     setCreateWorkspaceSlug("");
@@ -2497,13 +2532,16 @@ export default function AdminConsolePage() {
     setManagementPanel("workspace-edit");
   }
 
-  function openCreateKnowledgeBasePanel() {
+  function openCreateKnowledgeBasePanel(workspaceId?: string) {
     if (!hasAdminWriteAccess) {
       return;
     }
 
     setCreateKnowledgeBaseWorkspaceId(
-      scopedPrimaryWorkspace?.id ?? filteredWorkspaces[0]?.id ?? "",
+      workspaceId ??
+        scopedPrimaryWorkspace?.id ??
+        filteredWorkspaces[0]?.id ??
+        "",
     );
     setCreateKnowledgeBaseName("");
     setCreateKnowledgeBaseSlug("");
@@ -3523,6 +3561,9 @@ export default function AdminConsolePage() {
               accumulator.queued_executions + metrics.queued_executions,
             running_executions:
               accumulator.running_executions + metrics.running_executions,
+            awaiting_approval_executions:
+              accumulator.awaiting_approval_executions +
+              metrics.awaiting_approval_executions,
             completed_executions:
               accumulator.completed_executions + metrics.completed_executions,
             failed_executions:
@@ -4024,12 +4065,20 @@ export default function AdminConsolePage() {
       const tenant = tenants.find(
         (tenantItem) => tenantItem.id === workspace.tenant_id,
       );
+      const workspaceKnowledgeBases = filteredKnowledgeBases.filter(
+        (knowledgeBase) => knowledgeBase.workspace_id === workspace.id,
+      );
       const searchableText = [
         tenant?.name,
         tenant?.slug,
         workspace.name,
         workspace.slug,
         workspace.description,
+        ...workspaceKnowledgeBases.flatMap((knowledgeBase) => [
+          knowledgeBase.name,
+          knowledgeBase.slug,
+          knowledgeBase.description,
+        ]),
       ]
         .filter(Boolean)
         .join(" ")
@@ -4037,7 +4086,12 @@ export default function AdminConsolePage() {
 
       return searchableText.includes(normalizedSearchQuery);
     });
-  }, [filteredWorkspaces, normalizedSearchQuery, tenants]);
+  }, [
+    filteredKnowledgeBases,
+    filteredWorkspaces,
+    normalizedSearchQuery,
+    tenants,
+  ]);
 
   const searchedWorkspaceIds = useMemo(
     () => new Set(searchedWorkspaces.map((workspace) => workspace.id)),
@@ -4136,6 +4190,48 @@ export default function AdminConsolePage() {
     searchedWorkspaceIds,
     tenants,
     workspaces,
+  ]);
+
+  const directoryTenantGroups = useMemo(() => {
+    const visibleWorkspaceIds = new Set(
+      searchedWorkspaces.map((workspace) => workspace.id),
+    );
+
+    return filteredTenantGroups
+      .map((group) => {
+        const visibleWorkspaces = group.workspaces
+          .filter((workspace) => visibleWorkspaceIds.has(workspace.id))
+          .map((workspace) => ({
+            workspace,
+            knowledgeBases: searchedKnowledgeBases.filter(
+              (knowledgeBase) => knowledgeBase.workspace_id === workspace.id,
+            ),
+          }));
+        const tenantMatchesSearch = [group.tenant.name, group.tenant.slug]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedSearchQuery);
+
+        return {
+          tenant: group.tenant,
+          workspaces: visibleWorkspaces,
+          knowledgeBaseCount: visibleWorkspaces.reduce(
+            (count, item) => count + item.knowledgeBases.length,
+            0,
+          ),
+          isVisible:
+            !normalizedSearchQuery ||
+            tenantMatchesSearch ||
+            visibleWorkspaces.length > 0,
+        };
+      })
+      .filter((group) => group.isVisible);
+  }, [
+    filteredTenantGroups,
+    normalizedSearchQuery,
+    searchedKnowledgeBases,
+    searchedWorkspaces,
   ]);
 
   const filteredAgents = useMemo(
@@ -5840,6 +5936,20 @@ export default function AdminConsolePage() {
     workspaceLifecycleFilter,
   ]);
 
+  function handleAdminTenantScopeChange(tenantId: string) {
+    setManagementPanel(null);
+    setEditingWorkspaceId(null);
+    setPendingWorkspaceFocusId(null);
+    setEditingKnowledgeBaseId(null);
+    setPendingKnowledgeBaseFocusId(null);
+    setEditingUserId(null);
+    setPendingUserFocusId(null);
+    setSelectedTenantId(tenantId);
+    if (tenantId !== "all") {
+      writeCurrentTenantId(tenantId);
+    }
+  }
+
   return (
     <ConsoleShell activeHref="/admin">
       <PageTitleSync title={t("admin.title")} />
@@ -5852,14 +5962,16 @@ export default function AdminConsolePage() {
               </div>
               <Select
                 disabled={isLoading || tenants.length === 0}
-                onValueChange={setSelectedTenantId}
+                onValueChange={handleAdminTenantScopeChange}
                 value={selectedTenantId}
               >
                 <SelectTrigger className="w-full bg-white">
                   <SelectValue placeholder={t("admin.filters.tenantScope")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">{t("admin.filters.allTenants")}</SelectItem>
+                  <SelectItem value="all">
+                    {t("admin.filters.allTenants")}
+                  </SelectItem>
                   {tenants.map((tenant) => (
                     <SelectItem key={tenant.id} value={tenant.id}>
                       {tenant.name}
@@ -5883,3545 +5995,1400 @@ export default function AdminConsolePage() {
               </div>
               {resumeWorkspaceHref ? (
                 <Button asChild className="w-full bg-white" variant="outline">
-                  <a href={resumeWorkspaceHref}>{t("admin.filters.returnToValidation")}</a>
+                  <a href={resumeWorkspaceHref}>
+                    {t("admin.filters.returnToValidation")}
+                  </a>
                 </Button>
               ) : null}
             </div>
           </aside>
           <main className="console-split-content console-split-content-padding">
-        {!showRuntimeSection && currentAdminSection ? (
-          <ConsoleSurfaceHeader
-            className="px-0 pb-4 pt-0"
-            description={currentAdminSection.description}
-            title={currentAdminSection.label}
-          />
-        ) : null}
-        {!showOverviewSection && !showRuntimeSection ? (
-        <ConsoleToolbar className="rounded-xl border-slate-200 bg-slate-50/70 px-4 py-4 shadow-none">
-          <div
-            className={cn(
-              "grid w-full gap-3 lg:grid-cols-2",
-              showDirectorySection ? "2xl:grid-cols-5" : "2xl:grid-cols-4",
-            )}
-          >
-            <div className="flex items-center justify-between gap-3 lg:col-span-2 2xl:col-span-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                {showDirectorySection ? t("admin.filters.resourceFilters") : t("admin.filters.memberFilters")}
-              </div>
-            </div>
-            {!showOverviewSection ? (
-            <div className="relative min-w-0 lg:col-span-2 2xl:col-span-2">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
-                className="rounded-xl border-slate-200 bg-white pl-9"
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={t("admin.filters.search")}
-                value={searchQuery}
+            {!showRuntimeSection && currentAdminSection ? (
+              <ConsoleSurfaceHeader
+                className="px-0 pb-4 pt-0"
+                description={currentAdminSection.description}
+                title={currentAdminSection.label}
               />
-            </div>
+            ) : null}
+            {!showOverviewSection && !showRuntimeSection ? (
+              <ConsoleToolbar className="rounded-xl border-slate-200 bg-slate-50/70 px-4 py-4 shadow-none">
+                <div
+                  className={cn(
+                    "grid w-full gap-3 lg:grid-cols-2",
+                    showDirectorySection
+                      ? "2xl:grid-cols-5"
+                      : "2xl:grid-cols-4",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3 lg:col-span-2 2xl:col-span-5">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      {showDirectorySection
+                        ? t("admin.filters.resourceFilters")
+                        : t("admin.filters.memberFilters")}
+                    </div>
+                  </div>
+                  {!showOverviewSection ? (
+                    <div className="relative min-w-0 lg:col-span-2 2xl:col-span-2">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        className="rounded-xl border-slate-200 bg-white pl-9"
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder={t("admin.filters.search")}
+                        value={searchQuery}
+                      />
+                    </div>
+                  ) : null}
+
+                  {showDirectorySection ? (
+                    <Select
+                      disabled={isLoading}
+                      onValueChange={setWorkspaceLifecycleFilter}
+                      value={workspaceLifecycleFilter}
+                    >
+                      <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                        <SelectValue
+                          placeholder={t("admin.filters.workspaceLifecycle")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("admin.filters.allWorkspaces")}
+                        </SelectItem>
+                        <SelectItem value="active">
+                          {t("admin.filters.activeOnly")}
+                        </SelectItem>
+                        <SelectItem value="archived">
+                          {t("admin.filters.archivedOnly")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+
+                  {showDirectorySection ? (
+                    <Select
+                      disabled={isLoading}
+                      onValueChange={setKnowledgeBasePublicationStatusFilter}
+                      value={knowledgeBasePublicationStatusFilter}
+                    >
+                      <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                        <SelectValue
+                          placeholder={t("admin.filters.knowledgePublication")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("admin.filters.allKnowledgeBases")}
+                        </SelectItem>
+                        <SelectItem value="published">
+                          {t("admin.filters.publishedOnly")}
+                        </SelectItem>
+                        <SelectItem value="draft">
+                          {t("admin.filters.draftOnly")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+
+                  {showDirectorySection ? (
+                    <Select
+                      disabled={isLoading || retrievalProfiles.length === 0}
+                      onValueChange={setRetrievalProfileFilter}
+                      value={retrievalProfileFilter}
+                    >
+                      <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                        <SelectValue
+                          placeholder={t("admin.filters.retrievalProfile")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("admin.filters.allRetrievalProfiles")}
+                        </SelectItem>
+                        <SelectItem
+                          value={DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE}
+                        >
+                          {t("admin.filters.defaultFallbackRetrievalProfile")}
+                        </SelectItem>
+                        <SelectItem
+                          value={DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE}
+                        >
+                          {t("admin.filters.disabledAssignedRetrievalProfile")}
+                        </SelectItem>
+                        {retrievalProfiles.map((retrievalProfile) => (
+                          <SelectItem
+                            key={retrievalProfile.id}
+                            value={retrievalProfile.id}
+                          >
+                            {retrievalProfile.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+
+                  {showAccessSection ? (
+                    <Select
+                      disabled={isLoading}
+                      onValueChange={setMemberRelationshipFilter}
+                      value={memberRelationshipFilter}
+                    >
+                      <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                        <SelectValue
+                          placeholder={t("admin.members.relationshipFilter")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("admin.members.allRelationships")}
+                        </SelectItem>
+                        <SelectItem value="active">
+                          {t("admin.members.activeMembership")}
+                        </SelectItem>
+                        <SelectItem value="invited">
+                          {t("admin.members.invitedMembership")}
+                        </SelectItem>
+                        <SelectItem value="suspended">
+                          {t("admin.members.suspendedMembership")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+
+                  {showAccessSection ? (
+                    <Select
+                      disabled={isLoading}
+                      onValueChange={setMemberAccountFilter}
+                      value={memberAccountFilter}
+                    >
+                      <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
+                        <SelectValue
+                          placeholder={t("admin.members.accountFilter")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">
+                          {t("admin.members.allAccounts")}
+                        </SelectItem>
+                        <SelectItem value="active">
+                          {t("admin.members.activeAccount")}
+                        </SelectItem>
+                        <SelectItem value="inactive">
+                          {t("admin.members.inactiveAccount")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                </div>
+              </ConsoleToolbar>
+            ) : null}
+            {showRuntimeSection ? (
+              <RuntimeResourcesPanel
+                tenantId={selectedTenantId === "all" ? null : selectedTenantId}
+              />
             ) : null}
 
-            {showDirectorySection ? (
-            <Select
-              disabled={isLoading}
-              onValueChange={setWorkspaceLifecycleFilter}
-              value={workspaceLifecycleFilter}
+            <div
+              className={cn(
+                "grid gap-6",
+                (showDirectorySection || showAccessSection) && "mt-6",
+              )}
             >
-              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
-                <SelectValue
-                  placeholder={t("admin.filters.workspaceLifecycle")}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  {t("admin.filters.allWorkspaces")}
-                </SelectItem>
-                <SelectItem value="active">
-                  {t("admin.filters.activeOnly")}
-                </SelectItem>
-                <SelectItem value="archived">
-                  {t("admin.filters.archivedOnly")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            ) : null}
+              {showOverviewSection ? (
+                <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+                  <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    {metrics.map((metric) => (
+                      <Link
+                        className="group flex min-h-[144px] flex-col rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200 hover:bg-blue-50/40 dark:border-slate-800 dark:bg-slate-900/60"
+                        href={metric.href}
+                        key={metric.label}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="pt-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {metric.label}
+                          </div>
+                          <div
+                            className={cn(
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                              metric.iconClassName,
+                            )}
+                          >
+                            <metric.icon className="h-4 w-4" />
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                          <div className="text-[30px] font-semibold tracking-tight text-slate-950">
+                            {metric.value}
+                          </div>
+                          <ArrowRight className="mb-1 h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
+                        </div>
+                        <div className="mt-auto pt-3 text-xs leading-5 text-slate-500">
+                          {metric.hint}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
 
-            {showDirectorySection ? (
-            <Select
-              disabled={isLoading}
-              onValueChange={setKnowledgeBasePublicationStatusFilter}
-              value={knowledgeBasePublicationStatusFilter}
-            >
-              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
-                <SelectValue
-                  placeholder={t("admin.filters.knowledgePublication")}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  {t("admin.filters.allKnowledgeBases")}
-                </SelectItem>
-                <SelectItem value="published">
-                  {t("admin.filters.publishedOnly")}
-                </SelectItem>
-                <SelectItem value="draft">
-                  {t("admin.filters.draftOnly")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            ) : null}
-
-            {showDirectorySection ? (
-            <Select
-              disabled={isLoading || retrievalProfiles.length === 0}
-              onValueChange={setRetrievalProfileFilter}
-              value={retrievalProfileFilter}
-            >
-              <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
-                <SelectValue
-                  placeholder={t("admin.filters.retrievalProfile")}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  {t("admin.filters.allRetrievalProfiles")}
-                </SelectItem>
-                <SelectItem value={DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE}>
-                  {t("admin.filters.defaultFallbackRetrievalProfile")}
-                </SelectItem>
-                <SelectItem value={DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE}>
-                  {t("admin.filters.disabledAssignedRetrievalProfile")}
-                </SelectItem>
-                {retrievalProfiles.map((retrievalProfile) => (
-                  <SelectItem
-                    key={retrievalProfile.id}
-                    value={retrievalProfile.id}
-                  >
-                    {retrievalProfile.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            ) : null}
-
-            {showAccessSection ? (
-              <Select
-                disabled={isLoading}
-                onValueChange={setMemberRelationshipFilter}
-                value={memberRelationshipFilter}
-              >
-                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
-                  <SelectValue placeholder={t("admin.members.relationshipFilter")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("admin.members.allRelationships")}</SelectItem>
-                  <SelectItem value="active">{t("admin.members.activeMembership")}</SelectItem>
-                  <SelectItem value="invited">{t("admin.members.invitedMembership")}</SelectItem>
-                  <SelectItem value="suspended">{t("admin.members.suspendedMembership")}</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : null}
-
-            {showAccessSection ? (
-              <Select
-                disabled={isLoading}
-                onValueChange={setMemberAccountFilter}
-                value={memberAccountFilter}
-              >
-                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white">
-                  <SelectValue placeholder={t("admin.members.accountFilter")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("admin.members.allAccounts")}</SelectItem>
-                  <SelectItem value="active">{t("admin.members.activeAccount")}</SelectItem>
-                  <SelectItem value="inactive">{t("admin.members.inactiveAccount")}</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : null}
-
-          </div>
-        </ConsoleToolbar>
-        ) : null}
-          {showRuntimeSection ? <RuntimeResourcesPanel tenantId={selectedTenantId === "all" ? null : selectedTenantId} /> : null}
-
-        <div
-          className={cn(
-            "grid gap-6",
-            (showDirectorySection || showAccessSection) && "mt-6",
-          )}
-        >
-          {showOverviewSection ? (
-            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                {metrics.map((metric) => (
-                  <Link
-                    className="group flex min-h-[144px] flex-col rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200 hover:bg-blue-50/40 dark:border-slate-800 dark:bg-slate-900/60"
-                    href={metric.href}
-                    key={metric.label}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="pt-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {metric.label}
+              {showAdvancedAdminSections && showOverviewSection ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    title={t("admin.overviewLanes.title")}
+                  />
+                  <div className="grid gap-4 p-6 lg:grid-cols-3">
+                    {overviewLaneItems.map((item) => (
+                      <div
+                        className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
+                        key={item.key}
+                      >
+                        <div className="text-base font-semibold text-slate-950">
+                          {item.title}
+                        </div>
+                        <div className="mt-2 text-sm font-medium text-blue-600">
+                          {item.value}
+                        </div>
+                        <div className="mt-3 text-sm leading-6 text-slate-500">
+                          {item.description}
+                        </div>
+                        <div className="mt-5">
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Link href={item.href}>
+                              {t("admin.overviewLanes.openLane")}
+                            </Link>
+                          </Button>
+                        </div>
                       </div>
-                      <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", metric.iconClassName)}>
-                        <metric.icon className="h-4 w-4" />
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-end justify-between gap-3">
-                      <div className="text-[30px] font-semibold tracking-tight text-slate-950">{metric.value}</div>
-                      <ArrowRight className="mb-1 h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
-                    </div>
-                    <div className="mt-auto pt-3 text-xs leading-5 text-slate-500">{metric.hint}</div>
-                  </Link>
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
+                    ))}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
 
-          {showAdvancedAdminSections && showOverviewSection ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader title={t("admin.overviewLanes.title")} />
-              <div className="grid gap-4 p-6 lg:grid-cols-3">
-                {overviewLaneItems.map((item) => (
-                  <div
-                    className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
-                    key={item.key}
-                  >
-                    <div className="text-base font-semibold text-slate-950">
-                      {item.title}
-                    </div>
-                    <div className="mt-2 text-sm font-medium text-blue-600">
-                      {item.value}
-                    </div>
-                    <div className="mt-3 text-sm leading-6 text-slate-500">
-                      {item.description}
-                    </div>
-                    <div className="mt-5">
+              {adminSection === "directory" ? (
+                <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+                  <ConsoleSurfaceHeader
+                    action={
                       <Button
-                        asChild
-                        className="bg-white"
+                        className="rounded-xl"
+                        disabled={!hasAdminWriteAccess}
+                        onClick={openCreateTenantPanel}
                         size="sm"
                         type="button"
-                        variant="outline"
                       >
-                        <Link href={item.href}>
-                          {t("admin.overviewLanes.openLane")}
-                        </Link>
+                        {t("admin.directory.createOrganization")}
                       </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {adminSection === "directory" ? (
-            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <ConsoleSurfaceHeader
-                action={
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button
-                      className="rounded-xl"
-                      disabled={!hasAdminWriteAccess}
-                      onClick={openCreateTenantPanel}
-                      size="sm"
-                      type="button"
-                    >
-                      {t("admin.actions.createTenant")}
-                    </Button>
-                    <Button
-                      className="rounded-xl bg-white"
-                      disabled={!hasAdminWriteAccess || tenants.length === 0}
-                      onClick={openCreateWorkspacePanel}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      {t("admin.actions.createWorkspace")}
-                    </Button>
-                  </div>
-                }
-                className="px-0 pb-3 pt-0"
-                description={t("admin.directory.description")}
-                title={t("admin.directory.title")}
-              />
-              <div className="pb-2 pt-2">
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-slate-100 bg-slate-50">
-                      <TableHead>
-                        {t("admin.directory.tenant")}
-                      </TableHead>
-                      <TableHead>{t("admin.directory.workspace")}</TableHead>
-                      <TableHead>{t("admin.directory.lifecycle")}</TableHead>
-                      <TableHead>
-                        {t("admin.directory.knowledgeBases")}
-                      </TableHead>
-                      <TableHead className="text-right">
-                        {t("admin.directory.actionsColumn")}
-                      </TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {searchedWorkspaces.map((workspace) => {
-                      const tenant = tenants.find(
-                        (tenantItem) => tenantItem.id === workspace.tenant_id,
-                      );
-                      const workspaceKnowledgeBaseCount =
-                        searchedKnowledgeBases.filter(
-                          (knowledgeBase) =>
-                            knowledgeBase.workspace_id === workspace.id,
-                        ).length;
-
-                      return (
-                        <TableRow
-                          className="border-slate-100"
-                          key={workspace.id}
-                        >
-                          <TableCell>
-                            <div className="font-medium text-slate-900">
-                              {tenant?.name ??
-                                t("admin.directory.unknownTenant")}
+                    }
+                    className="px-0 pb-3 pt-0"
+                    description={t("admin.directory.description")}
+                    title={t("admin.directory.title")}
+                  />
+                  <div className="grid gap-4 pb-2 pt-2">
+                    {directoryTenantGroups.map((group) => (
+                      <section
+                        className="overflow-visible rounded-[20px] border border-slate-200 bg-white shadow-sm"
+                        key={group.tenant.id}
+                      >
+                        <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                              <Building2 className="h-5 w-5" />
                             </div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              {tenant?.slug ??
-                                t("admin.directory.notAvailable")}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-slate-800">
-                              {workspace.name}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              {workspace.slug}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={cn(
-                                "border",
-                                getWorkspaceLifecycleClass(
-                                  workspace.is_archived,
-                                ),
-                              )}
-                              variant="outline"
-                            >
-                              {workspace.is_archived
-                                ? t("admin.directory.archived")
-                                : t("admin.directory.active")}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{workspaceKnowledgeBaseCount}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
-                              <Button
-                                className="bg-white"
-                                disabled={
-                                  !hasAdminWriteAccess ||
-                                  isUpdatingResource ||
-                                  isCreatingResource
-                                }
-                                onClick={() =>
-                                  openWorkspaceEditPanel(workspace)
-                                }
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                {t("admin.actions.edit")}
-                              </Button>
-                              <Button
-                                className="bg-white"
-                                disabled={
-                                  !hasAdminWriteAccess ||
-                                  activeWorkspaceActionId === workspace.id ||
-                                  activeKnowledgeBaseActionId !== null ||
-                                  isUpdatingResource ||
-                                  isCreatingResource
-                                }
-                                onClick={() =>
-                                  void handleToggleWorkspaceLifecycle(workspace)
-                                }
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                {activeWorkspaceActionId === workspace.id
-                                  ? workspace.is_archived
-                                    ? t("admin.actions.restoring")
-                                    : t("admin.actions.archiving")
-                                  : workspace.is_archived
-                                    ? t("admin.actions.restore")
-                                    : t("admin.actions.archive")}
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildWorkspaceContextHref(
-                                    workspace,
-                                    "chat",
-                                  )}
-                                >
-                                  {t("admin.directory.openChat")}
-                                </Link>
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildWorkspaceContextHref(
-                                    workspace,
-                                    "documents",
-                                  )}
-                                >
-                                  {t("shell.nav.documents")}
-                                </Link>
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildWorkspaceContextHref(
-                                    workspace,
-                                    "workflows",
-                                  )}
-                                >
-                                  {t("shell.userMenu.operations")}
-                                </Link>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {searchedWorkspaces.length === 0 && (
-                      <TableRow className="border-slate-100">
-                        <TableCell
-                          className="py-10 text-center text-slate-500"
-                          colSpan={5}
-                        >
-                          {t("admin.directory.noWorkspaces")}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {adminSection === "directory" ? (
-            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    className="rounded-xl"
-                    disabled={!hasAdminWriteAccess || filteredWorkspaces.length === 0}
-                    onClick={openCreateKnowledgeBasePanel}
-                    size="sm"
-                    type="button"
-                  >
-                    {t("admin.actions.createKnowledgeBase")}
-                  </Button>
-                }
-                className="px-0 pb-3 pt-0"
-                description={t("admin.governance.description")}
-                title={t("admin.governance.title")}
-              />
-              <div className="pb-2 pt-2">
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-slate-100 bg-slate-50">
-                      <TableHead>
-                        {t("admin.governance.knowledgeBase")}
-                      </TableHead>
-                      <TableHead>{t("admin.governance.workspace")}</TableHead>
-                      <TableHead>{t("admin.governance.publication")}</TableHead>
-                      <TableHead>
-                        {t("settings.retrievalProfiles.title")}
-                      </TableHead>
-                      <TableHead>{t("admin.governance.tenant")}</TableHead>
-                      <TableHead className="text-right">
-                        {t("admin.governance.actionsColumn")}
-                      </TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {searchedKnowledgeBases.map((knowledgeBase) => {
-                      const workspace = workspaces.find(
-                        (workspaceItem) =>
-                          workspaceItem.id === knowledgeBase.workspace_id,
-                      );
-                      const tenant = tenants.find(
-                        (tenantItem) =>
-                          tenantItem.id === knowledgeBase.tenant_id,
-                      );
-                      const assignedRetrievalProfile =
-                        knowledgeBase.retrieval_profile_id
-                          ? (retrievalProfiles.find(
-                              (retrievalProfile) =>
-                                retrievalProfile.id ===
-                                knowledgeBase.retrieval_profile_id,
-                            ) ?? null)
-                          : null;
-                      const effectiveRetrievalProfile =
-                        assignedRetrievalProfile ??
-                        retrievalProfiles.find(
-                          (retrievalProfile) =>
-                            retrievalProfile.is_enabled &&
-                            retrievalProfile.is_default,
-                        ) ??
-                        retrievalProfiles.find(
-                          (retrievalProfile) => retrievalProfile.is_enabled,
-                        ) ??
-                        retrievalProfiles[0] ??
-                        null;
-
-                      return (
-                        <TableRow
-                          className="border-slate-100"
-                          key={knowledgeBase.id}
-                        >
-                          <TableCell>
-                            <div className="font-medium text-slate-900">
-                              {knowledgeBase.name}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              {knowledgeBase.slug}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {workspace?.name ??
-                              t("admin.governance.unknownWorkspace")}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={cn(
-                                "border",
-                                getKnowledgeBasePublicationClass(
-                                  knowledgeBase.publication_status,
-                                ),
-                              )}
-                              variant="outline"
-                            >
-                              {knowledgeBase.publication_status === "published"
-                                ? t("admin.governance.published")
-                                : t("admin.governance.draft")}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {effectiveRetrievalProfile ? (
-                              <div className="flex flex-wrap gap-2">
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  variant="outline"
-                                >
-                                  {t(
-                                    "home.retrievalInspector.retrievalProfile",
-                                    { value: effectiveRetrievalProfile.name },
-                                  )}
-                                </Badge>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="truncate text-base font-semibold text-slate-950">
+                                  {group.tenant.name}
+                                </h3>
                                 <Badge
                                   className="border-slate-200 bg-slate-50 text-slate-600"
                                   variant="outline"
                                 >
-                                  {t("home.retrievalInspector.retrievalMode", {
-                                    value: t(
-                                      `settings.retrievalProfiles.modes.${effectiveRetrievalProfile.retrieval_mode}`,
-                                    ),
-                                  })}
-                                </Badge>
-                                {!assignedRetrievalProfile ? (
-                                  <Badge
-                                    className="border-blue-200 bg-blue-50 text-blue-700"
-                                    variant="outline"
-                                  >
-                                    {t("settings.retrievalProfiles.default")}
-                                  </Badge>
-                                ) : null}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-slate-500">
-                                {t("settings.governance.empty")}
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {tenant?.name ??
-                              t("admin.governance.unknownTenant")}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
-                              <Button
-                                className="bg-white"
-                                disabled={
-                                  !hasAdminWriteAccess ||
-                                  isUpdatingResource ||
-                                  isCreatingResource
-                                }
-                                onClick={() =>
-                                  openKnowledgeBaseEditPanel(knowledgeBase)
-                                }
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                {t("admin.actions.edit")}
-                              </Button>
-                              <Button
-                                className="bg-white"
-                                disabled={
-                                  !hasAdminWriteAccess ||
-                                  activeKnowledgeBaseActionId ===
-                                    knowledgeBase.id ||
-                                  activeWorkspaceActionId !== null ||
-                                  isUpdatingResource ||
-                                  isCreatingResource
-                                }
-                                onClick={() =>
-                                  void handleToggleKnowledgeBasePublication(
-                                    knowledgeBase,
-                                  )
-                                }
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                {activeKnowledgeBaseActionId ===
-                                knowledgeBase.id
-                                  ? knowledgeBase.publication_status ===
-                                    "published"
-                                    ? t("admin.actions.unpublishing")
-                                    : t("admin.actions.publishing")
-                                  : knowledgeBase.publication_status ===
-                                      "published"
-                                    ? t("admin.actions.moveToDraft")
-                                    : t("admin.actions.publish")}
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildAdminWorkspaceHref("directory", {
-                                    view: "chat",
-                                    tenantId: knowledgeBase.tenant_id,
-                                    workspaceId: knowledgeBase.workspace_id,
-                                    knowledgeBaseId: knowledgeBase.id,
-                                  })}
-                                >
-                                  {t("shell.nav.chat")}
-                                </Link>
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildKnowledgeBaseContextHref(
-                                    knowledgeBase,
-                                    "documents",
-                                  )}
-                                >
-                                  {t("shell.nav.documents")}
-                                </Link>
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildKnowledgeBaseContextHref(
-                                    knowledgeBase,
-                                    "workflows",
-                                  )}
-                                >
-                                  {t("shell.userMenu.operations")}
-                                </Link>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {searchedKnowledgeBases.length === 0 && (
-                      <TableRow className="border-slate-100">
-                        <TableCell
-                          className="py-10 text-center text-slate-500"
-                          colSpan={6}
-                        >
-                          {t("admin.governance.noKnowledgeBases")}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "directory" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <Badge
-                    className="border-slate-200 bg-slate-50 text-slate-600"
-                    variant="outline"
-                  >
-                    {t("admin.directory.results", {
-                      count: String(searchedAgents.length),
-                    })}
-                  </Badge>
-                }
-                title={t("admin.agents.title")}
-              />
-              <div className="px-6 pb-6 pt-2">
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-slate-100 bg-slate-50">
-                      <TableHead>
-                        {t("admin.agents.agent")}
-                      </TableHead>
-                      <TableHead>{t("admin.agents.tenant")}</TableHead>
-                      <TableHead>{t("admin.agents.mode")}</TableHead>
-                      <TableHead>{t("admin.agents.status")}</TableHead>
-                      <TableHead>{t("admin.agents.scope")}</TableHead>
-                      <TableHead>{t("admin.agents.tools")}</TableHead>
-                      <TableHead className="text-right">
-                        {t("admin.agents.actionsColumn")}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {searchedAgents.map((agent) => {
-                      const tenant = tenants.find(
-                        (tenantItem) => tenantItem.id === agent.tenant_id,
-                      );
-
-                      return (
-                        <TableRow className="border-slate-100" key={agent.id}>
-                          <TableCell>
-                            <div className="font-medium text-slate-900">
-                              {agent.name}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              {agent.slug}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {tenant?.name ?? t("admin.directory.unknownTenant")}
-                          </TableCell>
-                          <TableCell>
-                            {t(`agents.modes.${agent.mode}`)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={cn(
-                                "border",
-                                agent.status === "active"
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : agent.status === "paused"
-                                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                                    : "border-slate-200 bg-slate-100 text-slate-700",
-                              )}
-                              variant="outline"
-                            >
-                              {t(`agents.statuses.${agent.status}`)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {agent.knowledge_base_scope ||
-                              t("admin.agents.unscoped")}
-                          </TableCell>
-                          <TableCell>{agent.tools.length}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildAgentsHref({
-                                    tenantId: agent.tenant_id,
-                                    agentId: agent.id,
-                                  })}
-                                >
-                                  {t("admin.agents.openAgent")}
-                                </Link>
-                              </Button>
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link
-                                  href={buildOperationsHref({
-                                    tenantId: agent.tenant_id,
-                                    status:
-                                      agent.mode === "workflow_recovery"
-                                        ? "failed"
-                                        : "all",
-                                  })}
-                                >
-                                  {t("admin.agents.openOperations")}
-                                </Link>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {searchedAgents.length === 0 && (
-                      <TableRow className="border-slate-100">
-                        <TableCell
-                          className="py-10 text-center text-slate-500"
-                          colSpan={7}
-                        >
-                          {t("admin.agents.noAgents")}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {adminSection === "access" ||
-          (showAdvancedAdminSections && adminSection === "security") ? (
-            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    className="rounded-xl"
-                    disabled={!hasAdminWriteAccess}
-                    onClick={openCreateUserPanel}
-                    size="sm"
-                    type="button"
-                  >
-                    {t("admin.actions.createMember")}
-                  </Button>
-                }
-                className="px-0 pb-4 pt-0"
-                description={t("admin.members.description")}
-                title={t("admin.members.title")}
-              />
-              <div className="pb-2 pt-3">
-                <div className="overflow-x-auto rounded-[20px] border border-slate-200">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-slate-100 bg-slate-50">
-                      <TableHead>
-                        {t("admin.members.member")}
-                      </TableHead>
-                      <TableHead>{t("admin.members.memberships")}</TableHead>
-                      <TableHead>{t("admin.members.account")}</TableHead>
-                      <TableHead className="text-right">
-                        {t("admin.members.actionsColumn")}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {searchedUsers.map((user) => {
-                      const scopedMembership =
-                        selectedTenantId === "all"
-                          ? null
-                          : (user.memberships.find(
-                              (membership) =>
-                                membership.tenant_id === selectedTenantId,
-                            ) ?? null);
-                      const scopedInvitationCredential = scopedMembership
-                        ? (revealedInvitationByMembershipId[
-                            scopedMembership.id
-                          ] ?? null)
-                        : null;
-                      const invitationExpired = isInvitationExpired(
-                        scopedInvitationCredential?.invitation_expires_at ??
-                          scopedMembership?.invitation_expires_at ??
-                          null,
-                      );
-
-                      return (
-                        <TableRow className="border-slate-100" key={user.id}>
-                          <TableCell>
-                            <div className="font-medium text-slate-900">
-                              {user.display_name}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {user.email}
-                            </div>
-                            <div className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                              {getRoleLabel(user.role, t)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-3">
-                              <div className="flex flex-wrap gap-2">
-                                {user.memberships.length > 0 ? (
-                                  user.memberships.map((membership) => (
-                                    <Badge
-                                      className="border-slate-200 bg-white text-slate-700"
-                                      key={membership.id}
-                                      variant="outline"
-                                    >
-                                      {membership.tenant_name}
-                                      {" · "}
-                                      {membership.membership_status === "active"
-                                        ? t("admin.members.activeMembership")
-                                        : membership.membership_status ===
-                                            "invited"
-                                          ? t("admin.members.invitedMembership")
-                                          : t(
-                                              "admin.members.suspendedMembership",
-                                            )}
-                                    </Badge>
-                                  ))
-                                ) : (
-                                  <Badge
-                                    className="border-slate-200 bg-slate-50 text-slate-600"
-                                    variant="outline"
-                                  >
-                                    {t("admin.members.unassigned")}
-                                  </Badge>
-                                )}
-                              </div>
-                              {scopedMembership?.membership_status ===
-                                "invited" && scopedInvitationCredential ? (
-                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-left">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
-                                      {t("admin.members.invitationCode")}
-                                    </div>
-                                    {invitationExpired ? (
-                                      <Badge
-                                        className="border-rose-200 bg-white text-rose-700"
-                                        variant="outline"
-                                      >
-                                        {t("admin.members.invitationExpired")}
-                                      </Badge>
-                                    ) : null}
-                                  </div>
-                                  <div className="mt-2 font-mono text-sm font-semibold text-amber-900">
-                                    {
-                                      scopedInvitationCredential.invitation_token
-                                    }
-                                  </div>
-                                  <div className="mt-1 text-xs text-amber-800">
-                                    {t("admin.members.invitationIssuedAt", {
-                                      value:
-                                        scopedInvitationCredential.invited_at
-                                          ? formatTimestamp(
-                                              scopedInvitationCredential.invited_at,
-                                            )
-                                          : t("admin.directory.notAvailable"),
-                                    })}
-                                  </div>
-                                  <div className="mt-1 text-xs text-amber-800">
-                                    {t("admin.members.invitationIssuedBy", {
-                                      value:
-                                        scopedInvitationCredential.last_invitation_issued_by_display_name ??
-                                        t("admin.directory.notAvailable"),
-                                    })}
-                                  </div>
-                                  <div className="mt-1 text-xs text-amber-800">
-                                    {t("admin.members.invitationIssueCount", {
-                                      value: String(
-                                        scopedInvitationCredential.invitation_issue_count,
-                                      ),
-                                    })}
-                                  </div>
-                                  <div className="mt-1 text-xs text-amber-800">
-                                    {t("admin.members.invitationExpiresAt", {
-                                      value:
-                                        scopedInvitationCredential.invitation_expires_at
-                                          ? formatTimestamp(
-                                              scopedInvitationCredential.invitation_expires_at,
-                                            )
-                                          : t("admin.directory.notAvailable"),
-                                    })}
-                                  </div>
-                                </div>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={cn(
-                                "border",
-                                user.is_active
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border-slate-200 bg-slate-100 text-slate-700",
-                              )}
-                              variant="outline"
-                            >
-                              {user.is_active
-                                ? t("admin.members.activeAccount")
-                                : t("admin.members.inactiveAccount")}
-                            </Badge>
-                            <div className="mt-2 text-xs text-slate-500">
-                              {t("admin.members.createdAt", {
-                                value: formatTimestamp(user.created_at),
-                              })}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {t("admin.members.lastSignedInAt", {
-                                value: user.last_signed_in_at
-                                  ? formatTimestamp(user.last_signed_in_at)
-                                  : t("admin.directory.notAvailable"),
-                              })}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
-                              <Button
-                                className="bg-white"
-                                disabled={!hasAdminWriteAccess || isLoading}
-                                onClick={() => openUserEditPanel(user)}
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                {t("admin.actions.edit")}
-                              </Button>
-                              <Button
-                                className="bg-white"
-                                disabled={
-                                  !hasAdminWriteAccess ||
-                                  activeUserActionId === user.id ||
-                                  isLoading
-                                }
-                                onClick={() =>
-                                  void handleToggleUserAccount(user)
-                                }
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                {activeUserActionId === user.id
-                                  ? user.is_active
-                                    ? t("admin.actions.deactivating")
-                                    : t("admin.actions.activating")
-                                  : user.is_active
-                                    ? t("admin.actions.deactivate")
-                                    : t("admin.actions.activate")}
-                              </Button>
-                              {selectedTenantId === "all" ? (
-                                <Button
-                                  className="bg-white"
-                                  disabled
-                                  size="sm"
-                                  type="button"
-                                  variant="outline"
-                                >
-                                  {t("admin.members.scopeRequired")}
-                                </Button>
-                              ) : scopedMembership ? (
-                                <>
-                                  <Button
-                                    className="bg-white"
-                                    disabled={
-                                      !hasAdminWriteAccess ||
-                                      activeMembershipActionId ===
-                                        scopedMembership.id ||
-                                      isLoading
-                                    }
-                                    onClick={() =>
-                                      void handleIssueMembershipInvitation(
-                                        user,
-                                        scopedMembership,
-                                      )
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {activeMembershipActionId ===
-                                    scopedMembership.id
-                                      ? t("admin.actions.issuingInvitationCode")
-                                      : scopedInvitationCredential
-                                        ? t(
-                                            "admin.actions.regenerateInvitationCode",
-                                          )
-                                        : t("admin.actions.showInvitationCode")}
-                                  </Button>
-                                  {scopedMembership.membership_status ===
-                                  "invited" ? (
-                                    <Button
-                                      className="bg-white"
-                                      disabled={
-                                        !hasAdminWriteAccess ||
-                                        activeMembershipActionId ===
-                                          scopedMembership.id ||
-                                        isLoading
-                                      }
-                                      onClick={() =>
-                                        void handleRevokeMembershipInvitation(
-                                          user,
-                                          scopedMembership,
-                                        )
-                                      }
-                                      size="sm"
-                                      type="button"
-                                      variant="outline"
-                                    >
-                                      {activeMembershipActionId ===
-                                      scopedMembership.id
-                                        ? t(
-                                            "admin.actions.revokingInvitationCode",
-                                          )
-                                        : t(
-                                            "admin.actions.revokeInvitationCode",
-                                          )}
-                                    </Button>
-                                  ) : null}
-                                  <Button
-                                    className="bg-white"
-                                    disabled={
-                                      !hasAdminWriteAccess ||
-                                      activeMembershipActionId ===
-                                        scopedMembership.id ||
-                                      isLoading
-                                    }
-                                    onClick={() =>
-                                      void handleUpdateMembership(
-                                        user,
-                                        scopedMembership,
-                                        scopedMembership.membership_status ===
-                                          "active"
-                                          ? "suspended"
-                                          : "active",
-                                      )
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {activeMembershipActionId ===
-                                    scopedMembership.id
-                                      ? scopedMembership.membership_status ===
-                                        "active"
-                                        ? t("admin.actions.suspending")
-                                        : t("admin.actions.activating")
-                                      : scopedMembership.membership_status ===
-                                          "active"
-                                        ? t("admin.actions.suspend")
-                                        : scopedMembership.membership_status ===
-                                            "invited"
-                                          ? t("admin.actions.activateInvite")
-                                          : t("admin.actions.activate")}
-                                  </Button>
-                                  <Button
-                                    className="bg-white"
-                                    disabled={
-                                      !hasAdminWriteAccess ||
-                                      activeMembershipActionId ===
-                                        scopedMembership.id ||
-                                      isLoading
-                                    }
-                                    onClick={() =>
-                                      void handleRemoveMembership(
-                                        user,
-                                        scopedMembership,
-                                      )
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {activeMembershipActionId ===
-                                    scopedMembership.id
-                                      ? t("admin.actions.removing")
-                                      : t("admin.actions.removeFromTenant")}
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button
-                                  className="bg-white"
-                                  disabled={
-                                    !hasAdminWriteAccess ||
-                                    activeUserActionId === user.id ||
-                                    isLoading
-                                  }
-                                  onClick={() =>
-                                    void handleAddUserToTenant(user)
-                                  }
-                                  size="sm"
-                                  type="button"
-                                  variant="outline"
-                                >
-                                  {activeUserActionId === user.id
-                                    ? t("admin.actions.invitingToTenant")
-                                    : t("admin.actions.inviteToTenant")}
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {searchedUsers.length === 0 ? (
-                      <TableRow className="border-slate-100">
-                        <TableCell
-                          className="py-10 text-center text-slate-500"
-                          colSpan={4}
-                        >
-                          {t("admin.members.noMembers")}
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-        </div>
-
-        <div className="mt-6 grid gap-6">
-          {showOverviewSection ? <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <RuntimePostureCard
-                className="border-0 bg-transparent p-0"
-                description={t("settings.governance.description")}
-                errorMessage={runtimeHealthErrorMessage}
-                isLoading={isLoadingRuntimeHealth}
-                runtimeHealth={runtimeHealth}
-                title={t("settings.governance.title")}
-              />
-          </ConsoleSurface> : null}
-
-          {adminSection === "access" ||
-          (showAdvancedAdminSections && adminSection === "security") ? (
-            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <ConsoleSurfaceHeader
-                action={
-                  <Select
-                    disabled={isLoading}
-                    onValueChange={setAuditEventFilter}
-                    value={auditEventFilter}
-                  >
-                    <SelectTrigger className="min-w-[210px] rounded-xl border-slate-200 bg-white">
-                      <SelectValue placeholder={t("admin.audit.filter")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {t("admin.audit.allEvents")}
-                      </SelectItem>
-                      <SelectItem value="sign_in_failed">
-                        {t("admin.audit.eventTypes.signInFailed")}
-                      </SelectItem>
-                      <SelectItem value="sign_in_succeeded">
-                        {t("admin.audit.eventTypes.signInSucceeded")}
-                      </SelectItem>
-                      <SelectItem value="invitation_activation_failed">
-                        {t("admin.audit.eventTypes.invitationActivationFailed")}
-                      </SelectItem>
-                      <SelectItem value="sign_out_succeeded">
-                        {t("admin.audit.eventTypes.signOutSucceeded")}
-                      </SelectItem>
-                      <SelectItem value="session_revoked">
-                        {t("admin.audit.eventTypes.sessionRevoked")}
-                      </SelectItem>
-                      <SelectItem value="password_changed">
-                        {t("admin.audit.eventTypes.passwordChanged")}
-                      </SelectItem>
-                      <SelectItem value="password_reset">
-                        {t("admin.audit.eventTypes.passwordReset")}
-                      </SelectItem>
-                      <SelectItem value="invitation_issued">
-                        {t("admin.audit.eventTypes.invitationIssued")}
-                      </SelectItem>
-                      <SelectItem value="invitation_activated">
-                        {t("admin.audit.eventTypes.invitationActivated")}
-                      </SelectItem>
-                      <SelectItem value="invitation_revoked">
-                        {t("admin.audit.eventTypes.invitationRevoked")}
-                      </SelectItem>
-                      <SelectItem value="membership_active">
-                        {t("admin.audit.eventTypes.membershipActive")}
-                      </SelectItem>
-                      <SelectItem value="membership_suspended">
-                        {t("admin.audit.eventTypes.membershipSuspended")}
-                      </SelectItem>
-                      <SelectItem value="membership_deleted">
-                        {t("admin.audit.eventTypes.membershipDeleted")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                }
-                className="px-0 pb-3 pt-0"
-                description={t("admin.audit.description")}
-                title={t("admin.audit.title")}
-              />
-              <div className="grid gap-3 pt-3 lg:grid-cols-2">
-                {auditEvents.length > 0 ? (
-                  auditEvents.map((event) => (
-                    <div
-                      className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={event.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="text-sm font-semibold text-slate-900">
-                          {getAccessEventLabel(event.event_type, t)}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {formatTimestamp(event.created_at)}
-                        </div>
-                      </div>
-                      <div className="mt-2 text-sm text-slate-600">
-                        {event.user_display_name ??
-                          t("admin.directory.notAvailable")}
-                        {event.tenant_name ? ` · ${event.tenant_name}` : ""}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {t("admin.audit.actor", {
-                          value:
-                            event.actor_display_name ??
-                            t("admin.directory.notAvailable"),
-                        })}
-                      </div>
-                      {readAccessEventRevocationScope(event) ? (
-                        <div className="mt-1 text-xs text-slate-500">
-                          {t("admin.audit.revocationScope", {
-                            value:
-                              readAccessEventRevocationScope(event) === "self"
-                                ? t("admin.audit.revocationScopeSelf")
-                                : t("admin.audit.revocationScopeAdmin"),
-                          })}
-                        </div>
-                      ) : null}
-                      {readAccessEventReason(event) ? (
-                        <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                          <span className="font-semibold text-slate-700">
-                            {t("admin.audit.reasonLabel")}:{" "}
-                          </span>
-                          {readAccessEventReason(event)}
-                        </div>
-                      ) : null}
-                      {hasAdminWriteAccess && event.user_id ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button
-                            asChild
-                            className="bg-white"
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Link
-                              href={buildMemberGovernanceHref(event.user_id, {
-                                tenantId: event.tenant_id,
-                                memberRelationshipFilter:
-                                  event.event_type === "invitation_issued" ||
-                                  event.event_type === "invitation_revoked"
-                                    ? "invited"
-                                    : null,
-                              })}
-                            >
-                              {t("admin.audit.openMember")}
-                            </Link>
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500 lg:col-span-2">
-                    {t("admin.audit.empty")}
-                  </div>
-                )}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "access" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.accessSummary.description")}
-                title={t("admin.accessSummary.title")}
-              />
-              <div className="grid gap-3 p-6">
-                {accessSummaryItems.map((item) => (
-                  <div
-                    className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                    key={item.label}
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {item.label}
-                    </div>
-                    <div className="mt-3 text-2xl font-semibold text-slate-950">
-                      {item.value}
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-slate-500">
-                      {item.hint}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "access" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.accessSummary.eventBreakdownDescription")}
-                title={t("admin.accessSummary.eventBreakdownTitle")}
-              />
-              <div className="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
-                {accessEventBreakdownItems.length > 0 ? (
-                  accessEventBreakdownItems.map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={item.event_type}
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {getAccessEventLabel(item.event_type, t)}
-                      </div>
-                      <div className="mt-3 text-2xl font-semibold text-slate-950">
-                        {item.event_count}
-                      </div>
-                      <div className="mt-4">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link
-                            href={buildAuditEventSliceHref(item.event_type, {
-                              selectedTenantId,
-                              searchQuery,
-                              memberAccountFilter,
-                              memberRelationshipFilter,
-                            })}
-                          >
-                            {t("admin.accessSummary.openAuditSlice")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500 md:col-span-2 xl:col-span-3">
-                    {t("admin.accessSummary.eventBreakdownEmpty")}
-                  </div>
-                )}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {adminSection === "access" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.members.activationQueue.description")}
-                title={t("admin.members.activationQueue.title")}
-              />
-              <div className="space-y-3 px-6 py-5">
-                {invitedActivationQueue.length > 0 ? (
-                  invitedActivationQueue.map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
-                      key={item.membership.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold text-slate-950">
-                            {item.user.display_name}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {item.user.email}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Badge
-                            className="border-slate-200 bg-white text-slate-700"
-                            variant="outline"
-                          >
-                            {item.membership.tenant_name}
-                          </Badge>
-                          <Badge
-                            className={cn(
-                              "border",
-                              item.invitationExpired
-                                ? "border-rose-200 bg-rose-50 text-rose-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700",
-                            )}
-                            variant="outline"
-                          >
-                            {item.invitationExpired
-                              ? t("admin.members.invitationExpired")
-                              : t("admin.members.invitedMembership")}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-3">
-                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            {t("admin.members.invitationCode")}
-                          </div>
-                          <div className="mt-2 font-mono text-sm font-semibold text-slate-900">
-                            {item.invitationCredential?.invitation_token ??
-                              t("admin.members.activationQueue.notIssued")}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                          <div>
-                            {t("admin.members.invitationIssuedAt", {
-                              value: item.invitationIssuedAt
-                                ? formatTimestamp(item.invitationIssuedAt)
-                                : t("admin.directory.notAvailable"),
-                            })}
-                          </div>
-                          <div className="mt-1">
-                            {t("admin.members.invitationIssueCount", {
-                              value: String(
-                                item.invitationCredential
-                                  ?.invitation_issue_count ??
-                                  item.membership.invitation_issue_count,
-                              ),
-                            })}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                          <div>
-                            {t("admin.members.invitationExpiresAt", {
-                              value: item.invitationExpiresAt
-                                ? formatTimestamp(item.invitationExpiresAt)
-                                : t("admin.directory.notAvailable"),
-                            })}
-                          </div>
-                          <div className="mt-1">
-                            {t("admin.members.invitationIssuedBy", {
-                              value:
-                                item.invitationCredential
-                                  ?.last_invitation_issued_by_display_name ??
-                                item.membership
-                                  .last_invitation_issued_by_display_name ??
-                                t("admin.directory.notAvailable"),
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link
-                            href={buildMemberGovernanceHref(item.user, {
-                              tenantId: item.membership.tenant_id,
-                              memberRelationshipFilter: "invited",
-                            })}
-                          >
-                            {t("admin.audit.openMember")}
-                          </Link>
-                        </Button>
-                        <Button
-                          className="bg-white"
-                          disabled={
-                            !hasAdminWriteAccess ||
-                            activeMembershipActionId === item.membership.id ||
-                            isLoading
-                          }
-                          onClick={() =>
-                            void handleIssueMembershipInvitation(
-                              item.user,
-                              item.membership,
-                            )
-                          }
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {activeMembershipActionId === item.membership.id
-                            ? t("admin.actions.issuingInvitationCode")
-                            : item.invitationCredential
-                              ? t("admin.actions.regenerateInvitationCode")
-                              : t("admin.actions.showInvitationCode")}
-                        </Button>
-                        <Button
-                          className="bg-white"
-                          disabled={
-                            !hasAdminWriteAccess ||
-                            activeMembershipActionId === item.membership.id ||
-                            isLoading
-                          }
-                          onClick={() =>
-                            void handleUpdateMembership(
-                              item.user,
-                              item.membership,
-                              "active",
-                            )
-                          }
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {activeMembershipActionId === item.membership.id
-                            ? t("admin.actions.activating")
-                            : t("admin.actions.activateInvite")}
-                        </Button>
-                        <Button
-                          className="bg-white"
-                          disabled={
-                            !hasAdminWriteAccess ||
-                            activeMembershipActionId === item.membership.id ||
-                            isLoading
-                          }
-                          onClick={() =>
-                            void handleRevokeMembershipInvitation(
-                              item.user,
-                              item.membership,
-                            )
-                          }
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {activeMembershipActionId === item.membership.id
-                            ? t("admin.actions.revokingInvitationCode")
-                            : t("admin.actions.revokeInvitationCode")}
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500">
-                    {t("admin.members.activationQueue.empty")}
-                  </div>
-                )}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "security" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.securitySummary.description")}
-                title={t("admin.securitySummary.title")}
-              />
-              <div className="grid gap-3 p-6">
-                {securitySummaryItems.map((item) => (
-                  <div
-                    className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                    key={item.label}
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {item.label}
-                    </div>
-                    <div className="mt-3 text-2xl font-semibold text-slate-950">
-                      {item.value}
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-slate-500">
-                      {item.hint}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "security" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.currentActorSecurity.description")}
-                title={t("admin.currentActorSecurity.title")}
-              />
-              <div className="space-y-4 p-6">
-                {currentActorSecurityPosture ? (
-                  <>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5">
-                      <div className="text-base font-semibold text-slate-950">
-                        {currentActorSecurityPosture.display_name}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-500">
-                        {currentActorSecurityPosture.email}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {getRoleLabel(currentActorSecurityPosture.role, t)}
-                        </Badge>
-                        <Badge
-                          className={cn(
-                            "border",
-                            currentActorSecurityPosture.is_active
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : "border-rose-200 bg-rose-50 text-rose-700",
-                          )}
-                          variant="outline"
-                        >
-                          {currentActorSecurityPosture.is_active
-                            ? t("admin.currentActorSecurity.accountActive")
-                            : t("admin.currentActorSecurity.accountInactive")}
-                        </Badge>
-                      </div>
-                      <div className="mt-4 text-sm text-slate-500">
-                        {t("admin.currentActorSecurity.lastSignedIn", {
-                          value: currentActorSecurityPosture.last_signed_in_at
-                            ? formatTimestamp(
-                                currentActorSecurityPosture.last_signed_in_at,
-                              )
-                            : t("admin.directory.notAvailable"),
-                        })}
-                      </div>
-                      {hasAdminWriteAccess ? (
-                        <div className="mt-4">
-                          <Button
-                            asChild
-                            className="bg-white"
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Link
-                              href={buildMemberGovernanceHref(
-                                currentActorSecurityPosture,
-                              )}
-                            >
-                              {t("admin.currentActorSecurity.openMember")}
-                            </Link>
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.currentActorSecurity.activeMemberships")}
-                        </div>
-                        <div className="mt-3 text-2xl font-semibold text-slate-950">
-                          {currentActorAccessSummary
-                            ? currentActorAccessSummary.active_memberships
-                            : "--"}
-                        </div>
-                      </div>
-                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.currentActorSecurity.invitedMemberships")}
-                        </div>
-                        <div className="mt-3 text-2xl font-semibold text-slate-950">
-                          {currentActorAccessSummary
-                            ? currentActorAccessSummary.invited_memberships
-                            : "--"}
-                        </div>
-                      </div>
-                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.currentActorSecurity.suspendedMemberships")}
-                        </div>
-                        <div className="mt-3 text-2xl font-semibold text-slate-950">
-                          {currentActorAccessSummary
-                            ? currentActorAccessSummary.suspended_memberships
-                            : "--"}
-                        </div>
-                      </div>
-                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.currentActorSecurity.invitationRisk")}
-                        </div>
-                        <div className="mt-3 text-2xl font-semibold text-slate-950">
-                          {currentActorInvitationRisk ?? "--"}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        asChild
-                        className="bg-white"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link href="/settings">
-                          {t("admin.currentActorSecurity.openSettings")}
-                        </Link>
-                      </Button>
-                      <Button
-                        asChild
-                        className="bg-white"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link
-                          href={buildAdminHref({
-                            tenantId: selectedTenantId,
-                            section: "access",
-                          })}
-                        >
-                          {t("admin.currentActorSecurity.openAccess")}
-                        </Link>
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
-                    {t("admin.currentActorSecurity.notAvailable")}
-                  </div>
-                )}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "security" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.securityWatch.description")}
-                title={t("admin.securityWatch.title")}
-              />
-              <div className="space-y-4 px-6 py-5">
-                {securityWatchItems.map((item) => (
-                  <div
-                    className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
-                    key={item.title}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-base font-semibold text-slate-900">
-                        {item.title}
-                      </div>
-                      <Badge
-                        className={cn(
-                          "border",
-                          getWatchStatusClass(item.status),
-                        )}
-                        variant="outline"
-                      >
-                        {item.status === "attention"
-                          ? t("admin.watchlist.attention")
-                          : item.status === "review"
-                            ? t("admin.watchlist.review")
-                            : t("admin.watchlist.healthy")}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 text-sm leading-6 text-slate-500">
-                      {item.detail}
-                    </div>
-                    {item.actionHref && item.actionLabel ? (
-                      <div className="mt-4">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.actionHref}>{item.actionLabel}</Link>
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showRuntimeSection ? (
-            <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
-              <ConsoleSurfaceHeader
-                actionPlacement="below"
-                action={
-                  <div className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:grid-cols-2 2xl:grid-cols-5">
-                    <div className="relative min-w-0 lg:col-span-2 2xl:col-span-5">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <Input
-                        className="bg-white pl-9"
-                        onChange={(event) =>
-                          setRuntimeGovernanceSearchQuery(event.target.value)
-                        }
-                        placeholder={t(
-                          "admin.runtimeQueue.filters.searchPlaceholder",
-                        )}
-                        value={runtimeGovernanceSearchQuery}
-                      />
-                    </div>
-                    <Select
-                      onValueChange={setRuntimeGovernanceQueueCategoryFilter}
-                      value={runtimeGovernanceQueueCategoryFilter}
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue
-                          placeholder={t("admin.runtimeQueue.filters.category")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.runtimeQueue.filters.allCategories")}
-                        </SelectItem>
-                        <SelectItem value="unconfigured_model_endpoint">
-                          {t(
-                            "admin.runtimeQueue.categories.unconfiguredModelEndpoint",
-                          )}
-                        </SelectItem>
-                        <SelectItem value="disabled_bound_model_endpoint">
-                          {t(
-                            "admin.runtimeQueue.categories.disabledBoundModelEndpoint",
-                          )}
-                        </SelectItem>
-                        <SelectItem value="approval_required_tool">
-                          {t(
-                            "admin.runtimeQueue.categories.approvalRequiredTool",
-                          )}
-                        </SelectItem>
-                        <SelectItem value="mcp_integration_pending_tool">
-                          {t(
-                            "admin.runtimeQueue.categories.mcpIntegrationPendingTool",
-                          )}
-                        </SelectItem>
-                        <SelectItem value="integration_blocked_connector">
-                          {t(
-                            "admin.runtimeQueue.categories.integrationBlockedConnector",
-                          )}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      onValueChange={setRuntimeGovernanceQueueSeverityFilter}
-                      value={runtimeGovernanceQueueSeverityFilter}
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue
-                          placeholder={t("admin.runtimeQueue.filters.severity")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.runtimeQueue.filters.allSeverities")}
-                        </SelectItem>
-                        <SelectItem value="attention">
-                          {t("admin.watchlist.attention")}
-                        </SelectItem>
-                        <SelectItem value="review">
-                          {t("admin.watchlist.review")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      onValueChange={setRuntimeGovernanceQueueResourceFilter}
-                      value={runtimeGovernanceQueueResourceFilter}
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue
-                          placeholder={t("admin.runtimeQueue.filters.resource")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.runtimeQueue.filters.allResources")}
-                        </SelectItem>
-                        <SelectItem value="model_endpoint">
-                          {formatGovernanceTokenLabel("model_endpoint")}
-                        </SelectItem>
-                        <SelectItem value="tool_registration">
-                          {formatGovernanceTokenLabel("tool_registration")}
-                        </SelectItem>
-                        <SelectItem value="mcp_connector">
-                          {formatGovernanceTokenLabel("mcp_connector")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      onValueChange={setRuntimeGovernanceActionFilter}
-                      value={runtimeGovernanceActionFilter}
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue
-                          placeholder={t("admin.runtimeQueue.filters.action")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.runtimeQueue.filters.allActions")}
-                        </SelectItem>
-                        <SelectItem value="created">
-                          {formatGovernanceTokenLabel("created")}
-                        </SelectItem>
-                        <SelectItem value="updated">
-                          {formatGovernanceTokenLabel("updated")}
-                        </SelectItem>
-                        <SelectItem value="deleted">
-                          {formatGovernanceTokenLabel("deleted")}
-                        </SelectItem>
-                        <SelectItem value="governance_action">
-                          {formatGovernanceTokenLabel("governance_action")}
-                        </SelectItem>
-                        <SelectItem value="previewed">
-                          {formatGovernanceTokenLabel("previewed")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      onValueChange={setRuntimeGovernanceActorRoleFilter}
-                      value={runtimeGovernanceActorRoleFilter}
-                    >
-                      <SelectTrigger className="h-10 w-full">
-                        <SelectValue
-                          placeholder={t("admin.runtimeQueue.filters.actor")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.runtimeQueue.filters.allActors")}
-                        </SelectItem>
-                        <SelectItem value="super_admin">
-                          {t("auth.roles.superAdmin")}
-                        </SelectItem>
-                        <SelectItem value="operator">
-                          {t("auth.roles.operator")}
-                        </SelectItem>
-                        <SelectItem value="reviewer">
-                          {t("auth.roles.reviewer")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                }
-                className="px-0 pb-4 pt-0"
-                description={t("admin.runtimeQueue.description")}
-                title={t("admin.runtimeQueue.title")}
-              />
-              <div className="space-y-6 pt-2">
-                <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.runtimeQueue.metrics.total")}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {runtimeGovernanceWorklist?.total_items ?? 0}
-                    </div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.runtimeQueue.metrics.unconfiguredModels")}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {runtimeGovernanceWorklist?.unconfigured_model_endpoints ??
-                        0}
-                    </div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.runtimeQueue.metrics.disabledBoundModels")}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {runtimeGovernanceWorklist?.disabled_bound_model_endpoints ??
-                        0}
-                    </div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.runtimeQueue.metrics.approvalRequiredTools")}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {runtimeGovernanceWorklist?.approval_required_tools ?? 0}
-                    </div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.runtimeQueue.metrics.integrationPendingTools")}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {runtimeGovernanceWorklist?.mcp_integration_pending_tools ??
-                        0}
-                    </div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.runtimeQueue.metrics.blockedConnectors")}
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-slate-950">
-                      {runtimeGovernanceWorklist?.integration_blocked_connectors ??
-                        0}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 2xl:grid-cols-2">
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold text-slate-950">
-                      {t("admin.runtimeQueue.worklistTitle")}
-                    </div>
-                    {runtimeGovernanceWorklist?.items.length ? (
-                      <div className="space-y-3">
-                        {runtimeGovernanceWorklist.items.map((item) => {
-                          const followUp =
-                            buildRuntimeGovernanceWorklistFollowUp(
-                              item,
-                              selectedTenantId === "all"
-                                ? null
-                                : selectedTenantId,
-                            );
-                          const quickActionKey =
-                            resolveRuntimeGovernanceWorklistQuickAction(item);
-                          const isApplyingQuickAction =
-                            activeRuntimeGovernanceActionId ===
-                            item.resource_id;
-                          const previewStatusLabel =
-                            getRuntimeGovernanceWorklistPreviewStatusLabel(
-                              item,
-                              t,
-                            );
-                          const previewFailureLabel =
-                            item.resource_type === "model_endpoint" ||
-                            item.resource_type === "tool_registration" ||
-                            item.resource_type === "mcp_connector"
-                              ? readRuntimeGovernancePreviewFailureLabel(
-                                  item,
-                                  t,
-                                  "admin.runtimeQueue.previewFailures",
-                                )
-                              : null;
-
-                          return (
-                            <div
-                              className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                              key={`${item.resource_type}-${item.resource_id}`}
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  className={
-                                    item.severity === "attention"
-                                      ? "border-rose-200 bg-rose-50 text-rose-700"
-                                      : "border-amber-200 bg-amber-50 text-amber-700"
-                                  }
-                                  variant="outline"
-                                >
-                                  {item.severity === "attention"
-                                    ? t("admin.watchlist.attention")
-                                    : t("admin.watchlist.review")}
-                                </Badge>
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  variant="outline"
-                                >
-                                  {getRuntimeGovernanceWorklistCategoryLabel(
-                                    item.category,
-                                    t,
-                                  )}
+                                  {t("admin.directory.organization")}
                                 </Badge>
                               </div>
-                              <div className="mt-3 text-base font-semibold text-slate-950">
-                                {item.resource_name}
-                              </div>
-                              <div className="mt-1 text-sm text-slate-500">
-                                {item.resource_slug}
-                              </div>
-                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                                <span>
-                                  {getRuntimeGovernanceActionHintLabel(
-                                    item.action_hint,
-                                    t,
-                                  )}
-                                </span>
-                                {"provider_type" in item.detail &&
-                                typeof item.detail.provider_type ===
-                                  "string" ? (
-                                  <span>
-                                    {t(
-                                      `settings.models.providers.${item.detail.provider_type}`,
-                                    )}
-                                  </span>
-                                ) : null}
-                                {"transport_type" in item.detail &&
-                                typeof item.detail.transport_type ===
-                                  "string" ? (
-                                  <span>
-                                    {formatGovernanceTokenLabel(
-                                      item.detail.transport_type,
-                                    )}
-                                  </span>
-                                ) : null}
-                                {"surface_area" in item.detail &&
-                                typeof item.detail.surface_area === "string" ? (
-                                  <span>
-                                    {formatGovernanceTokenLabel(
-                                      item.detail.surface_area,
-                                    )}
-                                  </span>
-                                ) : null}
-                                {"bound_agent_count" in item.detail &&
-                                typeof item.detail.bound_agent_count ===
-                                  "number" ? (
-                                  <span>
-                                    {t("admin.runtimeQueue.boundAgents", {
-                                      count: String(
-                                        item.detail.bound_agent_count,
-                                      ),
-                                    })}
-                                  </span>
-                                ) : null}
-                                {"runtime_issue" in item.detail &&
-                                typeof item.detail.runtime_issue ===
-                                  "string" ? (
-                                  <span>
-                                    {t(
-                                      `agents.readiness.issueLabels.model_runtime_unconfigured`,
-                                    )}
-                                  </span>
-                                ) : null}
-                                {"integration_ready_tool_count" in
-                                  item.detail &&
-                                typeof item.detail
-                                  .integration_ready_tool_count === "number" ? (
-                                  <span>
-                                    {t(
-                                      "admin.runtimeQueue.integrationReadyTools",
-                                      {
-                                        count: String(
-                                          item.detail
-                                            .integration_ready_tool_count,
-                                        ),
-                                      },
-                                    )}
-                                  </span>
-                                ) : null}
-                                {previewFailureLabel ? (
-                                  <span>{previewFailureLabel}</span>
-                                ) : null}
-                              </div>
-                              {previewStatusLabel ? (
-                                <div className="mt-2 text-xs text-slate-500">
-                                  {previewStatusLabel}
-                                </div>
-                              ) : null}
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                {quickActionKey ? (
-                                  <Button
-                                    className="bg-white"
-                                    disabled={
-                                      !hasAdminWriteAccess ||
-                                      isApplyingQuickAction
-                                    }
-                                    onClick={() =>
-                                      void handleApplyRuntimeGovernanceQueueAction(
-                                        item,
-                                      )
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {getRuntimeGovernanceQuickActionLabel(
-                                      quickActionKey,
-                                      t,
-                                    )}
-                                  </Button>
-                                ) : null}
-                                {followUp.settingsHref ? (
-                                  <Button
-                                    asChild
-                                    className="bg-white"
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    <Link href={followUp.settingsHref}>
-                                      {t(
-                                        "admin.runtimeQueue.actions.openSettings",
-                                      )}
-                                    </Link>
-                                  </Button>
-                                ) : null}
-                                {followUp.definitionsHref ? (
-                                  <Button
-                                    asChild
-                                    className="bg-white"
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    <Link href={followUp.definitionsHref}>
-                                      {t(
-                                        "admin.runtimeQueue.actions.openAgents",
-                                      )}
-                                    </Link>
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
-                        {t("admin.runtimeQueue.emptyWorklist")}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold text-slate-950">
-                      {t("admin.runtimeQueue.eventsTitle")}
-                    </div>
-                    {runtimeGovernanceEvents.length ? (
-                      <div className="space-y-3">
-                        {runtimeGovernanceEvents.map((event) => {
-                          const followUp = buildRuntimeGovernanceEventFollowUp(
-                            event,
-                            selectedTenantId === "all"
-                              ? null
-                              : selectedTenantId,
-                          );
-                          const quickActionKey =
-                            resolveRuntimeGovernanceEventQuickAction(event);
-                          const isApplyingQuickAction =
-                            Boolean(event.resource_id) &&
-                            activeRuntimeGovernanceActionId ===
-                              event.resource_id;
-
-                          return (
-                            <div
-                              className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                              key={event.id}
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  variant="outline"
-                                >
-                                  {formatGovernanceTokenLabel(
-                                    event.resource_type,
-                                  )}
-                                </Badge>
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  variant="outline"
-                                >
-                                  {event.actor_role
-                                    ? getRoleLabel(
-                                        event.actor_role as
-                                          | "super_admin"
-                                          | "operator"
-                                          | "reviewer",
-                                        t,
-                                      )
-                                    : t("admin.runtimeQueue.systemActor")}
-                                </Badge>
-                              </div>
-                              <div className="mt-3 text-base font-semibold text-slate-950">
-                                {event.resource_name ??
-                                  event.resource_slug ??
-                                  t("settings.activity.notAvailable")}
-                              </div>
-                              <div className="mt-1 text-sm text-slate-500">
-                                {formatGovernanceTokenLabel(event.action_type)}
-                              </div>
-                              <div className="mt-3 text-xs text-slate-400">
-                                {formatTimestamp(event.created_at)}
-                              </div>
-                              {followUp.settingsHref ||
-                              followUp.definitionsHref ? (
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                  {quickActionKey && event.resource_id ? (
-                                    <Button
-                                      className="bg-white"
-                                      disabled={
-                                        !hasAdminWriteAccess ||
-                                        isApplyingQuickAction
-                                      }
-                                      onClick={() =>
-                                        void handleApplyRuntimeGovernanceEventAction(
-                                          event,
-                                        )
-                                      }
-                                      size="sm"
-                                      type="button"
-                                      variant="outline"
-                                    >
-                                      {getRuntimeGovernanceQuickActionLabel(
-                                        quickActionKey,
-                                        t,
-                                      )}
-                                    </Button>
-                                  ) : null}
-                                  {followUp.settingsHref ? (
-                                    <Button
-                                      asChild
-                                      className="bg-white"
-                                      size="sm"
-                                      type="button"
-                                      variant="outline"
-                                    >
-                                      <Link href={followUp.settingsHref}>
-                                        {t(
-                                          "admin.runtimeQueue.actions.openSettings",
-                                        )}
-                                      </Link>
-                                    </Button>
-                                  ) : null}
-                                  {followUp.definitionsHref ? (
-                                    <Button
-                                      asChild
-                                      className="bg-white"
-                                      size="sm"
-                                      type="button"
-                                      variant="outline"
-                                    >
-                                      <Link href={followUp.definitionsHref}>
-                                        {t(
-                                          "admin.runtimeQueue.actions.openAgents",
-                                        )}
-                                      </Link>
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
-                        {t("admin.runtimeQueue.emptyEvents")}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections ? <ConsoleSurface>
-            <ConsoleSurfaceHeader
-              description={t("admin.scopePanel.description")}
-              title={t("admin.scopePanel.title")}
-            />
-            <div className="space-y-3 px-6 py-5 text-sm text-slate-600">
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {t("admin.scopePanel.tenantScope")}
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">
-                  {selectedTenantId === "all"
-                    ? t("admin.scopePanel.allTenants")
-                    : (tenants.find((tenant) => tenant.id === selectedTenantId)
-                        ?.name ?? t("admin.scopePanel.unknownTenant"))}
-                </div>
-              </div>
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {t("admin.scopePanel.visibleInventory")}
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">
-                  {t("admin.scopePanel.inventoryCounts", {
-                    workspaceCount: String(filteredWorkspaces.length),
-                    knowledgeBaseCount: String(filteredKnowledgeBases.length),
-                  })}
-                </div>
-              </div>
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {t("admin.scopePanel.searchResults")}
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">
-                  {t("admin.scopePanel.inventoryCounts", {
-                    workspaceCount: String(searchedWorkspaces.length),
-                    knowledgeBaseCount: String(searchedKnowledgeBases.length),
-                  })}
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {normalizedSearchQuery
-                    ? t("admin.scopePanel.query", { value: searchQuery.trim() })
-                    : t("admin.scopePanel.noDirectorySearch")}
-                </div>
-              </div>
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {t("admin.scopePanel.lifecycleFilters")}
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">
-                  {workspaceLifecycleFilter === "all"
-                    ? t("admin.scopePanel.allWorkspaces")
-                    : workspaceLifecycleFilter === "active"
-                      ? t("admin.scopePanel.activeWorkspaces")
-                      : t("admin.scopePanel.archivedWorkspaces")}
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {knowledgeBasePublicationStatusFilter === "all"
-                    ? t("admin.scopePanel.allKnowledgeBases")
-                    : knowledgeBasePublicationStatusFilter === "published"
-                      ? t("admin.scopePanel.publishedKnowledgeBases")
-                      : t("admin.scopePanel.draftKnowledgeBases")}
-                </div>
-              </div>
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {t("settings.retrievalProfiles.title")}
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">
-                  {retrievalProfileFilter === "all"
-                    ? t("admin.scopePanel.allRetrievalProfiles")
-                    : retrievalProfileFilter ===
-                        DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE
-                      ? t("admin.scopePanel.defaultFallbackRetrievalProfile")
-                      : retrievalProfileFilter ===
-                          DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE
-                        ? t("admin.scopePanel.disabledAssignedRetrievalProfile")
-                        : (retrievalProfiles.find(
-                            (retrievalProfile) =>
-                              retrievalProfile.id === retrievalProfileFilter,
-                          )?.name ?? t("settings.governance.empty"))}
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {retrievalProfileFilter === "all"
-                    ? t("admin.scopePanel.retrievalProfileAllDescription")
-                    : t("admin.scopePanel.retrievalProfileFilteredDescription")}
-                </div>
-              </div>
-              <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {t("admin.scopePanel.primaryRoute")}
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900">
-                  {scopedPrimaryWorkspace?.name ??
-                    t("admin.scopePanel.noScopedWorkspace")}
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {scopedPrimaryKnowledgeBase?.name ??
-                    t("admin.scopePanel.noScopedKnowledgeBase")}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link href={chatScopeHref}>{t("shell.nav.chat")}</Link>
-                  </Button>
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildAdminWorkspaceHref(adminSection, {
-                        view: "documents",
-                        tenantId:
-                          selectedTenantId === "all"
-                            ? (scopedPrimaryWorkspace?.tenant_id ?? null)
-                            : selectedTenantId,
-                        workspaceId: scopedPrimaryWorkspace?.id ?? null,
-                        knowledgeBaseId: scopedPrimaryKnowledgeBase?.id ?? null,
-                      })}
-                    >
-                      {t("shell.nav.documents")}
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildAdminWorkspaceHref(adminSection, {
-                        view: "workflows",
-                        tenantId:
-                          selectedTenantId === "all"
-                            ? (scopedPrimaryWorkspace?.tenant_id ?? null)
-                            : selectedTenantId,
-                        workspaceId: scopedPrimaryWorkspace?.id ?? null,
-                        knowledgeBaseId: scopedPrimaryKnowledgeBase?.id ?? null,
-                      })}
-                    >
-                      {t("shell.userMenu.operations")}
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildAdminWorkspaceHref(adminSection, {
-                        view: "documents",
-                        tenantId:
-                          selectedTenantId === "all"
-                            ? (scopedPrimaryWorkspace?.tenant_id ?? null)
-                            : selectedTenantId,
-                        workspaceId: scopedPrimaryWorkspace?.id ?? null,
-                        knowledgeBaseId: scopedPrimaryKnowledgeBase?.id ?? null,
-                        documentStatus: "failed",
-                      })}
-                    >
-                      {t("admin.scopePanel.failedDocuments")}
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildAdminWorkspaceHref(adminSection, {
-                        view: "workflows",
-                        tenantId:
-                          selectedTenantId === "all"
-                            ? (scopedPrimaryWorkspace?.tenant_id ?? null)
-                            : selectedTenantId,
-                        workspaceId: scopedPrimaryWorkspace?.id ?? null,
-                        knowledgeBaseId: scopedPrimaryKnowledgeBase?.id ?? null,
-                        workflowStatus: scopedRecoveryStatus,
-                      })}
-                    >
-                      {t("admin.scopePanel.failedWorkflows")}
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </ConsoleSurface> : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.runtimeTaskPacket.description")}
-                title={t("admin.runtimeTaskPacket.title")}
-              />
-              <div className="p-6">
-                <ConsoleRuntimeTaskPacket
-                  detail={runtimeTaskPacket.detail}
-                  objective={runtimeTaskPacket.objective}
-                  objectiveLabel={t("admin.runtimeTaskPacket.fields.objective")}
-                  primaryActionHref={runtimeTaskPacket.primaryActionHref}
-                  primaryActionLabel={t(
-                    "admin.runtimeTaskPacket.primaryAction",
-                  )}
-                  primaryActionRunRecord={
-                    runtimeTaskPacket.primaryActionRunRecord
-                  }
-                  prompt={runtimeTaskPacket.prompt}
-                  promptLabel={t("admin.runtimeTaskPacket.fields.prompt")}
-                  secondaryActions={runtimeTaskPacket.secondaryActions}
-                  statusLabel={runtimeTaskPacket.statusLabel}
-                  statusTone={runtimeTaskPacket.statusTone}
-                  summaryItems={runtimeTaskPacket.summaryItems}
-                  title={runtimeTaskPacket.title}
-                />
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildOperationsHref({
-                        tenantId:
-                          selectedTenantId === "all" ? null : selectedTenantId,
-                        lane: "overview",
-                        status: "all",
-                      })}
-                    >
-                      {t("admin.agentExecutions.openOperations")}
-                    </Link>
-                  </Button>
-                }
-                description={t("admin.agentExecutions.description")}
-                title={t("admin.agentExecutions.title")}
-              />
-              <div className="grid gap-4 p-6 md:grid-cols-3">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.agentExecutions.metrics.total")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentExecutionMetrics.total_executions}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.agentExecutions.metrics.totalHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.agentExecutions.metrics.completed")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentExecutionMetrics.completed_executions}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.agentExecutions.metrics.completedHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.agentExecutions.metrics.failed")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentExecutionMetrics.failed_executions}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {scopedAgentExecutionMetrics.latest_execution_at
-                      ? t("admin.agentExecutions.latestExecution", {
-                          value: formatTimestamp(
-                            scopedAgentExecutionMetrics.latest_execution_at,
-                          ),
-                        })
-                      : t("admin.agentExecutions.noLatestExecution")}
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.agentExecutions.tenantBreakdown")}
-                  </div>
-                  {tenantAgentExecutionActivity.slice(0, 4).map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={item.tenant.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold text-slate-900">
-                            {item.tenant.name}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {item.tenant.slug}
-                          </div>
-                        </div>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.agentExecutions.tenantExecutionCount", {
-                            count: String(item.metrics.total_executions),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.agentExecutions.tenantCompletedCount", {
-                            count: String(item.metrics.completed_executions),
-                          })}
-                        </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.agentExecutions.tenantFailedCount", {
-                            count: String(item.metrics.failed_executions),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 text-sm text-slate-500">
-                        {item.metrics.latest_execution_at
-                          ? t("admin.agentExecutions.latestExecution", {
-                              value: formatTimestamp(
-                                item.metrics.latest_execution_at,
-                              ),
-                            })
-                          : t("admin.agentExecutions.noLatestExecution")}
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.operationsHref}>
-                            {t("admin.agentExecutions.openOperations")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.agentsHref}>
-                            {t("admin.agentExecutions.openAgents")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!isLoading && tenantAgentExecutionActivity.length === 0 ? (
-                    <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                      {t("admin.agentExecutions.noTenantExecutions")}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.agentExecutions.recentExecutions")}
-                  </div>
-                  {recentScopedAgentExecutions.length > 0 ? (
-                    recentScopedAgentExecutions.map((execution) => {
-                      const linkedAgent =
-                        agents.find(
-                          (agent) => agent.id === execution.agent_definition_id,
-                        ) ?? null;
-                      const toolRuntime = readToolRuntimeSummary(
-                        execution.result_payload_json,
-                      );
-                      const retrievalSummary =
-                        readAgentExecutionRetrievalSummary(
-                          execution.result_payload_json,
-                        );
-                      const evidenceSummary = readAgentExecutionEvidenceSummary(
-                        execution.result_payload_json,
-                      );
-                      const runtimeBindingSummary =
-                        readAgentExecutionRuntimeBindingSummary(
-                          execution.result_payload_json,
-                        );
-                      const runtimeSummary = readAgentExecutionRuntimeSummary(
-                        execution.result_payload_json,
-                      );
-                      const taskState = execution.task_state;
-                      const generatedOutputs =
-                        execution.generated_outputs ?? [];
-                      const recommendedActionSpecs =
-                        evidenceSummary?.recommendedActionSpecs ?? [];
-                      const recommendedActions =
-                        recommendedActionSpecs.length === 0
-                          ? (evidenceSummary?.recommendedActions.slice(0, 2) ??
-                            [])
-                          : [];
-                      const followUpActions =
-                        buildAgentExecutionFollowUpActions({
-                          sourceContext: {
-                            surface: "admin",
-                            section: adminSection,
-                          },
-                          execution,
-                          executionInput: evidenceSummary?.executionInput,
-                          recommendedActions: recommendedActionSpecs,
-                        });
-                      const executionHref =
-                        execution.execution_mode === "workflow_recovery"
-                          ? buildOperationsHref({
-                              tenantId: execution.tenant_id,
-                              agentId: execution.agent_definition_id,
-                              lane: "overview",
-                              status: "all",
-                            })
-                          : buildAgentsHref({
-                              tenantId: execution.tenant_id,
-                              agentId: execution.agent_definition_id,
-                            });
-
-                      return (
-                        <div
-                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                          key={execution.id}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-slate-950">
-                                {linkedAgent?.name ??
-                                  t("admin.agentRuntime.unknownAgent")}
-                              </div>
-                              <div className="mt-1 text-sm leading-6 text-slate-500">
-                                {execution.summary ||
-                                  execution.error_message ||
-                                  t("operations.agentExecutions.pending")}
-                              </div>
-                            </div>
-                            <Badge
-                              className={cn(
-                                "border",
-                                execution.execution_status === "completed"
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : execution.execution_status === "failed"
-                                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                                    : execution.execution_status === "running"
-                                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                                      : "border-amber-200 bg-amber-50 text-amber-700",
-                              )}
-                              variant="outline"
-                            >
-                              {t(
-                                `agents.executions.statuses.${execution.execution_status}`,
-                              )}
-                            </Badge>
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-700"
-                              variant="outline"
-                            >
-                              {t(`agents.modes.${execution.execution_mode}`)}
-                            </Badge>
-                            {retrievalSummary?.retrievalProfileName ? (
-                              <Badge
-                                className="border-slate-200 bg-white text-slate-700"
-                                variant="outline"
-                              >
-                                {t("home.retrievalInspector.retrievalProfile", {
-                                  value: retrievalSummary.retrievalProfileName,
-                                })}
-                              </Badge>
-                            ) : null}
-                            {retrievalSummary?.retrievalMode ? (
-                              <Badge
-                                className="border-slate-200 bg-white text-slate-700"
-                                variant="outline"
-                              >
-                                {t("home.retrievalInspector.retrievalMode", {
-                                  value: t(
-                                    `settings.retrievalProfiles.modes.${retrievalSummary.retrievalMode}`,
+                              <p className="mt-1 truncate text-sm text-slate-500">
+                                {group.tenant.slug} ·{" "}
+                                {t("admin.directory.resourceSummary", {
+                                  workspaces: String(group.workspaces.length),
+                                  knowledgeBases: String(
+                                    group.knowledgeBaseCount,
                                   ),
                                 })}
-                              </Badge>
-                            ) : null}
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-700"
-                              variant="outline"
-                            >
-                              {formatTimestamp(execution.updated_at)}
-                            </Badge>
-                            {execution.knowledge_base_scope ? (
-                              <Badge
-                                className="border-slate-200 bg-white text-slate-700"
-                                variant="outline"
-                              >
-                                {execution.knowledge_base_scope}
-                              </Badge>
-                            ) : null}
-                            {runtimeSummary?.agentRuntimeEngine ? (
-                              <Badge
-                                className="border-slate-200 bg-white text-slate-700"
-                                variant="outline"
-                              >
-                                {t("agents.executions.runtimeEngine", {
-                                  value: runtimeSummary.agentRuntimeEngine,
-                                })}
-                              </Badge>
-                            ) : null}
+                              </p>
+                            </div>
                           </div>
-                          {runtimeBindingSummary ? (
-                            <RuntimeBindingSummaryCard
-                              summary={runtimeBindingSummary}
-                            />
-                          ) : null}
-                          {taskState || generatedOutputs.length > 0 ? (
-                            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-4">
-                              <div className="flex flex-wrap items-center gap-2">
-                                {taskState ? (
-                                  <Badge
-                                    className="border-slate-200 bg-slate-50 text-slate-700"
-                                    variant="outline"
-                                  >
-                                    {t(
-                                      getAgentExecutionStageLabelKey(
-                                        taskState.stage_key,
-                                      ),
-                                    )}
-                                  </Badge>
-                                ) : null}
-                                {taskState?.duration_seconds !== null &&
-                                taskState?.duration_seconds !== undefined ? (
-                                  <Badge
-                                    className="border-slate-200 bg-slate-50 text-slate-700"
-                                    variant="outline"
-                                  >
-                                    {t("agents.executions.durationSeconds", {
-                                      value: String(taskState.duration_seconds),
-                                    })}
-                                  </Badge>
-                                ) : null}
-                                {taskState ? (
-                                  <Badge
-                                    className="border-slate-200 bg-slate-50 text-slate-700"
-                                    variant="outline"
-                                  >
-                                    {t("agents.executions.outputCount", {
-                                      count: String(taskState.output_count),
-                                    })}
-                                  </Badge>
-                                ) : null}
-                                {taskState ? (
-                                  <Badge
-                                    className="border-slate-200 bg-slate-50 text-slate-700"
-                                    variant="outline"
-                                  >
-                                    {t("agents.executions.followUpCount", {
-                                      count: String(
-                                        taskState.recommended_action_count,
-                                      ),
-                                    })}
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              {generatedOutputs.length > 0 ? (
-                                <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                                  {generatedOutputs.map((output) => (
-                                    <div
-                                      className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3"
-                                      key={`${execution.id}-${output.output_key}`}
-                                    >
-                                      <div className="flex flex-wrap items-start justify-between gap-2">
-                                        <div className="text-sm font-semibold text-slate-900">
-                                          {t(
-                                            getAgentExecutionOutputKindLabelKey(
-                                              output.kind,
-                                            ),
-                                          )}
-                                        </div>
+                          <Button
+                            className="shrink-0 rounded-xl bg-white"
+                            disabled={!hasAdminWriteAccess}
+                            onClick={() =>
+                              openCreateWorkspacePanel(group.tenant.id)
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            {t("admin.actions.createWorkspace")}
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3 p-4 sm:p-5">
+                          {group.workspaces.map(
+                            ({
+                              workspace,
+                              knowledgeBases: workspaceKnowledgeBases,
+                            }) => (
+                              <div
+                                className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4"
+                                key={workspace.id}
+                              >
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                  <div className="flex min-w-0 items-start gap-3">
+                                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm ring-1 ring-slate-200">
+                                      <Boxes className="h-4 w-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h4 className="font-semibold text-slate-900">
+                                          {workspace.name}
+                                        </h4>
                                         <Badge
                                           className={cn(
                                             "border",
-                                            getExecutionOutputStatusClassName(
-                                              output.status,
+                                            getWorkspaceLifecycleClass(
+                                              workspace.is_archived,
                                             ),
                                           )}
                                           variant="outline"
                                         >
-                                          {t(
-                                            `agents.executions.outputStatuses.${output.status}`,
-                                          )}
+                                          {workspace.is_archived
+                                            ? t("admin.directory.archived")
+                                            : t("admin.directory.active")}
                                         </Badge>
                                       </div>
-                                      {output.metric_value ? (
-                                        <div className="mt-2 text-sm font-medium text-slate-700">
-                                          {output.metric_value}
-                                        </div>
-                                      ) : null}
-                                      {output.preview ? (
-                                        <div className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500">
-                                          {output.preview}
-                                        </div>
-                                      ) : null}
+                                      <p className="mt-1 text-sm text-slate-500">
+                                        {workspace.slug} ·{" "}
+                                        {t(
+                                          "admin.directory.knowledgeBaseSummary",
+                                          {
+                                            count: String(
+                                              workspaceKnowledgeBases.length,
+                                            ),
+                                          },
+                                        )}
+                                      </p>
                                     </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {toolRuntime ? (
-                            <ToolRuntimeSummaryCard
-                              renderTraceActions={(trace) => (
-                                <ToolRuntimeTraceActions
-                                  tenantId={execution.tenant_id}
-                                  trace={trace}
-                                />
-                              )}
-                              summary={toolRuntime}
-                            />
-                          ) : null}
-                          {evidenceSummary?.executionInput ? (
-                            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                {t("agents.executions.executionInput")}
-                              </div>
-                              <div className="mt-2 text-sm leading-6 text-slate-700">
-                                {evidenceSummary.executionInput}
-                              </div>
-                            </div>
-                          ) : null}
-                          {evidenceSummary?.answerPreview ? (
-                            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                  {t("agents.executions.answerPreview")}
-                                </div>
-                                {evidenceSummary.retrievalResultCount !==
-                                null ? (
-                                  <Badge
-                                    className="border-slate-200 bg-slate-50 text-slate-700"
-                                    variant="outline"
-                                  >
-                                    {t("agents.executions.retrievalResults", {
-                                      count: String(
-                                        evidenceSummary.retrievalResultCount,
-                                      ),
-                                    })}
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              <div className="mt-2 text-sm leading-6 text-slate-700">
-                                {evidenceSummary.answerPreview}
-                              </div>
-                            </div>
-                          ) : null}
-                          {evidenceSummary &&
-                          evidenceSummary.retrievalSources.length > 0 ? (
-                            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                {t("agents.executions.evidenceSources")}
-                              </div>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {evidenceSummary.retrievalMethodBreakdown.map(
-                                  (entry) => (
-                                    <Badge
-                                      className={cn(
-                                        "border",
-                                        getRetrievalMethodBadgeClassName(
-                                          entry.method,
-                                        ),
-                                      )}
-                                      key={`${execution.id}-${entry.method}`}
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-2 self-end lg:self-auto">
+                                    <Button
+                                      className="bg-white"
+                                      disabled={
+                                        !hasAdminWriteAccess ||
+                                        isUpdatingResource ||
+                                        isCreatingResource
+                                      }
+                                      onClick={() =>
+                                        openWorkspaceEditPanel(workspace)
+                                      }
+                                      size="sm"
+                                      type="button"
                                       variant="outline"
                                     >
-                                      {t(
-                                        `settings.retrievalProfiles.modes.${entry.method}`,
-                                      )}{" "}
-                                      x{entry.count}
-                                    </Badge>
-                                  ),
-                                )}
-                              </div>
-                              <div className="mt-3 space-y-2">
-                                {evidenceSummary.retrievalSources.map(
-                                  (source, index) => (
-                                    <div
-                                      className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-3"
-                                      key={`${execution.id}-${source.documentChunkId ?? index}`}
-                                    >
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <div className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
-                                          {source.documentTitle ??
-                                            t(
-                                              "agents.executions.unknownSourceDocument",
-                                            )}
-                                        </div>
-                                        {source.retrievalMethod ? (
-                                          <Badge
-                                            className={cn(
-                                              "border",
-                                              getRetrievalMethodBadgeClassName(
-                                                source.retrievalMethod,
-                                              ),
-                                            )}
-                                            variant="outline"
-                                          >
-                                            {t(
-                                              `settings.retrievalProfiles.modes.${source.retrievalMethod}`,
-                                            )}
-                                          </Badge>
-                                        ) : null}
+                                      {t("admin.actions.edit")}
+                                    </Button>
+                                    <details className="relative open:z-40">
+                                      <summary
+                                        aria-label={t(
+                                          "admin.directory.moreActions",
+                                        )}
+                                        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                                      >
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </summary>
+                                      <div className="absolute right-0 top-full z-50 mt-2 min-w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                                        <Link
+                                          className="flex w-full rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                          href={buildWorkspaceContextHref(
+                                            workspace,
+                                            "chat",
+                                          )}
+                                        >
+                                          {t("admin.directory.openChat")}
+                                        </Link>
+                                        <Link
+                                          className="flex w-full rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                          href={buildWorkspaceContextHref(
+                                            workspace,
+                                            "documents",
+                                          )}
+                                        >
+                                          {t("shell.nav.documents")}
+                                        </Link>
+                                        <Link
+                                          className="flex w-full rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                          href={buildWorkspaceContextHref(
+                                            workspace,
+                                            "workflows",
+                                          )}
+                                        >
+                                          {t("shell.userMenu.operations")}
+                                        </Link>
+                                        <div className="my-1 border-t border-slate-100" />
+                                        <button
+                                          className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                          disabled={
+                                            !hasAdminWriteAccess ||
+                                            activeWorkspaceActionId ===
+                                              workspace.id ||
+                                            activeKnowledgeBaseActionId !==
+                                              null ||
+                                            isUpdatingResource ||
+                                            isCreatingResource
+                                          }
+                                          onClick={(event) => {
+                                            event.currentTarget
+                                              .closest("details")
+                                              ?.removeAttribute("open");
+                                            void handleToggleWorkspaceLifecycle(
+                                              workspace,
+                                            );
+                                          }}
+                                          type="button"
+                                        >
+                                          {activeWorkspaceActionId ===
+                                          workspace.id
+                                            ? workspace.is_archived
+                                              ? t("admin.actions.restoring")
+                                              : t("admin.actions.archiving")
+                                            : workspace.is_archived
+                                              ? t("admin.actions.restore")
+                                              : t("admin.actions.archive")}
+                                        </button>
                                       </div>
-                                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                                        {source.chunkIndex !== null ? (
-                                          <span>
-                                            {t("agents.executions.chunkIndex", {
-                                              value: String(source.chunkIndex),
-                                            })}
-                                          </span>
-                                        ) : null}
-                                        {typeof source.score === "number" ? (
-                                          <span>
-                                            {t("agents.executions.score", {
-                                              value: source.score.toFixed(3),
-                                            })}
-                                          </span>
-                                        ) : null}
+                                    </details>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white">
+                                  <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                      <div className="text-sm font-semibold text-slate-900">
+                                        {t("admin.directory.knowledgeBaseList")}
+                                      </div>
+                                      <div className="mt-0.5 text-xs text-slate-500">
+                                        {t(
+                                          "admin.directory.knowledgeBaseListDescription",
+                                        )}
                                       </div>
                                     </div>
-                                  ),
-                                )}
+                                    <Button
+                                      className="shrink-0 rounded-xl bg-white"
+                                      disabled={!hasAdminWriteAccess}
+                                      onClick={() =>
+                                        openCreateKnowledgeBasePanel(
+                                          workspace.id,
+                                        )
+                                      }
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      {t("admin.actions.createKnowledgeBase")}
+                                    </Button>
+                                  </div>
+                                  <div className="divide-y divide-slate-100">
+                                    {workspaceKnowledgeBases.map(
+                                      (knowledgeBase) => {
+                                        const assignedRetrievalProfile =
+                                          knowledgeBase.retrieval_profile_id
+                                            ? (retrievalProfiles.find(
+                                                (profile) =>
+                                                  profile.id ===
+                                                  knowledgeBase.retrieval_profile_id,
+                                              ) ?? null)
+                                            : null;
+                                        const effectiveRetrievalProfile =
+                                          assignedRetrievalProfile ??
+                                          defaultRetrievalProfile;
+
+                                        return (
+                                          <div
+                                            className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                                            key={knowledgeBase.id}
+                                          >
+                                            <div className="flex min-w-0 items-start gap-3">
+                                              <Library className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                                              <div className="min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                  <span className="font-medium text-slate-900">
+                                                    {knowledgeBase.name}
+                                                  </span>
+                                                  <Badge
+                                                    className={cn(
+                                                      "border",
+                                                      getKnowledgeBasePublicationClass(
+                                                        knowledgeBase.publication_status,
+                                                      ),
+                                                    )}
+                                                    variant="outline"
+                                                  >
+                                                    {knowledgeBase.publication_status ===
+                                                    "published"
+                                                      ? t(
+                                                          "admin.governance.published",
+                                                        )
+                                                      : t(
+                                                          "admin.governance.draft",
+                                                        )}
+                                                  </Badge>
+                                                </div>
+                                                <p className="mt-1 truncate text-xs text-slate-500">
+                                                  {knowledgeBase.slug}
+                                                  {effectiveRetrievalProfile
+                                                    ? ` · ${effectiveRetrievalProfile.name}`
+                                                    : ""}
+                                                </p>
+                                              </div>
+                                            </div>
+                                            <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+                                              <Button
+                                                className="bg-white"
+                                                disabled={
+                                                  !hasAdminWriteAccess ||
+                                                  isUpdatingResource ||
+                                                  isCreatingResource
+                                                }
+                                                onClick={() =>
+                                                  openKnowledgeBaseEditPanel(
+                                                    knowledgeBase,
+                                                  )
+                                                }
+                                                size="sm"
+                                                type="button"
+                                                variant="outline"
+                                              >
+                                                {t("admin.actions.edit")}
+                                              </Button>
+                                              <details className="relative open:z-40">
+                                                <summary
+                                                  aria-label={t(
+                                                    "admin.directory.moreActions",
+                                                  )}
+                                                  className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                                                >
+                                                  <MoreHorizontal className="h-4 w-4" />
+                                                </summary>
+                                                <div className="absolute right-0 top-full z-50 mt-2 min-w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                                                  <Link
+                                                    className="flex w-full rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                                    href={buildAdminWorkspaceHref(
+                                                      "directory",
+                                                      {
+                                                        view: "chat",
+                                                        tenantId:
+                                                          knowledgeBase.tenant_id,
+                                                        workspaceId:
+                                                          knowledgeBase.workspace_id,
+                                                        knowledgeBaseId:
+                                                          knowledgeBase.id,
+                                                      },
+                                                    )}
+                                                  >
+                                                    {t("shell.nav.chat")}
+                                                  </Link>
+                                                  <Link
+                                                    className="flex w-full rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                                    href={buildKnowledgeBaseContextHref(
+                                                      knowledgeBase,
+                                                      "documents",
+                                                    )}
+                                                  >
+                                                    {t("shell.nav.documents")}
+                                                  </Link>
+                                                  <Link
+                                                    className="flex w-full rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                                    href={buildKnowledgeBaseContextHref(
+                                                      knowledgeBase,
+                                                      "workflows",
+                                                    )}
+                                                  >
+                                                    {t(
+                                                      "shell.userMenu.operations",
+                                                    )}
+                                                  </Link>
+                                                  <div className="my-1 border-t border-slate-100" />
+                                                  <button
+                                                    className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                                    disabled={
+                                                      !hasAdminWriteAccess ||
+                                                      activeKnowledgeBaseActionId ===
+                                                        knowledgeBase.id ||
+                                                      activeWorkspaceActionId !==
+                                                        null ||
+                                                      isUpdatingResource ||
+                                                      isCreatingResource
+                                                    }
+                                                    onClick={(event) => {
+                                                      event.currentTarget
+                                                        .closest("details")
+                                                        ?.removeAttribute(
+                                                          "open",
+                                                        );
+                                                      void handleToggleKnowledgeBasePublication(
+                                                        knowledgeBase,
+                                                      );
+                                                    }}
+                                                    type="button"
+                                                  >
+                                                    {activeKnowledgeBaseActionId ===
+                                                    knowledgeBase.id
+                                                      ? knowledgeBase.publication_status ===
+                                                        "published"
+                                                        ? t(
+                                                            "admin.actions.unpublishing",
+                                                          )
+                                                        : t(
+                                                            "admin.actions.publishing",
+                                                          )
+                                                      : knowledgeBase.publication_status ===
+                                                          "published"
+                                                        ? t(
+                                                            "admin.actions.moveToDraft",
+                                                          )
+                                                        : t(
+                                                            "admin.actions.publish",
+                                                          )}
+                                                  </button>
+                                                </div>
+                                              </details>
+                                            </div>
+                                          </div>
+                                        );
+                                      },
+                                    )}
+                                    {workspaceKnowledgeBases.length === 0 ? (
+                                      <div className="px-4 py-6 text-center text-sm text-slate-500">
+                                        {t("admin.directory.noKnowledgeBases")}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
                               </div>
+                            ),
+                          )}
+                          {group.workspaces.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                              {t("admin.directory.noWorkspacesInOrganization")}
                             </div>
                           ) : null}
-                          {recommendedActions.length > 0 ? (
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {recommendedActions.map((action) => (
-                                <Badge
-                                  className="border-slate-200 bg-white text-slate-700"
-                                  key={action}
-                                  variant="outline"
-                                >
-                                  {action}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : null}
-                          <AgentExecutionFollowUpActions
-                            actions={followUpActions}
-                            className="mt-4"
-                            extraActions={
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <Link href={executionHref}>
-                                  {t(
-                                    "admin.agentExecutions.openExecutionRoute",
-                                  )}
-                                </Link>
-                              </Button>
-                            }
-                            getLabel={(action) =>
-                              action.labelKey
-                                ? t(action.labelKey)
-                                : (action.label ?? "")
-                            }
-                            title={t("agents.executions.followUpTitle")}
-                          />
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                      {t("admin.agentExecutions.empty")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
+                      </section>
+                    ))}
+                    {directoryTenantGroups.length === 0 ? (
+                      <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
+                        {t("admin.directory.noOrganizations")}
+                      </div>
+                    ) : null}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
 
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildAgentsHref({
-                        tenantId:
-                          selectedTenantId === "all" ? null : selectedTenantId,
-                        status: "active",
-                        readiness: "attention",
-                      })}
-                    >
-                      {t("admin.runtimeGovernance.openAttentionAgents")}
-                    </Link>
-                  </Button>
-                }
-                description={t("admin.runtimeGovernance.description")}
-                title={t("admin.runtimeGovernance.title")}
-              />
-              <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.runtimeGovernance.metrics.attentionAgents")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {governancePosture.attentionAgents}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.runtimeGovernance.metrics.attentionAgentsHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.runtimeGovernance.metrics.disabledBoundModels")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {governancePosture.disabledBoundModels}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t(
-                      "admin.runtimeGovernance.metrics.disabledBoundModelsHint",
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.runtimeGovernance.metrics.disabledBoundTools")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {governancePosture.disabledBoundTools}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t(
-                      "admin.runtimeGovernance.metrics.disabledBoundToolsHint",
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.runtimeGovernance.metrics.approvalGatedTools")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {governancePosture.approvalGatedTools}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t(
-                      "admin.runtimeGovernance.metrics.approvalGatedToolsHint",
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t(
-                      "admin.runtimeGovernance.metrics.disabledBoundRetrievalProfiles",
-                    )}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {retrievalGovernanceSummary.disabledBoundRetrievalProfiles}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t(
-                      "admin.runtimeGovernance.metrics.disabledBoundRetrievalProfilesHint",
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t(
-                      "admin.runtimeGovernance.metrics.defaultFallbackKnowledgeBases",
-                    )}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {retrievalGovernanceSummary.defaultFallbackKnowledgeBases}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t(
-                      "admin.runtimeGovernance.metrics.defaultFallbackKnowledgeBasesHint",
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.runtimeGovernance.signals")}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.activeAgentsWithoutScope")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.activeAgentsWithoutScope}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.missingModelBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.agentsMissingModel}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.disabledModelBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.agentsUsingDisabledModel}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.unconfiguredModelBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.agentsUsingUnconfiguredModel}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.disabledToolBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.agentsUsingDisabledToolRegistration}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.missingRetrievalBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.agentsMissingRetrievalProfile}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.disabledRetrievalBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {governancePosture.agentsUsingDisabledRetrievalProfile}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t(
-                          "admin.runtimeGovernance.disabledRetrievalAssignments",
-                        )}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {
-                          retrievalGovernanceSummary.knowledgeBasesUsingDisabledRetrievalProfile
-                        }
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.runtimeGovernance.explicitRetrievalBindings")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {
-                          retrievalGovernanceSummary.explicitAssignedKnowledgeBases
-                        }
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {showAdvancedAdminSections && adminSection === "directory" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Badge
+                        className="border-slate-200 bg-slate-50 text-slate-600"
+                        variant="outline"
+                      >
+                        {t("admin.directory.results", {
+                          count: String(searchedAgents.length),
+                        })}
+                      </Badge>
+                    }
+                    title={t("admin.agents.title")}
+                  />
+                  <div className="px-6 pb-6 pt-2">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-slate-100 bg-slate-50">
+                            <TableHead>{t("admin.agents.agent")}</TableHead>
+                            <TableHead>{t("admin.agents.tenant")}</TableHead>
+                            <TableHead>{t("admin.agents.mode")}</TableHead>
+                            <TableHead>{t("admin.agents.status")}</TableHead>
+                            <TableHead>{t("admin.agents.scope")}</TableHead>
+                            <TableHead>{t("admin.agents.tools")}</TableHead>
+                            <TableHead className="text-right">
+                              {t("admin.agents.actionsColumn")}
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {searchedAgents.map((agent) => {
+                            const tenant = tenants.find(
+                              (tenantItem) => tenantItem.id === agent.tenant_id,
+                            );
 
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.runtimeGovernance.quickActions")}
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4 text-sm leading-6 text-slate-600">
-                    {t("admin.runtimeGovernance.quickActionsDescription")}
-                  </div>
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold text-slate-950">
-                      {t("admin.runtimeGovernance.providerLanes")}
-                    </div>
-                    <div className="grid gap-3">
-                      {modelGovernanceSummary.provider_runtime_posture.map(
-                        (provider) => (
-                          <div
-                            className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                            key={provider.provider_type}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="text-sm font-semibold text-slate-950">
-                                {t(
-                                  `settings.models.providers.${provider.provider_type}`,
-                                )}
-                              </div>
-                              <Badge
-                                className={cn(
-                                  "border",
-                                  provider.posture_status === "ready"
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : provider.posture_status === "attention"
-                                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                                      : "border-slate-200 bg-slate-100 text-slate-700",
-                                )}
-                                variant="outline"
+                            return (
+                              <TableRow
+                                className="border-slate-100"
+                                key={agent.id}
                               >
-                                {t(
-                                  `settings.models.compatibility.postureStatuses.${provider.posture_status}`,
-                                )}
-                              </Badge>
+                                <TableCell>
+                                  <div className="font-medium text-slate-900">
+                                    {agent.name}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-400">
+                                    {agent.slug}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {tenant?.name ??
+                                    t("admin.directory.unknownTenant")}
+                                </TableCell>
+                                <TableCell>
+                                  {t(`agents.modes.${agent.mode}`)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    className={cn(
+                                      "border",
+                                      agent.status === "active"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : agent.status === "paused"
+                                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                                          : "border-slate-200 bg-slate-100 text-slate-700",
+                                    )}
+                                    variant="outline"
+                                  >
+                                    {t(`agents.statuses.${agent.status}`)}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {agent.knowledge_base_scope ||
+                                    t("admin.agents.unscoped")}
+                                </TableCell>
+                                <TableCell>{agent.tools.length}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
+                                    <Button
+                                      asChild
+                                      className="bg-white"
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      <Link
+                                        href={buildAgentsHref({
+                                          tenantId: agent.tenant_id,
+                                          agentId: agent.id,
+                                        })}
+                                      >
+                                        {t("admin.agents.openAgent")}
+                                      </Link>
+                                    </Button>
+                                    <Button
+                                      asChild
+                                      className="bg-white"
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      <Link
+                                        href={buildOperationsHref({
+                                          tenantId: agent.tenant_id,
+                                          status:
+                                            agent.mode === "workflow_recovery"
+                                              ? "failed"
+                                              : "all",
+                                        })}
+                                      >
+                                        {t("admin.agents.openOperations")}
+                                      </Link>
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                          {searchedAgents.length === 0 && (
+                            <TableRow className="border-slate-100">
+                              <TableCell
+                                className="py-10 text-center text-slate-500"
+                                colSpan={7}
+                              >
+                                {t("admin.agents.noAgents")}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {adminSection === "access" ||
+              (showAdvancedAdminSections && adminSection === "security") ? (
+                <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Button
+                        className="rounded-xl"
+                        disabled={!hasAdminWriteAccess}
+                        onClick={openCreateUserPanel}
+                        size="sm"
+                        type="button"
+                      >
+                        {t("admin.actions.createMember")}
+                      </Button>
+                    }
+                    className="px-0 pb-4 pt-0"
+                    description={t("admin.members.description")}
+                    title={t("admin.members.title")}
+                  />
+                  <div className="pb-2 pt-3">
+                    <div className="overflow-x-auto rounded-[20px] border border-slate-200">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-slate-100 bg-slate-50">
+                            <TableHead>{t("admin.members.member")}</TableHead>
+                            <TableHead>
+                              {t("admin.members.memberships")}
+                            </TableHead>
+                            <TableHead>{t("admin.members.account")}</TableHead>
+                            <TableHead className="text-right">
+                              {t("admin.members.actionsColumn")}
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {searchedUsers.map((user) => {
+                            const scopedMembership =
+                              selectedTenantId === "all"
+                                ? null
+                                : (user.memberships.find(
+                                    (membership) =>
+                                      membership.tenant_id === selectedTenantId,
+                                  ) ?? null);
+                            const scopedInvitationCredential = scopedMembership
+                              ? (revealedInvitationByMembershipId[
+                                  scopedMembership.id
+                                ] ?? null)
+                              : null;
+                            const invitationExpired = isInvitationExpired(
+                              scopedInvitationCredential?.invitation_expires_at ??
+                                scopedMembership?.invitation_expires_at ??
+                                null,
+                            );
+
+                            return (
+                              <TableRow
+                                className="border-slate-100"
+                                key={user.id}
+                              >
+                                <TableCell>
+                                  <div className="font-medium text-slate-900">
+                                    {user.display_name}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {user.email}
+                                  </div>
+                                  <div className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                                    {getRoleLabel(user.role, t)}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="space-y-3">
+                                    <div className="flex flex-wrap gap-2">
+                                      {user.memberships.length > 0 ? (
+                                        user.memberships.map((membership) => (
+                                          <Badge
+                                            className="border-slate-200 bg-white text-slate-700"
+                                            key={membership.id}
+                                            variant="outline"
+                                          >
+                                            {membership.tenant_name}
+                                            {" · "}
+                                            {membership.membership_status ===
+                                            "active"
+                                              ? t(
+                                                  "admin.members.activeMembership",
+                                                )
+                                              : membership.membership_status ===
+                                                  "invited"
+                                                ? t(
+                                                    "admin.members.invitedMembership",
+                                                  )
+                                                : t(
+                                                    "admin.members.suspendedMembership",
+                                                  )}
+                                          </Badge>
+                                        ))
+                                      ) : (
+                                        <Badge
+                                          className="border-slate-200 bg-slate-50 text-slate-600"
+                                          variant="outline"
+                                        >
+                                          {t("admin.members.unassigned")}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {scopedMembership?.membership_status ===
+                                      "invited" &&
+                                    scopedInvitationCredential ? (
+                                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-left">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+                                            {t("admin.members.invitationCode")}
+                                          </div>
+                                          {invitationExpired ? (
+                                            <Badge
+                                              className="border-rose-200 bg-white text-rose-700"
+                                              variant="outline"
+                                            >
+                                              {t(
+                                                "admin.members.invitationExpired",
+                                              )}
+                                            </Badge>
+                                          ) : null}
+                                        </div>
+                                        <div className="mt-2 font-mono text-sm font-semibold text-amber-900">
+                                          {
+                                            scopedInvitationCredential.invitation_token
+                                          }
+                                        </div>
+                                        <div className="mt-1 text-xs text-amber-800">
+                                          {t(
+                                            "admin.members.invitationIssuedAt",
+                                            {
+                                              value:
+                                                scopedInvitationCredential.invited_at
+                                                  ? formatTimestamp(
+                                                      scopedInvitationCredential.invited_at,
+                                                    )
+                                                  : t(
+                                                      "admin.directory.notAvailable",
+                                                    ),
+                                            },
+                                          )}
+                                        </div>
+                                        <div className="mt-1 text-xs text-amber-800">
+                                          {t(
+                                            "admin.members.invitationIssuedBy",
+                                            {
+                                              value:
+                                                scopedInvitationCredential.last_invitation_issued_by_display_name ??
+                                                t(
+                                                  "admin.directory.notAvailable",
+                                                ),
+                                            },
+                                          )}
+                                        </div>
+                                        <div className="mt-1 text-xs text-amber-800">
+                                          {t(
+                                            "admin.members.invitationIssueCount",
+                                            {
+                                              value: String(
+                                                scopedInvitationCredential.invitation_issue_count,
+                                              ),
+                                            },
+                                          )}
+                                        </div>
+                                        <div className="mt-1 text-xs text-amber-800">
+                                          {t(
+                                            "admin.members.invitationExpiresAt",
+                                            {
+                                              value:
+                                                scopedInvitationCredential.invitation_expires_at
+                                                  ? formatTimestamp(
+                                                      scopedInvitationCredential.invitation_expires_at,
+                                                    )
+                                                  : t(
+                                                      "admin.directory.notAvailable",
+                                                    ),
+                                            },
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    className={cn(
+                                      "border",
+                                      user.is_active
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : "border-slate-200 bg-slate-100 text-slate-700",
+                                    )}
+                                    variant="outline"
+                                  >
+                                    {user.is_active
+                                      ? t("admin.members.activeAccount")
+                                      : t("admin.members.inactiveAccount")}
+                                  </Badge>
+                                  <div className="mt-2 text-xs text-slate-500">
+                                    {t("admin.members.createdAt", {
+                                      value: formatTimestamp(user.created_at),
+                                    })}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {t("admin.members.lastSignedInAt", {
+                                      value: user.last_signed_in_at
+                                        ? formatTimestamp(
+                                            user.last_signed_in_at,
+                                          )
+                                        : t("admin.directory.notAvailable"),
+                                    })}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex w-full flex-wrap justify-end gap-2.5 sm:min-w-[430px] sm:w-auto">
+                                    <Button
+                                      className="bg-white"
+                                      disabled={
+                                        !hasAdminWriteAccess || isLoading
+                                      }
+                                      onClick={() => openUserEditPanel(user)}
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      {t("admin.actions.edit")}
+                                    </Button>
+                                    <Button
+                                      className="bg-white"
+                                      disabled={
+                                        !hasAdminWriteAccess ||
+                                        activeUserActionId === user.id ||
+                                        isLoading
+                                      }
+                                      onClick={() =>
+                                        void handleToggleUserAccount(user)
+                                      }
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      {activeUserActionId === user.id
+                                        ? user.is_active
+                                          ? t("admin.actions.deactivating")
+                                          : t("admin.actions.activating")
+                                        : user.is_active
+                                          ? t("admin.actions.deactivate")
+                                          : t("admin.actions.activate")}
+                                    </Button>
+                                    {selectedTenantId === "all" ? (
+                                      <Button
+                                        className="bg-white"
+                                        disabled
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        {t("admin.members.scopeRequired")}
+                                      </Button>
+                                    ) : scopedMembership ? (
+                                      <>
+                                        <Button
+                                          className="bg-white"
+                                          disabled={
+                                            !hasAdminWriteAccess ||
+                                            activeMembershipActionId ===
+                                              scopedMembership.id ||
+                                            isLoading
+                                          }
+                                          onClick={() =>
+                                            void handleIssueMembershipInvitation(
+                                              user,
+                                              scopedMembership,
+                                            )
+                                          }
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          {activeMembershipActionId ===
+                                          scopedMembership.id
+                                            ? t(
+                                                "admin.actions.issuingInvitationCode",
+                                              )
+                                            : scopedInvitationCredential
+                                              ? t(
+                                                  "admin.actions.regenerateInvitationCode",
+                                                )
+                                              : t(
+                                                  "admin.actions.showInvitationCode",
+                                                )}
+                                        </Button>
+                                        {scopedMembership.membership_status ===
+                                        "invited" ? (
+                                          <Button
+                                            className="bg-white"
+                                            disabled={
+                                              !hasAdminWriteAccess ||
+                                              activeMembershipActionId ===
+                                                scopedMembership.id ||
+                                              isLoading
+                                            }
+                                            onClick={() =>
+                                              void handleRevokeMembershipInvitation(
+                                                user,
+                                                scopedMembership,
+                                              )
+                                            }
+                                            size="sm"
+                                            type="button"
+                                            variant="outline"
+                                          >
+                                            {activeMembershipActionId ===
+                                            scopedMembership.id
+                                              ? t(
+                                                  "admin.actions.revokingInvitationCode",
+                                                )
+                                              : t(
+                                                  "admin.actions.revokeInvitationCode",
+                                                )}
+                                          </Button>
+                                        ) : null}
+                                        <Button
+                                          className="bg-white"
+                                          disabled={
+                                            !hasAdminWriteAccess ||
+                                            activeMembershipActionId ===
+                                              scopedMembership.id ||
+                                            isLoading
+                                          }
+                                          onClick={() =>
+                                            void handleUpdateMembership(
+                                              user,
+                                              scopedMembership,
+                                              scopedMembership.membership_status ===
+                                                "active"
+                                                ? "suspended"
+                                                : "active",
+                                            )
+                                          }
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          {activeMembershipActionId ===
+                                          scopedMembership.id
+                                            ? scopedMembership.membership_status ===
+                                              "active"
+                                              ? t("admin.actions.suspending")
+                                              : t("admin.actions.activating")
+                                            : scopedMembership.membership_status ===
+                                                "active"
+                                              ? t("admin.actions.suspend")
+                                              : scopedMembership.membership_status ===
+                                                  "invited"
+                                                ? t(
+                                                    "admin.actions.activateInvite",
+                                                  )
+                                                : t("admin.actions.activate")}
+                                        </Button>
+                                        <Button
+                                          className="bg-white"
+                                          disabled={
+                                            !hasAdminWriteAccess ||
+                                            activeMembershipActionId ===
+                                              scopedMembership.id ||
+                                            isLoading
+                                          }
+                                          onClick={() =>
+                                            void handleRemoveMembership(
+                                              user,
+                                              scopedMembership,
+                                            )
+                                          }
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          {activeMembershipActionId ===
+                                          scopedMembership.id
+                                            ? t("admin.actions.removing")
+                                            : t(
+                                                "admin.actions.removeFromTenant",
+                                              )}
+                                        </Button>
+                                      </>
+                                    ) : (
+                                      <Button
+                                        className="bg-white"
+                                        disabled={
+                                          !hasAdminWriteAccess ||
+                                          activeUserActionId === user.id ||
+                                          isLoading
+                                        }
+                                        onClick={() =>
+                                          void handleAddUserToTenant(user)
+                                        }
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        {activeUserActionId === user.id
+                                          ? t("admin.actions.invitingToTenant")
+                                          : t("admin.actions.inviteToTenant")}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                          {searchedUsers.length === 0 ? (
+                            <TableRow className="border-slate-100">
+                              <TableCell
+                                className="py-10 text-center text-slate-500"
+                                colSpan={4}
+                              >
+                                {t("admin.members.noMembers")}
+                              </TableCell>
+                            </TableRow>
+                          ) : null}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+            </div>
+
+            <div className="mt-6 grid gap-6">
+              {showOverviewSection ? (
+                <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+                  <RuntimePostureCard
+                    className="border-0 bg-transparent p-0"
+                    description={t("settings.governance.description")}
+                    errorMessage={runtimeHealthErrorMessage}
+                    isLoading={isLoadingRuntimeHealth}
+                    runtimeHealth={runtimeHealth}
+                    title={t("settings.governance.title")}
+                  />
+                </ConsoleSurface>
+              ) : null}
+
+              {adminSection === "access" ||
+              (showAdvancedAdminSections && adminSection === "security") ? (
+                <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Select
+                        disabled={isLoading}
+                        onValueChange={setAuditEventFilter}
+                        value={auditEventFilter}
+                      >
+                        <SelectTrigger className="min-w-[210px] rounded-xl border-slate-200 bg-white">
+                          <SelectValue placeholder={t("admin.audit.filter")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">
+                            {t("admin.audit.allEvents")}
+                          </SelectItem>
+                          <SelectItem value="sign_in_failed">
+                            {t("admin.audit.eventTypes.signInFailed")}
+                          </SelectItem>
+                          <SelectItem value="sign_in_succeeded">
+                            {t("admin.audit.eventTypes.signInSucceeded")}
+                          </SelectItem>
+                          <SelectItem value="invitation_activation_failed">
+                            {t(
+                              "admin.audit.eventTypes.invitationActivationFailed",
+                            )}
+                          </SelectItem>
+                          <SelectItem value="sign_out_succeeded">
+                            {t("admin.audit.eventTypes.signOutSucceeded")}
+                          </SelectItem>
+                          <SelectItem value="session_revoked">
+                            {t("admin.audit.eventTypes.sessionRevoked")}
+                          </SelectItem>
+                          <SelectItem value="password_changed">
+                            {t("admin.audit.eventTypes.passwordChanged")}
+                          </SelectItem>
+                          <SelectItem value="password_reset">
+                            {t("admin.audit.eventTypes.passwordReset")}
+                          </SelectItem>
+                          <SelectItem value="invitation_issued">
+                            {t("admin.audit.eventTypes.invitationIssued")}
+                          </SelectItem>
+                          <SelectItem value="invitation_activated">
+                            {t("admin.audit.eventTypes.invitationActivated")}
+                          </SelectItem>
+                          <SelectItem value="invitation_revoked">
+                            {t("admin.audit.eventTypes.invitationRevoked")}
+                          </SelectItem>
+                          <SelectItem value="membership_active">
+                            {t("admin.audit.eventTypes.membershipActive")}
+                          </SelectItem>
+                          <SelectItem value="membership_suspended">
+                            {t("admin.audit.eventTypes.membershipSuspended")}
+                          </SelectItem>
+                          <SelectItem value="membership_deleted">
+                            {t("admin.audit.eventTypes.membershipDeleted")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    }
+                    className="px-0 pb-3 pt-0"
+                    description={t("admin.audit.description")}
+                    title={t("admin.audit.title")}
+                  />
+                  <div className="grid gap-3 pt-3 lg:grid-cols-2">
+                    {auditEvents.length > 0 ? (
+                      auditEvents.map((event) => (
+                        <div
+                          className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={event.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold text-slate-900">
+                              {getAccessEventLabel(event.event_type, t)}
                             </div>
-                            <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                  {t(
-                                    "admin.runtimeGovernance.providerMetrics.runtimeReady",
-                                  )}
-                                </div>
-                                <div className="mt-2 text-base font-semibold text-slate-950">
-                                  {provider.runtime_ready_endpoints}
-                                </div>
-                              </div>
-                              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                  {t(
-                                    "admin.runtimeGovernance.providerMetrics.activeAgents",
-                                  )}
-                                </div>
-                                <div className="mt-2 text-base font-semibold text-slate-950">
-                                  {provider.active_agent_count}
-                                </div>
-                              </div>
-                              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                  {t(
-                                    "admin.runtimeGovernance.providerMetrics.attentionAgents",
-                                  )}
-                                </div>
-                                <div className="mt-2 text-base font-semibold text-slate-950">
-                                  {provider.attention_active_agent_count}
-                                </div>
-                              </div>
-                              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                  {t(
-                                    "admin.runtimeGovernance.providerMetrics.previewFailures",
-                                  )}
-                                </div>
-                                <div className="mt-2 text-base font-semibold text-slate-950">
-                                  {provider.recent_preview_failed_events}
-                                </div>
-                              </div>
+                            <div className="text-xs text-slate-500">
+                              {formatTimestamp(event.created_at)}
                             </div>
-                            <div className="mt-3 text-xs text-slate-500">
-                              {provider.last_preview_status &&
-                              provider.last_preview_at
-                                ? t(
-                                    "admin.runtimeGovernance.providerPreviewStatus",
-                                    {
-                                      status: provider.last_preview_status,
-                                      value: formatTimestamp(
-                                        provider.last_preview_at,
-                                      ),
-                                    },
-                                  )
-                                : t(
-                                    "admin.runtimeGovernance.providerPreviewEmpty",
-                                  )}
+                          </div>
+                          <div className="mt-2 text-sm text-slate-600">
+                            {event.user_display_name ??
+                              t("admin.directory.notAvailable")}
+                            {event.tenant_name ? ` · ${event.tenant_name}` : ""}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {t("admin.audit.actor", {
+                              value:
+                                event.actor_display_name ??
+                                t("admin.directory.notAvailable"),
+                            })}
+                          </div>
+                          {readAccessEventRevocationScope(event) ? (
+                            <div className="mt-1 text-xs text-slate-500">
+                              {t("admin.audit.revocationScope", {
+                                value:
+                                  readAccessEventRevocationScope(event) ===
+                                  "self"
+                                    ? t("admin.audit.revocationScopeSelf")
+                                    : t("admin.audit.revocationScopeAdmin"),
+                              })}
                             </div>
+                          ) : null}
+                          {readAccessEventReason(event) ? (
+                            <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                              <span className="font-semibold text-slate-700">
+                                {t("admin.audit.reasonLabel")}:{" "}
+                              </span>
+                              {readAccessEventReason(event)}
+                            </div>
+                          ) : null}
+                          {hasAdminWriteAccess && event.user_id ? (
                             <div className="mt-3 flex flex-wrap gap-2">
                               <Button
                                 asChild
@@ -9431,16 +7398,389 @@ export default function AdminConsolePage() {
                                 variant="outline"
                               >
                                 <Link
-                                  href={buildSettingsHref({
-                                    runtimeResource: "model_endpoint",
-                                    modelProviderType: provider.provider_type,
-                                  })}
-                                >
-                                  {t(
-                                    "admin.runtimeGovernance.openProviderModels",
+                                  href={buildMemberGovernanceHref(
+                                    event.user_id,
+                                    {
+                                      tenantId: event.tenant_id,
+                                      memberRelationshipFilter:
+                                        event.event_type ===
+                                          "invitation_issued" ||
+                                        event.event_type ===
+                                          "invitation_revoked"
+                                          ? "invited"
+                                          : null,
+                                    },
                                   )}
+                                >
+                                  {t("admin.audit.openMember")}
                                 </Link>
                               </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500 lg:col-span-2">
+                        {t("admin.audit.empty")}
+                      </div>
+                    )}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "access" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.accessSummary.description")}
+                    title={t("admin.accessSummary.title")}
+                  />
+                  <div className="grid gap-3 p-6">
+                    {accessSummaryItems.map((item) => (
+                      <div
+                        className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                        key={item.label}
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {item.label}
+                        </div>
+                        <div className="mt-3 text-2xl font-semibold text-slate-950">
+                          {item.value}
+                        </div>
+                        <div className="mt-2 text-sm leading-6 text-slate-500">
+                          {item.hint}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "access" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t(
+                      "admin.accessSummary.eventBreakdownDescription",
+                    )}
+                    title={t("admin.accessSummary.eventBreakdownTitle")}
+                  />
+                  <div className="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
+                    {accessEventBreakdownItems.length > 0 ? (
+                      accessEventBreakdownItems.map((item) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={item.event_type}
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {getAccessEventLabel(item.event_type, t)}
+                          </div>
+                          <div className="mt-3 text-2xl font-semibold text-slate-950">
+                            {item.event_count}
+                          </div>
+                          <div className="mt-4">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link
+                                href={buildAuditEventSliceHref(
+                                  item.event_type,
+                                  {
+                                    selectedTenantId,
+                                    searchQuery,
+                                    memberAccountFilter,
+                                    memberRelationshipFilter,
+                                  },
+                                )}
+                              >
+                                {t("admin.accessSummary.openAuditSlice")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+                        {t("admin.accessSummary.eventBreakdownEmpty")}
+                      </div>
+                    )}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {adminSection === "access" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.members.activationQueue.description")}
+                    title={t("admin.members.activationQueue.title")}
+                  />
+                  <div className="space-y-3 px-6 py-5">
+                    {invitedActivationQueue.length > 0 ? (
+                      invitedActivationQueue.map((item) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
+                          key={item.membership.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-base font-semibold text-slate-950">
+                                {item.user.display_name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {item.user.email}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Badge
+                                className="border-slate-200 bg-white text-slate-700"
+                                variant="outline"
+                              >
+                                {item.membership.tenant_name}
+                              </Badge>
+                              <Badge
+                                className={cn(
+                                  "border",
+                                  item.invitationExpired
+                                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                                    : "border-amber-200 bg-amber-50 text-amber-700",
+                                )}
+                                variant="outline"
+                              >
+                                {item.invitationExpired
+                                  ? t("admin.members.invitationExpired")
+                                  : t("admin.members.invitedMembership")}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid gap-3 md:grid-cols-3">
+                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                {t("admin.members.invitationCode")}
+                              </div>
+                              <div className="mt-2 font-mono text-sm font-semibold text-slate-900">
+                                {item.invitationCredential?.invitation_token ??
+                                  t("admin.members.activationQueue.notIssued")}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                              <div>
+                                {t("admin.members.invitationIssuedAt", {
+                                  value: item.invitationIssuedAt
+                                    ? formatTimestamp(item.invitationIssuedAt)
+                                    : t("admin.directory.notAvailable"),
+                                })}
+                              </div>
+                              <div className="mt-1">
+                                {t("admin.members.invitationIssueCount", {
+                                  value: String(
+                                    item.invitationCredential
+                                      ?.invitation_issue_count ??
+                                      item.membership.invitation_issue_count,
+                                  ),
+                                })}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                              <div>
+                                {t("admin.members.invitationExpiresAt", {
+                                  value: item.invitationExpiresAt
+                                    ? formatTimestamp(item.invitationExpiresAt)
+                                    : t("admin.directory.notAvailable"),
+                                })}
+                              </div>
+                              <div className="mt-1">
+                                {t("admin.members.invitationIssuedBy", {
+                                  value:
+                                    item.invitationCredential
+                                      ?.last_invitation_issued_by_display_name ??
+                                    item.membership
+                                      .last_invitation_issued_by_display_name ??
+                                    t("admin.directory.notAvailable"),
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link
+                                href={buildMemberGovernanceHref(item.user, {
+                                  tenantId: item.membership.tenant_id,
+                                  memberRelationshipFilter: "invited",
+                                })}
+                              >
+                                {t("admin.audit.openMember")}
+                              </Link>
+                            </Button>
+                            <Button
+                              className="bg-white"
+                              disabled={
+                                !hasAdminWriteAccess ||
+                                activeMembershipActionId ===
+                                  item.membership.id ||
+                                isLoading
+                              }
+                              onClick={() =>
+                                void handleIssueMembershipInvitation(
+                                  item.user,
+                                  item.membership,
+                                )
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {activeMembershipActionId === item.membership.id
+                                ? t("admin.actions.issuingInvitationCode")
+                                : item.invitationCredential
+                                  ? t("admin.actions.regenerateInvitationCode")
+                                  : t("admin.actions.showInvitationCode")}
+                            </Button>
+                            <Button
+                              className="bg-white"
+                              disabled={
+                                !hasAdminWriteAccess ||
+                                activeMembershipActionId ===
+                                  item.membership.id ||
+                                isLoading
+                              }
+                              onClick={() =>
+                                void handleUpdateMembership(
+                                  item.user,
+                                  item.membership,
+                                  "active",
+                                )
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {activeMembershipActionId === item.membership.id
+                                ? t("admin.actions.activating")
+                                : t("admin.actions.activateInvite")}
+                            </Button>
+                            <Button
+                              className="bg-white"
+                              disabled={
+                                !hasAdminWriteAccess ||
+                                activeMembershipActionId ===
+                                  item.membership.id ||
+                                isLoading
+                              }
+                              onClick={() =>
+                                void handleRevokeMembershipInvitation(
+                                  item.user,
+                                  item.membership,
+                                )
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {activeMembershipActionId === item.membership.id
+                                ? t("admin.actions.revokingInvitationCode")
+                                : t("admin.actions.revokeInvitationCode")}
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4 text-sm text-slate-500">
+                        {t("admin.members.activationQueue.empty")}
+                      </div>
+                    )}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "security" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.securitySummary.description")}
+                    title={t("admin.securitySummary.title")}
+                  />
+                  <div className="grid gap-3 p-6">
+                    {securitySummaryItems.map((item) => (
+                      <div
+                        className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                        key={item.label}
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {item.label}
+                        </div>
+                        <div className="mt-3 text-2xl font-semibold text-slate-950">
+                          {item.value}
+                        </div>
+                        <div className="mt-2 text-sm leading-6 text-slate-500">
+                          {item.hint}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "security" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.currentActorSecurity.description")}
+                    title={t("admin.currentActorSecurity.title")}
+                  />
+                  <div className="space-y-4 p-6">
+                    {currentActorSecurityPosture ? (
+                      <>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5">
+                          <div className="text-base font-semibold text-slate-950">
+                            {currentActorSecurityPosture.display_name}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {currentActorSecurityPosture.email}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {getRoleLabel(
+                                currentActorSecurityPosture.role,
+                                t,
+                              )}
+                            </Badge>
+                            <Badge
+                              className={cn(
+                                "border",
+                                currentActorSecurityPosture.is_active
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-rose-200 bg-rose-50 text-rose-700",
+                              )}
+                              variant="outline"
+                            >
+                              {currentActorSecurityPosture.is_active
+                                ? t("admin.currentActorSecurity.accountActive")
+                                : t(
+                                    "admin.currentActorSecurity.accountInactive",
+                                  )}
+                            </Badge>
+                          </div>
+                          <div className="mt-4 text-sm text-slate-500">
+                            {t("admin.currentActorSecurity.lastSignedIn", {
+                              value:
+                                currentActorSecurityPosture.last_signed_in_at
+                                  ? formatTimestamp(
+                                      currentActorSecurityPosture.last_signed_in_at,
+                                    )
+                                  : t("admin.directory.notAvailable"),
+                            })}
+                          </div>
+                          {hasAdminWriteAccess ? (
+                            <div className="mt-4">
                               <Button
                                 asChild
                                 className="bg-white"
@@ -9449,451 +7789,2026 @@ export default function AdminConsolePage() {
                                 variant="outline"
                               >
                                 <Link
-                                  href={buildScopedRuntimeIssueHref(
-                                    "model_runtime_unconfigured",
-                                    {
-                                      modelProviderType:
-                                        normalizeRuntimeGovernanceProviderType(
-                                          provider.provider_type,
-                                        ),
-                                    },
+                                  href={buildMemberGovernanceHref(
+                                    currentActorSecurityPosture,
                                   )}
                                 >
-                                  {t(
-                                    "settings.models.compatibility.openRuntimeAttention",
-                                  )}
+                                  {t("admin.currentActorSecurity.openMember")}
                                 </Link>
                               </Button>
                             </div>
+                          ) : null}
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t(
+                                "admin.currentActorSecurity.activeMemberships",
+                              )}
+                            </div>
+                            <div className="mt-3 text-2xl font-semibold text-slate-950">
+                              {currentActorAccessSummary
+                                ? currentActorAccessSummary.active_memberships
+                                : "--"}
+                            </div>
                           </div>
-                        ),
+                          <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t(
+                                "admin.currentActorSecurity.invitedMemberships",
+                              )}
+                            </div>
+                            <div className="mt-3 text-2xl font-semibold text-slate-950">
+                              {currentActorAccessSummary
+                                ? currentActorAccessSummary.invited_memberships
+                                : "--"}
+                            </div>
+                          </div>
+                          <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t(
+                                "admin.currentActorSecurity.suspendedMemberships",
+                              )}
+                            </div>
+                            <div className="mt-3 text-2xl font-semibold text-slate-950">
+                              {currentActorAccessSummary
+                                ? currentActorAccessSummary.suspended_memberships
+                                : "--"}
+                            </div>
+                          </div>
+                          <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 p-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("admin.currentActorSecurity.invitationRisk")}
+                            </div>
+                            <div className="mt-3 text-2xl font-semibold text-slate-950">
+                              {currentActorInvitationRisk ?? "--"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Link href="/settings">
+                              {t("admin.currentActorSecurity.openSettings")}
+                            </Link>
+                          </Button>
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Link
+                              href={buildAdminHref({
+                                tenantId: selectedTenantId,
+                                section: "access",
+                              })}
+                            >
+                              {t("admin.currentActorSecurity.openAccess")}
+                            </Link>
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
+                        {t("admin.currentActorSecurity.notAvailable")}
+                      </div>
+                    )}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "security" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.securityWatch.description")}
+                    title={t("admin.securityWatch.title")}
+                  />
+                  <div className="space-y-4 px-6 py-5">
+                    {securityWatchItems.map((item) => (
+                      <div
+                        className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
+                        key={item.title}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-base font-semibold text-slate-900">
+                            {item.title}
+                          </div>
+                          <Badge
+                            className={cn(
+                              "border",
+                              getWatchStatusClass(item.status),
+                            )}
+                            variant="outline"
+                          >
+                            {item.status === "attention"
+                              ? t("admin.watchlist.attention")
+                              : item.status === "review"
+                                ? t("admin.watchlist.review")
+                                : t("admin.watchlist.healthy")}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 text-sm leading-6 text-slate-500">
+                          {item.detail}
+                        </div>
+                        {item.actionHref && item.actionLabel ? (
+                          <div className="mt-4">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.actionHref}>
+                                {item.actionLabel}
+                              </Link>
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showRuntimeSection ? (
+                <ConsoleSurface className="overflow-visible rounded-none border-0 bg-transparent shadow-none">
+                  <ConsoleSurfaceHeader
+                    actionPlacement="below"
+                    action={
+                      <div className="grid w-full gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:grid-cols-2 2xl:grid-cols-5">
+                        <div className="relative min-w-0 lg:col-span-2 2xl:col-span-5">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <Input
+                            className="bg-white pl-9"
+                            onChange={(event) =>
+                              setRuntimeGovernanceSearchQuery(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={t(
+                              "admin.runtimeQueue.filters.searchPlaceholder",
+                            )}
+                            value={runtimeGovernanceSearchQuery}
+                          />
+                        </div>
+                        <Select
+                          onValueChange={
+                            setRuntimeGovernanceQueueCategoryFilter
+                          }
+                          value={runtimeGovernanceQueueCategoryFilter}
+                        >
+                          <SelectTrigger className="h-10 w-full">
+                            <SelectValue
+                              placeholder={t(
+                                "admin.runtimeQueue.filters.category",
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("admin.runtimeQueue.filters.allCategories")}
+                            </SelectItem>
+                            <SelectItem value="unconfigured_model_endpoint">
+                              {t(
+                                "admin.runtimeQueue.categories.unconfiguredModelEndpoint",
+                              )}
+                            </SelectItem>
+                            <SelectItem value="disabled_bound_model_endpoint">
+                              {t(
+                                "admin.runtimeQueue.categories.disabledBoundModelEndpoint",
+                              )}
+                            </SelectItem>
+                            <SelectItem value="approval_required_tool">
+                              {t(
+                                "admin.runtimeQueue.categories.approvalRequiredTool",
+                              )}
+                            </SelectItem>
+                            <SelectItem value="mcp_integration_pending_tool">
+                              {t(
+                                "admin.runtimeQueue.categories.mcpIntegrationPendingTool",
+                              )}
+                            </SelectItem>
+                            <SelectItem value="integration_blocked_connector">
+                              {t(
+                                "admin.runtimeQueue.categories.integrationBlockedConnector",
+                              )}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          onValueChange={
+                            setRuntimeGovernanceQueueSeverityFilter
+                          }
+                          value={runtimeGovernanceQueueSeverityFilter}
+                        >
+                          <SelectTrigger className="h-10 w-full">
+                            <SelectValue
+                              placeholder={t(
+                                "admin.runtimeQueue.filters.severity",
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("admin.runtimeQueue.filters.allSeverities")}
+                            </SelectItem>
+                            <SelectItem value="attention">
+                              {t("admin.watchlist.attention")}
+                            </SelectItem>
+                            <SelectItem value="review">
+                              {t("admin.watchlist.review")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          onValueChange={
+                            setRuntimeGovernanceQueueResourceFilter
+                          }
+                          value={runtimeGovernanceQueueResourceFilter}
+                        >
+                          <SelectTrigger className="h-10 w-full">
+                            <SelectValue
+                              placeholder={t(
+                                "admin.runtimeQueue.filters.resource",
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("admin.runtimeQueue.filters.allResources")}
+                            </SelectItem>
+                            <SelectItem value="model_endpoint">
+                              {formatGovernanceTokenLabel("model_endpoint")}
+                            </SelectItem>
+                            <SelectItem value="tool_registration">
+                              {formatGovernanceTokenLabel("tool_registration")}
+                            </SelectItem>
+                            <SelectItem value="mcp_connector">
+                              {formatGovernanceTokenLabel("mcp_connector")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          onValueChange={setRuntimeGovernanceActionFilter}
+                          value={runtimeGovernanceActionFilter}
+                        >
+                          <SelectTrigger className="h-10 w-full">
+                            <SelectValue
+                              placeholder={t(
+                                "admin.runtimeQueue.filters.action",
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("admin.runtimeQueue.filters.allActions")}
+                            </SelectItem>
+                            <SelectItem value="created">
+                              {formatGovernanceTokenLabel("created")}
+                            </SelectItem>
+                            <SelectItem value="updated">
+                              {formatGovernanceTokenLabel("updated")}
+                            </SelectItem>
+                            <SelectItem value="deleted">
+                              {formatGovernanceTokenLabel("deleted")}
+                            </SelectItem>
+                            <SelectItem value="governance_action">
+                              {formatGovernanceTokenLabel("governance_action")}
+                            </SelectItem>
+                            <SelectItem value="previewed">
+                              {formatGovernanceTokenLabel("previewed")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          onValueChange={setRuntimeGovernanceActorRoleFilter}
+                          value={runtimeGovernanceActorRoleFilter}
+                        >
+                          <SelectTrigger className="h-10 w-full">
+                            <SelectValue
+                              placeholder={t(
+                                "admin.runtimeQueue.filters.actor",
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("admin.runtimeQueue.filters.allActors")}
+                            </SelectItem>
+                            <SelectItem value="super_admin">
+                              {t("auth.roles.superAdmin")}
+                            </SelectItem>
+                            <SelectItem value="operator">
+                              {t("auth.roles.operator")}
+                            </SelectItem>
+                            <SelectItem value="reviewer">
+                              {t("auth.roles.reviewer")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    }
+                    className="px-0 pb-4 pt-0"
+                    description={t("admin.runtimeQueue.description")}
+                    title={t("admin.runtimeQueue.title")}
+                  />
+                  <div className="space-y-6 pt-2">
+                    <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t("admin.runtimeQueue.metrics.total")}
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-950">
+                          {runtimeGovernanceWorklist?.total_items ?? 0}
+                        </div>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t("admin.runtimeQueue.metrics.unconfiguredModels")}
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-950">
+                          {runtimeGovernanceWorklist?.unconfigured_model_endpoints ??
+                            0}
+                        </div>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t("admin.runtimeQueue.metrics.disabledBoundModels")}
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-950">
+                          {runtimeGovernanceWorklist?.disabled_bound_model_endpoints ??
+                            0}
+                        </div>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t(
+                            "admin.runtimeQueue.metrics.approvalRequiredTools",
+                          )}
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-950">
+                          {runtimeGovernanceWorklist?.approval_required_tools ??
+                            0}
+                        </div>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t(
+                            "admin.runtimeQueue.metrics.integrationPendingTools",
+                          )}
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-950">
+                          {runtimeGovernanceWorklist?.mcp_integration_pending_tools ??
+                            0}
+                        </div>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t("admin.runtimeQueue.metrics.blockedConnectors")}
+                        </div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-950">
+                          {runtimeGovernanceWorklist?.integration_blocked_connectors ??
+                            0}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 2xl:grid-cols-2">
+                      <div className="space-y-3">
+                        <div className="text-sm font-semibold text-slate-950">
+                          {t("admin.runtimeQueue.worklistTitle")}
+                        </div>
+                        {runtimeGovernanceWorklist?.items.length ? (
+                          <div className="space-y-3">
+                            {runtimeGovernanceWorklist.items.map((item) => {
+                              const followUp =
+                                buildRuntimeGovernanceWorklistFollowUp(
+                                  item,
+                                  selectedTenantId === "all"
+                                    ? null
+                                    : selectedTenantId,
+                                );
+                              const quickActionKey =
+                                resolveRuntimeGovernanceWorklistQuickAction(
+                                  item,
+                                );
+                              const isApplyingQuickAction =
+                                activeRuntimeGovernanceActionId ===
+                                item.resource_id;
+                              const previewStatusLabel =
+                                getRuntimeGovernanceWorklistPreviewStatusLabel(
+                                  item,
+                                  t,
+                                );
+                              const previewFailureLabel =
+                                item.resource_type === "model_endpoint" ||
+                                item.resource_type === "tool_registration" ||
+                                item.resource_type === "mcp_connector"
+                                  ? readRuntimeGovernancePreviewFailureLabel(
+                                      item,
+                                      t,
+                                      "admin.runtimeQueue.previewFailures",
+                                    )
+                                  : null;
+
+                              return (
+                                <div
+                                  className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                                  key={`${item.resource_type}-${item.resource_id}`}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      className={
+                                        item.severity === "attention"
+                                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                                          : "border-amber-200 bg-amber-50 text-amber-700"
+                                      }
+                                      variant="outline"
+                                    >
+                                      {item.severity === "attention"
+                                        ? t("admin.watchlist.attention")
+                                        : t("admin.watchlist.review")}
+                                    </Badge>
+                                    <Badge
+                                      className="border-slate-200 bg-white text-slate-700"
+                                      variant="outline"
+                                    >
+                                      {getRuntimeGovernanceWorklistCategoryLabel(
+                                        item.category,
+                                        t,
+                                      )}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-3 text-base font-semibold text-slate-950">
+                                    {item.resource_name}
+                                  </div>
+                                  <div className="mt-1 text-sm text-slate-500">
+                                    {item.resource_slug}
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                                    <span>
+                                      {getRuntimeGovernanceActionHintLabel(
+                                        item.action_hint,
+                                        t,
+                                      )}
+                                    </span>
+                                    {"provider_type" in item.detail &&
+                                    typeof item.detail.provider_type ===
+                                      "string" ? (
+                                      <span>
+                                        {t(
+                                          `settings.models.providers.${item.detail.provider_type}`,
+                                        )}
+                                      </span>
+                                    ) : null}
+                                    {"transport_type" in item.detail &&
+                                    typeof item.detail.transport_type ===
+                                      "string" ? (
+                                      <span>
+                                        {formatGovernanceTokenLabel(
+                                          item.detail.transport_type,
+                                        )}
+                                      </span>
+                                    ) : null}
+                                    {"surface_area" in item.detail &&
+                                    typeof item.detail.surface_area ===
+                                      "string" ? (
+                                      <span>
+                                        {formatGovernanceTokenLabel(
+                                          item.detail.surface_area,
+                                        )}
+                                      </span>
+                                    ) : null}
+                                    {"bound_agent_count" in item.detail &&
+                                    typeof item.detail.bound_agent_count ===
+                                      "number" ? (
+                                      <span>
+                                        {t("admin.runtimeQueue.boundAgents", {
+                                          count: String(
+                                            item.detail.bound_agent_count,
+                                          ),
+                                        })}
+                                      </span>
+                                    ) : null}
+                                    {"runtime_issue" in item.detail &&
+                                    typeof item.detail.runtime_issue ===
+                                      "string" ? (
+                                      <span>
+                                        {t(
+                                          `agents.readiness.issueLabels.model_runtime_unconfigured`,
+                                        )}
+                                      </span>
+                                    ) : null}
+                                    {"integration_ready_tool_count" in
+                                      item.detail &&
+                                    typeof item.detail
+                                      .integration_ready_tool_count ===
+                                      "number" ? (
+                                      <span>
+                                        {t(
+                                          "admin.runtimeQueue.integrationReadyTools",
+                                          {
+                                            count: String(
+                                              item.detail
+                                                .integration_ready_tool_count,
+                                            ),
+                                          },
+                                        )}
+                                      </span>
+                                    ) : null}
+                                    {previewFailureLabel ? (
+                                      <span>{previewFailureLabel}</span>
+                                    ) : null}
+                                  </div>
+                                  {previewStatusLabel ? (
+                                    <div className="mt-2 text-xs text-slate-500">
+                                      {previewStatusLabel}
+                                    </div>
+                                  ) : null}
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    {quickActionKey ? (
+                                      <Button
+                                        className="bg-white"
+                                        disabled={
+                                          !hasAdminWriteAccess ||
+                                          isApplyingQuickAction
+                                        }
+                                        onClick={() =>
+                                          void handleApplyRuntimeGovernanceQueueAction(
+                                            item,
+                                          )
+                                        }
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        {getRuntimeGovernanceQuickActionLabel(
+                                          quickActionKey,
+                                          t,
+                                        )}
+                                      </Button>
+                                    ) : null}
+                                    {followUp.settingsHref ? (
+                                      <Button
+                                        asChild
+                                        className="bg-white"
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        <Link href={followUp.settingsHref}>
+                                          {t(
+                                            "admin.runtimeQueue.actions.openSettings",
+                                          )}
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                    {followUp.definitionsHref ? (
+                                      <Button
+                                        asChild
+                                        className="bg-white"
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        <Link href={followUp.definitionsHref}>
+                                          {t(
+                                            "admin.runtimeQueue.actions.openAgents",
+                                          )}
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
+                            {t("admin.runtimeQueue.emptyWorklist")}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="text-sm font-semibold text-slate-950">
+                          {t("admin.runtimeQueue.eventsTitle")}
+                        </div>
+                        {runtimeGovernanceEvents.length ? (
+                          <div className="space-y-3">
+                            {runtimeGovernanceEvents.map((event) => {
+                              const followUp =
+                                buildRuntimeGovernanceEventFollowUp(
+                                  event,
+                                  selectedTenantId === "all"
+                                    ? null
+                                    : selectedTenantId,
+                                );
+                              const quickActionKey =
+                                resolveRuntimeGovernanceEventQuickAction(event);
+                              const isApplyingQuickAction =
+                                Boolean(event.resource_id) &&
+                                activeRuntimeGovernanceActionId ===
+                                  event.resource_id;
+
+                              return (
+                                <div
+                                  className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                                  key={event.id}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      className="border-slate-200 bg-white text-slate-700"
+                                      variant="outline"
+                                    >
+                                      {formatGovernanceTokenLabel(
+                                        event.resource_type,
+                                      )}
+                                    </Badge>
+                                    <Badge
+                                      className="border-slate-200 bg-white text-slate-700"
+                                      variant="outline"
+                                    >
+                                      {event.actor_role
+                                        ? getRoleLabel(
+                                            event.actor_role as
+                                              | "super_admin"
+                                              | "operator"
+                                              | "reviewer",
+                                            t,
+                                          )
+                                        : t("admin.runtimeQueue.systemActor")}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-3 text-base font-semibold text-slate-950">
+                                    {event.resource_name ??
+                                      event.resource_slug ??
+                                      t("settings.activity.notAvailable")}
+                                  </div>
+                                  <div className="mt-1 text-sm text-slate-500">
+                                    {formatGovernanceTokenLabel(
+                                      event.action_type,
+                                    )}
+                                  </div>
+                                  <div className="mt-3 text-xs text-slate-400">
+                                    {formatTimestamp(event.created_at)}
+                                  </div>
+                                  {followUp.settingsHref ||
+                                  followUp.definitionsHref ? (
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {quickActionKey && event.resource_id ? (
+                                        <Button
+                                          className="bg-white"
+                                          disabled={
+                                            !hasAdminWriteAccess ||
+                                            isApplyingQuickAction
+                                          }
+                                          onClick={() =>
+                                            void handleApplyRuntimeGovernanceEventAction(
+                                              event,
+                                            )
+                                          }
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          {getRuntimeGovernanceQuickActionLabel(
+                                            quickActionKey,
+                                            t,
+                                          )}
+                                        </Button>
+                                      ) : null}
+                                      {followUp.settingsHref ? (
+                                        <Button
+                                          asChild
+                                          className="bg-white"
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          <Link href={followUp.settingsHref}>
+                                            {t(
+                                              "admin.runtimeQueue.actions.openSettings",
+                                            )}
+                                          </Link>
+                                        </Button>
+                                      ) : null}
+                                      {followUp.definitionsHref ? (
+                                        <Button
+                                          asChild
+                                          className="bg-white"
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          <Link href={followUp.definitionsHref}>
+                                            {t(
+                                              "admin.runtimeQueue.actions.openAgents",
+                                            )}
+                                          </Link>
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
+                            {t("admin.runtimeQueue.emptyEvents")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.scopePanel.description")}
+                    title={t("admin.scopePanel.title")}
+                  />
+                  <div className="space-y-3 px-6 py-5 text-sm text-slate-600">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.scopePanel.tenantScope")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {selectedTenantId === "all"
+                          ? t("admin.scopePanel.allTenants")
+                          : (tenants.find(
+                              (tenant) => tenant.id === selectedTenantId,
+                            )?.name ?? t("admin.scopePanel.unknownTenant"))}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.scopePanel.visibleInventory")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {t("admin.scopePanel.inventoryCounts", {
+                          workspaceCount: String(filteredWorkspaces.length),
+                          knowledgeBaseCount: String(
+                            filteredKnowledgeBases.length,
+                          ),
+                        })}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.scopePanel.searchResults")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {t("admin.scopePanel.inventoryCounts", {
+                          workspaceCount: String(searchedWorkspaces.length),
+                          knowledgeBaseCount: String(
+                            searchedKnowledgeBases.length,
+                          ),
+                        })}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {normalizedSearchQuery
+                          ? t("admin.scopePanel.query", {
+                              value: searchQuery.trim(),
+                            })
+                          : t("admin.scopePanel.noDirectorySearch")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.scopePanel.lifecycleFilters")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {workspaceLifecycleFilter === "all"
+                          ? t("admin.scopePanel.allWorkspaces")
+                          : workspaceLifecycleFilter === "active"
+                            ? t("admin.scopePanel.activeWorkspaces")
+                            : t("admin.scopePanel.archivedWorkspaces")}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {knowledgeBasePublicationStatusFilter === "all"
+                          ? t("admin.scopePanel.allKnowledgeBases")
+                          : knowledgeBasePublicationStatusFilter === "published"
+                            ? t("admin.scopePanel.publishedKnowledgeBases")
+                            : t("admin.scopePanel.draftKnowledgeBases")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("settings.retrievalProfiles.title")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {retrievalProfileFilter === "all"
+                          ? t("admin.scopePanel.allRetrievalProfiles")
+                          : retrievalProfileFilter ===
+                              DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE
+                            ? t(
+                                "admin.scopePanel.defaultFallbackRetrievalProfile",
+                              )
+                            : retrievalProfileFilter ===
+                                DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE
+                              ? t(
+                                  "admin.scopePanel.disabledAssignedRetrievalProfile",
+                                )
+                              : (retrievalProfiles.find(
+                                  (retrievalProfile) =>
+                                    retrievalProfile.id ===
+                                    retrievalProfileFilter,
+                                )?.name ?? t("settings.governance.empty"))}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {retrievalProfileFilter === "all"
+                          ? t("admin.scopePanel.retrievalProfileAllDescription")
+                          : t(
+                              "admin.scopePanel.retrievalProfileFilteredDescription",
+                            )}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.scopePanel.primaryRoute")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {scopedPrimaryWorkspace?.name ??
+                          t("admin.scopePanel.noScopedWorkspace")}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {scopedPrimaryKnowledgeBase?.name ??
+                          t("admin.scopePanel.noScopedKnowledgeBase")}
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link href={chatScopeHref}>
+                            {t("shell.nav.chat")}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={buildAdminWorkspaceHref(adminSection, {
+                              view: "documents",
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? (scopedPrimaryWorkspace?.tenant_id ?? null)
+                                  : selectedTenantId,
+                              workspaceId: scopedPrimaryWorkspace?.id ?? null,
+                              knowledgeBaseId:
+                                scopedPrimaryKnowledgeBase?.id ?? null,
+                            })}
+                          >
+                            {t("shell.nav.documents")}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={buildAdminWorkspaceHref(adminSection, {
+                              view: "workflows",
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? (scopedPrimaryWorkspace?.tenant_id ?? null)
+                                  : selectedTenantId,
+                              workspaceId: scopedPrimaryWorkspace?.id ?? null,
+                              knowledgeBaseId:
+                                scopedPrimaryKnowledgeBase?.id ?? null,
+                            })}
+                          >
+                            {t("shell.userMenu.operations")}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={buildAdminWorkspaceHref(adminSection, {
+                              view: "documents",
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? (scopedPrimaryWorkspace?.tenant_id ?? null)
+                                  : selectedTenantId,
+                              workspaceId: scopedPrimaryWorkspace?.id ?? null,
+                              knowledgeBaseId:
+                                scopedPrimaryKnowledgeBase?.id ?? null,
+                              documentStatus: "failed",
+                            })}
+                          >
+                            {t("admin.scopePanel.failedDocuments")}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={buildAdminWorkspaceHref(adminSection, {
+                              view: "workflows",
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? (scopedPrimaryWorkspace?.tenant_id ?? null)
+                                  : selectedTenantId,
+                              workspaceId: scopedPrimaryWorkspace?.id ?? null,
+                              knowledgeBaseId:
+                                scopedPrimaryKnowledgeBase?.id ?? null,
+                              workflowStatus: scopedRecoveryStatus,
+                            })}
+                          >
+                            {t("admin.scopePanel.failedWorkflows")}
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.runtimeTaskPacket.description")}
+                    title={t("admin.runtimeTaskPacket.title")}
+                  />
+                  <div className="p-6">
+                    <ConsoleRuntimeTaskPacket
+                      detail={runtimeTaskPacket.detail}
+                      objective={runtimeTaskPacket.objective}
+                      objectiveLabel={t(
+                        "admin.runtimeTaskPacket.fields.objective",
+                      )}
+                      primaryActionHref={runtimeTaskPacket.primaryActionHref}
+                      primaryActionLabel={t(
+                        "admin.runtimeTaskPacket.primaryAction",
+                      )}
+                      primaryActionRunRecord={
+                        runtimeTaskPacket.primaryActionRunRecord
+                      }
+                      prompt={runtimeTaskPacket.prompt}
+                      promptLabel={t("admin.runtimeTaskPacket.fields.prompt")}
+                      secondaryActions={runtimeTaskPacket.secondaryActions}
+                      statusLabel={runtimeTaskPacket.statusLabel}
+                      statusTone={runtimeTaskPacket.statusTone}
+                      summaryItems={runtimeTaskPacket.summaryItems}
+                      title={runtimeTaskPacket.title}
+                    />
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Button
+                        asChild
+                        className="bg-white"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link
+                          href={buildOperationsHref({
+                            tenantId:
+                              selectedTenantId === "all"
+                                ? null
+                                : selectedTenantId,
+                            lane: "overview",
+                            status: "all",
+                          })}
+                        >
+                          {t("admin.agentExecutions.openOperations")}
+                        </Link>
+                      </Button>
+                    }
+                    description={t("admin.agentExecutions.description")}
+                    title={t("admin.agentExecutions.title")}
+                  />
+                  <div className="grid gap-4 p-6 md:grid-cols-3">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.agentExecutions.metrics.total")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentExecutionMetrics.total_executions}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.agentExecutions.metrics.totalHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.agentExecutions.metrics.completed")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentExecutionMetrics.completed_executions}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.agentExecutions.metrics.completedHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.agentExecutions.metrics.failed")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentExecutionMetrics.failed_executions}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {scopedAgentExecutionMetrics.latest_execution_at
+                          ? t("admin.agentExecutions.latestExecution", {
+                              value: formatTimestamp(
+                                scopedAgentExecutionMetrics.latest_execution_at,
+                              ),
+                            })
+                          : t("admin.agentExecutions.noLatestExecution")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.agentExecutions.tenantBreakdown")}
+                      </div>
+                      {tenantAgentExecutionActivity.slice(0, 4).map((item) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={item.tenant.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-base font-semibold text-slate-900">
+                                {item.tenant.name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {item.tenant.slug}
+                              </div>
+                            </div>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.agentExecutions.tenantExecutionCount", {
+                                count: String(item.metrics.total_executions),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.agentExecutions.tenantCompletedCount", {
+                                count: String(
+                                  item.metrics.completed_executions,
+                                ),
+                              })}
+                            </Badge>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.agentExecutions.tenantFailedCount", {
+                                count: String(item.metrics.failed_executions),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 text-sm text-slate-500">
+                            {item.metrics.latest_execution_at
+                              ? t("admin.agentExecutions.latestExecution", {
+                                  value: formatTimestamp(
+                                    item.metrics.latest_execution_at,
+                                  ),
+                                })
+                              : t("admin.agentExecutions.noLatestExecution")}
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.operationsHref}>
+                                {t("admin.agentExecutions.openOperations")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.agentsHref}>
+                                {t("admin.agentExecutions.openAgents")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {!isLoading &&
+                      tenantAgentExecutionActivity.length === 0 ? (
+                        <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                          {t("admin.agentExecutions.noTenantExecutions")}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.agentExecutions.recentExecutions")}
+                      </div>
+                      {recentScopedAgentExecutions.length > 0 ? (
+                        recentScopedAgentExecutions.map((execution) => {
+                          const linkedAgent =
+                            agents.find(
+                              (agent) =>
+                                agent.id === execution.agent_definition_id,
+                            ) ?? null;
+                          const toolRuntime = readToolRuntimeSummary(
+                            execution.result_payload_json,
+                          );
+                          const retrievalSummary =
+                            readAgentExecutionRetrievalSummary(
+                              execution.result_payload_json,
+                            );
+                          const evidenceSummary =
+                            readAgentExecutionEvidenceSummary(
+                              execution.result_payload_json,
+                            );
+                          const runtimeBindingSummary =
+                            readAgentExecutionRuntimeBindingSummary(
+                              execution.result_payload_json,
+                            );
+                          const runtimeSummary =
+                            readAgentExecutionRuntimeSummary(
+                              execution.result_payload_json,
+                            );
+                          const taskState = execution.task_state;
+                          const generatedOutputs =
+                            execution.generated_outputs ?? [];
+                          const recommendedActionSpecs =
+                            evidenceSummary?.recommendedActionSpecs ?? [];
+                          const recommendedActions =
+                            recommendedActionSpecs.length === 0
+                              ? (evidenceSummary?.recommendedActions.slice(
+                                  0,
+                                  2,
+                                ) ?? [])
+                              : [];
+                          const followUpActions =
+                            buildAgentExecutionFollowUpActions({
+                              sourceContext: {
+                                surface: "admin",
+                                section: adminSection,
+                              },
+                              execution,
+                              executionInput: evidenceSummary?.executionInput,
+                              recommendedActions: recommendedActionSpecs,
+                            });
+                          const executionHref =
+                            execution.execution_mode === "workflow_recovery"
+                              ? buildOperationsHref({
+                                  tenantId: execution.tenant_id,
+                                  agentId: execution.agent_definition_id,
+                                  lane: "overview",
+                                  status: "all",
+                                })
+                              : buildAgentsHref({
+                                  tenantId: execution.tenant_id,
+                                  agentId: execution.agent_definition_id,
+                                });
+
+                          return (
+                            <div
+                              className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                              key={execution.id}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-950">
+                                    {linkedAgent?.name ??
+                                      t("admin.agentRuntime.unknownAgent")}
+                                  </div>
+                                  <div className="mt-1 text-sm leading-6 text-slate-500">
+                                    {execution.summary ||
+                                      execution.error_message ||
+                                      t("operations.agentExecutions.pending")}
+                                  </div>
+                                </div>
+                                <Badge
+                                  className={cn(
+                                    "border",
+                                    execution.execution_status === "completed"
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                      : execution.execution_status === "failed"
+                                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                                        : execution.execution_status ===
+                                            "running"
+                                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                                          : "border-amber-200 bg-amber-50 text-amber-700",
+                                  )}
+                                  variant="outline"
+                                >
+                                  {t(
+                                    `agents.executions.statuses.${execution.execution_status}`,
+                                  )}
+                                </Badge>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Badge
+                                  className="border-slate-200 bg-white text-slate-700"
+                                  variant="outline"
+                                >
+                                  {t(
+                                    `agents.modes.${execution.execution_mode}`,
+                                  )}
+                                </Badge>
+                                {retrievalSummary?.retrievalProfileName ? (
+                                  <Badge
+                                    className="border-slate-200 bg-white text-slate-700"
+                                    variant="outline"
+                                  >
+                                    {t(
+                                      "home.retrievalInspector.retrievalProfile",
+                                      {
+                                        value:
+                                          retrievalSummary.retrievalProfileName,
+                                      },
+                                    )}
+                                  </Badge>
+                                ) : null}
+                                {retrievalSummary?.retrievalMode ? (
+                                  <Badge
+                                    className="border-slate-200 bg-white text-slate-700"
+                                    variant="outline"
+                                  >
+                                    {t(
+                                      "home.retrievalInspector.retrievalMode",
+                                      {
+                                        value: t(
+                                          `settings.retrievalProfiles.modes.${retrievalSummary.retrievalMode}`,
+                                        ),
+                                      },
+                                    )}
+                                  </Badge>
+                                ) : null}
+                                <Badge
+                                  className="border-slate-200 bg-white text-slate-700"
+                                  variant="outline"
+                                >
+                                  {formatTimestamp(execution.updated_at)}
+                                </Badge>
+                                {execution.knowledge_base_scope ? (
+                                  <Badge
+                                    className="border-slate-200 bg-white text-slate-700"
+                                    variant="outline"
+                                  >
+                                    {execution.knowledge_base_scope}
+                                  </Badge>
+                                ) : null}
+                                {runtimeSummary?.agentRuntimeEngine ? (
+                                  <Badge
+                                    className="border-slate-200 bg-white text-slate-700"
+                                    variant="outline"
+                                  >
+                                    {t("agents.executions.runtimeEngine", {
+                                      value: runtimeSummary.agentRuntimeEngine,
+                                    })}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              {runtimeBindingSummary ? (
+                                <RuntimeBindingSummaryCard
+                                  summary={runtimeBindingSummary}
+                                />
+                              ) : null}
+                              {taskState || generatedOutputs.length > 0 ? (
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-4">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {taskState ? (
+                                      <Badge
+                                        className="border-slate-200 bg-slate-50 text-slate-700"
+                                        variant="outline"
+                                      >
+                                        {t(
+                                          getAgentExecutionStageLabelKey(
+                                            taskState.stage_key,
+                                          ),
+                                        )}
+                                      </Badge>
+                                    ) : null}
+                                    {taskState?.duration_seconds !== null &&
+                                    taskState?.duration_seconds !==
+                                      undefined ? (
+                                      <Badge
+                                        className="border-slate-200 bg-slate-50 text-slate-700"
+                                        variant="outline"
+                                      >
+                                        {t(
+                                          "agents.executions.durationSeconds",
+                                          {
+                                            value: String(
+                                              taskState.duration_seconds,
+                                            ),
+                                          },
+                                        )}
+                                      </Badge>
+                                    ) : null}
+                                    {taskState ? (
+                                      <Badge
+                                        className="border-slate-200 bg-slate-50 text-slate-700"
+                                        variant="outline"
+                                      >
+                                        {t("agents.executions.outputCount", {
+                                          count: String(taskState.output_count),
+                                        })}
+                                      </Badge>
+                                    ) : null}
+                                    {taskState ? (
+                                      <Badge
+                                        className="border-slate-200 bg-slate-50 text-slate-700"
+                                        variant="outline"
+                                      >
+                                        {t("agents.executions.followUpCount", {
+                                          count: String(
+                                            taskState.recommended_action_count,
+                                          ),
+                                        })}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  {generatedOutputs.length > 0 ? (
+                                    <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                                      {generatedOutputs.map((output) => (
+                                        <div
+                                          className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3"
+                                          key={`${execution.id}-${output.output_key}`}
+                                        >
+                                          <div className="flex flex-wrap items-start justify-between gap-2">
+                                            <div className="text-sm font-semibold text-slate-900">
+                                              {t(
+                                                getAgentExecutionOutputKindLabelKey(
+                                                  output.kind,
+                                                ),
+                                              )}
+                                            </div>
+                                            <Badge
+                                              className={cn(
+                                                "border",
+                                                getExecutionOutputStatusClassName(
+                                                  output.status,
+                                                ),
+                                              )}
+                                              variant="outline"
+                                            >
+                                              {t(
+                                                `agents.executions.outputStatuses.${output.status}`,
+                                              )}
+                                            </Badge>
+                                          </div>
+                                          {output.metric_value ? (
+                                            <div className="mt-2 text-sm font-medium text-slate-700">
+                                              {output.metric_value}
+                                            </div>
+                                          ) : null}
+                                          {output.preview ? (
+                                            <div className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500">
+                                              {output.preview}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {toolRuntime ? (
+                                <ToolRuntimeSummaryCard
+                                  renderTraceActions={(trace) => (
+                                    <ToolRuntimeTraceActions
+                                      tenantId={execution.tenant_id}
+                                      trace={trace}
+                                    />
+                                  )}
+                                  summary={toolRuntime}
+                                />
+                              ) : null}
+                              {evidenceSummary?.executionInput ? (
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                    {t("agents.executions.executionInput")}
+                                  </div>
+                                  <div className="mt-2 text-sm leading-6 text-slate-700">
+                                    {evidenceSummary.executionInput}
+                                  </div>
+                                </div>
+                              ) : null}
+                              {evidenceSummary?.answerPreview ? (
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                      {t("agents.executions.answerPreview")}
+                                    </div>
+                                    {evidenceSummary.retrievalResultCount !==
+                                    null ? (
+                                      <Badge
+                                        className="border-slate-200 bg-slate-50 text-slate-700"
+                                        variant="outline"
+                                      >
+                                        {t(
+                                          "agents.executions.retrievalResults",
+                                          {
+                                            count: String(
+                                              evidenceSummary.retrievalResultCount,
+                                            ),
+                                          },
+                                        )}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-2 text-sm leading-6 text-slate-700">
+                                    {evidenceSummary.answerPreview}
+                                  </div>
+                                </div>
+                              ) : null}
+                              {evidenceSummary &&
+                              evidenceSummary.retrievalSources.length > 0 ? (
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                    {t("agents.executions.evidenceSources")}
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {evidenceSummary.retrievalMethodBreakdown.map(
+                                      (entry) => (
+                                        <Badge
+                                          className={cn(
+                                            "border",
+                                            getRetrievalMethodBadgeClassName(
+                                              entry.method,
+                                            ),
+                                          )}
+                                          key={`${execution.id}-${entry.method}`}
+                                          variant="outline"
+                                        >
+                                          {t(
+                                            `settings.retrievalProfiles.modes.${entry.method}`,
+                                          )}{" "}
+                                          x{entry.count}
+                                        </Badge>
+                                      ),
+                                    )}
+                                  </div>
+                                  <div className="mt-3 space-y-2">
+                                    {evidenceSummary.retrievalSources.map(
+                                      (source, index) => (
+                                        <div
+                                          className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-3"
+                                          key={`${execution.id}-${source.documentChunkId ?? index}`}
+                                        >
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <div className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+                                              {source.documentTitle ??
+                                                t(
+                                                  "agents.executions.unknownSourceDocument",
+                                                )}
+                                            </div>
+                                            {source.retrievalMethod ? (
+                                              <Badge
+                                                className={cn(
+                                                  "border",
+                                                  getRetrievalMethodBadgeClassName(
+                                                    source.retrievalMethod,
+                                                  ),
+                                                )}
+                                                variant="outline"
+                                              >
+                                                {t(
+                                                  `settings.retrievalProfiles.modes.${source.retrievalMethod}`,
+                                                )}
+                                              </Badge>
+                                            ) : null}
+                                          </div>
+                                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                                            {source.chunkIndex !== null ? (
+                                              <span>
+                                                {t(
+                                                  "agents.executions.chunkIndex",
+                                                  {
+                                                    value: String(
+                                                      source.chunkIndex,
+                                                    ),
+                                                  },
+                                                )}
+                                              </span>
+                                            ) : null}
+                                            {typeof source.score ===
+                                            "number" ? (
+                                              <span>
+                                                {t("agents.executions.score", {
+                                                  value:
+                                                    source.score.toFixed(3),
+                                                })}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      ),
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+                              {recommendedActions.length > 0 ? (
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  {recommendedActions.map((action) => (
+                                    <Badge
+                                      className="border-slate-200 bg-white text-slate-700"
+                                      key={action}
+                                      variant="outline"
+                                    >
+                                      {action}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <AgentExecutionFollowUpActions
+                                actions={followUpActions}
+                                className="mt-4"
+                                extraActions={
+                                  <Button
+                                    asChild
+                                    className="bg-white"
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    <Link href={executionHref}>
+                                      {t(
+                                        "admin.agentExecutions.openExecutionRoute",
+                                      )}
+                                    </Link>
+                                  </Button>
+                                }
+                                getLabel={(action) =>
+                                  action.labelKey
+                                    ? t(action.labelKey)
+                                    : (action.label ?? "")
+                                }
+                                title={t("agents.executions.followUpTitle")}
+                              />
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                          {t("admin.agentExecutions.empty")}
+                        </div>
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={buildAgentsHref({
-                          tenantId:
-                            selectedTenantId === "all"
-                              ? null
-                              : selectedTenantId,
-                          status: "active",
-                          readiness: "attention",
-                        })}
-                      >
-                        {t("admin.runtimeGovernance.openAttentionAgents")}
-                      </Link>
-                    </Button>
-                    {focusedRuntimeSettingsHref ? (
-                      <Button
-                        asChild
-                        className="bg-white"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link href={focusedRuntimeSettingsHref}>
-                          {t("admin.runtimeGovernance.openSettings")}
-                        </Link>
-                      </Button>
-                    ) : null}
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={buildAdminHref({
-                          tenantId:
-                            selectedTenantId === "all"
-                              ? null
-                              : selectedTenantId,
-                          section: "directory",
-                          retrievalProfileFilter:
-                            DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE,
-                        })}
-                      >
-                        {t(
-                          "admin.runtimeGovernance.openDefaultFallbackKnowledgeBases",
-                        )}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link href={focusedRuntimeDefinitionsHref}>
-                        {t("admin.runtimeGovernance.openActiveAgents")}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={buildAdminHref({
-                          tenantId:
-                            selectedTenantId === "all"
-                              ? null
-                              : selectedTenantId,
-                          section: "directory",
-                          retrievalProfileFilter:
-                            DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE,
-                        })}
-                      >
-                        {t(
-                          "admin.runtimeGovernance.openDisabledRetrievalAssignments",
-                        )}
-                      </Link>
-                    </Button>
-                  </div>
-                  <div className="pt-1 text-sm font-semibold text-slate-950">
-                    {t("admin.runtimeGovernance.issueActions")}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link href={buildScopedRuntimeIssueHref("scope_missing")}>
-                        {t("agents.readiness.issueLabels.scope_missing")}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link href={buildScopedRuntimeIssueHref("model_missing")}>
-                        {t("agents.readiness.issueLabels.model_missing")}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={
-                          focusedDisabledModelDefinitionsHref ??
-                          buildScopedRuntimeIssueHref("model_disabled")
-                        }
-                      >
-                        {t("agents.readiness.issueLabels.model_disabled")}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={
-                          focusedUnconfiguredModelDefinitionsHref ??
-                          buildScopedRuntimeIssueHref(
-                            "model_runtime_unconfigured",
-                          )
-                        }
-                      >
-                        {t(
-                          "agents.readiness.issueLabels.model_runtime_unconfigured",
-                        )}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={buildScopedRuntimeIssueHref(
-                          "retrieval_profile_missing",
-                        )}
-                      >
-                        {t(
-                          "agents.readiness.issueLabels.retrieval_profile_missing",
-                        )}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={
-                          focusedDisabledRetrievalDefinitionsHref ??
-                          buildScopedRuntimeIssueHref(
-                            "retrieval_profile_disabled",
-                          )
-                        }
-                      >
-                        {t(
-                          "agents.readiness.issueLabels.retrieval_profile_disabled",
-                        )}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link href={buildScopedRuntimeIssueHref("tools_missing")}>
-                        {t("agents.readiness.issueLabels.tools_missing")}
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={
-                          focusedDisabledToolDefinitionsHref ??
-                          buildScopedRuntimeIssueHref(
-                            "tool_registration_disabled",
-                          )
-                        }
-                      >
-                        {t(
-                          "agents.readiness.issueLabels.tool_registration_disabled",
-                        )}
-                      </Link>
-                    </Button>
-                    {focusedApprovalToolDefinitionsHref ? (
-                      <Button
-                        asChild
-                        className="bg-white"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link href={focusedApprovalToolDefinitionsHref}>
-                          {t(
-                            "agents.readiness.issueLabels.tool_approval_required",
-                          )}
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {governancePosture.issue_counts.tool_mcp_reserved > 0 ? (
-                      <Button
-                        asChild
-                        className="bg-white"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link
-                          href={buildScopedRuntimeIssueHref(
-                            "tool_mcp_reserved",
-                            {
-                              toolRegistrationId:
-                                focusedReservedMcpToolRegistration?.id ?? null,
-                            },
-                          )}
-                        >
-                          {t("agents.readiness.issueLabels.tool_mcp_reserved")}
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {governancePosture.issue_counts
-                      .tool_mcp_integration_pending > 0 ? (
-                      <Button
-                        asChild
-                        className="bg-white"
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Link
-                          href={buildScopedRuntimeIssueHref(
-                            "tool_mcp_integration_pending",
-                            {
-                              toolRegistrationId:
-                                focusedPendingMcpToolRegistration?.id ?? null,
-                            },
-                          )}
-                        >
-                          {t(
-                            "agents.readiness.issueLabels.tool_mcp_integration_pending",
-                          )}
-                        </Link>
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
+                </ConsoleSurface>
+              ) : null}
 
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.retrievalProfiles.description")}
-                title={t("admin.retrievalProfiles.title")}
-              />
-              <div className="grid gap-4 px-6 py-5 xl:grid-cols-2">
-                {retrievalProfileAssets.length > 0 ? (
-                  retrievalProfileAssets.map((asset) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
-                      key={asset.profile.id}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-semibold text-slate-950">
-                            {asset.profile.name}
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Button
+                        asChild
+                        className="bg-white"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link
+                          href={buildAgentsHref({
+                            tenantId:
+                              selectedTenantId === "all"
+                                ? null
+                                : selectedTenantId,
+                            status: "active",
+                            readiness: "attention",
+                          })}
+                        >
+                          {t("admin.runtimeGovernance.openAttentionAgents")}
+                        </Link>
+                      </Button>
+                    }
+                    description={t("admin.runtimeGovernance.description")}
+                    title={t("admin.runtimeGovernance.title")}
+                  />
+                  <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.runtimeGovernance.metrics.attentionAgents")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {governancePosture.attentionAgents}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t(
+                          "admin.runtimeGovernance.metrics.attentionAgentsHint",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t(
+                          "admin.runtimeGovernance.metrics.disabledBoundModels",
+                        )}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {governancePosture.disabledBoundModels}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t(
+                          "admin.runtimeGovernance.metrics.disabledBoundModelsHint",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t(
+                          "admin.runtimeGovernance.metrics.disabledBoundTools",
+                        )}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {governancePosture.disabledBoundTools}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t(
+                          "admin.runtimeGovernance.metrics.disabledBoundToolsHint",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t(
+                          "admin.runtimeGovernance.metrics.approvalGatedTools",
+                        )}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {governancePosture.approvalGatedTools}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t(
+                          "admin.runtimeGovernance.metrics.approvalGatedToolsHint",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t(
+                          "admin.runtimeGovernance.metrics.disabledBoundRetrievalProfiles",
+                        )}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {
+                          retrievalGovernanceSummary.disabledBoundRetrievalProfiles
+                        }
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t(
+                          "admin.runtimeGovernance.metrics.disabledBoundRetrievalProfilesHint",
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t(
+                          "admin.runtimeGovernance.metrics.defaultFallbackKnowledgeBases",
+                        )}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {
+                          retrievalGovernanceSummary.defaultFallbackKnowledgeBases
+                        }
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t(
+                          "admin.runtimeGovernance.metrics.defaultFallbackKnowledgeBasesHint",
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.runtimeGovernance.signals")}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.runtimeGovernance.activeAgentsWithoutScope",
+                            )}
                           </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {asset.profile.slug}
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {governancePosture.activeAgentsWithoutScope}
                           </div>
                         </div>
-                        <Badge
-                          className={cn(
-                            "border",
-                            getWatchStatusClass(asset.status),
-                          )}
-                          variant="outline"
-                        >
-                          {asset.status === "attention"
-                            ? t("admin.watchlist.attention")
-                            : asset.status === "review"
-                              ? t("admin.watchlist.review")
-                              : t("admin.watchlist.healthy")}
-                        </Badge>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.runtimeGovernance.missingModelBindings")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {governancePosture.agentsMissingModel}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.runtimeGovernance.disabledModelBindings")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {governancePosture.agentsUsingDisabledModel}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.runtimeGovernance.unconfiguredModelBindings",
+                            )}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {governancePosture.agentsUsingUnconfiguredModel}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.runtimeGovernance.disabledToolBindings")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              governancePosture.agentsUsingDisabledToolRegistration
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.runtimeGovernance.missingRetrievalBindings",
+                            )}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {governancePosture.agentsMissingRetrievalProfile}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.runtimeGovernance.disabledRetrievalBindings",
+                            )}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              governancePosture.agentsUsingDisabledRetrievalProfile
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.runtimeGovernance.disabledRetrievalAssignments",
+                            )}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              retrievalGovernanceSummary.knowledgeBasesUsingDisabledRetrievalProfile
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.runtimeGovernance.explicitRetrievalBindings",
+                            )}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              retrievalGovernanceSummary.explicitAssignedKnowledgeBases
+                            }
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className={cn(
-                            "border",
-                            getRetrievalMethodBadgeClassName(
-                              asset.profile.retrieval_mode,
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.runtimeGovernance.quickActions")}
+                      </div>
+                      <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4 text-sm leading-6 text-slate-600">
+                        {t("admin.runtimeGovernance.quickActionsDescription")}
+                      </div>
+                      <div className="space-y-3">
+                        <div className="text-sm font-semibold text-slate-950">
+                          {t("admin.runtimeGovernance.providerLanes")}
+                        </div>
+                        <div className="grid gap-3">
+                          {modelGovernanceSummary.provider_runtime_posture.map(
+                            (provider) => (
+                              <div
+                                className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                                key={provider.provider_type}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div className="text-sm font-semibold text-slate-950">
+                                    {t(
+                                      `settings.models.providers.${provider.provider_type}`,
+                                    )}
+                                  </div>
+                                  <Badge
+                                    className={cn(
+                                      "border",
+                                      provider.posture_status === "ready"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : provider.posture_status ===
+                                            "attention"
+                                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                                          : "border-slate-200 bg-slate-100 text-slate-700",
+                                    )}
+                                    variant="outline"
+                                  >
+                                    {t(
+                                      `settings.models.compatibility.postureStatuses.${provider.posture_status}`,
+                                    )}
+                                  </Badge>
+                                </div>
+                                <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                      {t(
+                                        "admin.runtimeGovernance.providerMetrics.runtimeReady",
+                                      )}
+                                    </div>
+                                    <div className="mt-2 text-base font-semibold text-slate-950">
+                                      {provider.runtime_ready_endpoints}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                      {t(
+                                        "admin.runtimeGovernance.providerMetrics.activeAgents",
+                                      )}
+                                    </div>
+                                    <div className="mt-2 text-base font-semibold text-slate-950">
+                                      {provider.active_agent_count}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                      {t(
+                                        "admin.runtimeGovernance.providerMetrics.attentionAgents",
+                                      )}
+                                    </div>
+                                    <div className="mt-2 text-base font-semibold text-slate-950">
+                                      {provider.attention_active_agent_count}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                      {t(
+                                        "admin.runtimeGovernance.providerMetrics.previewFailures",
+                                      )}
+                                    </div>
+                                    <div className="mt-2 text-base font-semibold text-slate-950">
+                                      {provider.recent_preview_failed_events}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 text-xs text-slate-500">
+                                  {provider.last_preview_status &&
+                                  provider.last_preview_at
+                                    ? t(
+                                        "admin.runtimeGovernance.providerPreviewStatus",
+                                        {
+                                          status: provider.last_preview_status,
+                                          value: formatTimestamp(
+                                            provider.last_preview_at,
+                                          ),
+                                        },
+                                      )
+                                    : t(
+                                        "admin.runtimeGovernance.providerPreviewEmpty",
+                                      )}
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <Button
+                                    asChild
+                                    className="bg-white"
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    <Link
+                                      href={buildSettingsHref({
+                                        runtimeResource: "model_endpoint",
+                                        modelProviderType:
+                                          provider.provider_type,
+                                      })}
+                                    >
+                                      {t(
+                                        "admin.runtimeGovernance.openProviderModels",
+                                      )}
+                                    </Link>
+                                  </Button>
+                                  <Button
+                                    asChild
+                                    className="bg-white"
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    <Link
+                                      href={buildScopedRuntimeIssueHref(
+                                        "model_runtime_unconfigured",
+                                        {
+                                          modelProviderType:
+                                            normalizeRuntimeGovernanceProviderType(
+                                              provider.provider_type,
+                                            ),
+                                        },
+                                      )}
+                                    >
+                                      {t(
+                                        "settings.models.compatibility.openRuntimeAttention",
+                                      )}
+                                    </Link>
+                                  </Button>
+                                </div>
+                              </div>
                             ),
                           )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
                           variant="outline"
                         >
-                          {t(
-                            `settings.retrievalProfiles.modes.${asset.profile.retrieval_mode}`,
-                          )}
-                        </Badge>
-                        {asset.profile.is_default ? (
-                          <Badge
-                            className="border-slate-200 bg-white text-slate-700"
+                          <Link
+                            href={buildAgentsHref({
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? null
+                                  : selectedTenantId,
+                              status: "active",
+                              readiness: "attention",
+                            })}
+                          >
+                            {t("admin.runtimeGovernance.openAttentionAgents")}
+                          </Link>
+                        </Button>
+                        {focusedRuntimeSettingsHref ? (
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
                             variant="outline"
                           >
-                            {t("settings.retrievalProfiles.default")}
-                          </Badge>
+                            <Link href={focusedRuntimeSettingsHref}>
+                              {t("admin.runtimeGovernance.openSettings")}
+                            </Link>
+                          </Button>
                         ) : null}
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {asset.profile.is_enabled
-                            ? t("settings.runtime.enabled")
-                            : t("settings.runtime.disabled")}
-                        </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("home.retrievalInspector.effectiveTopK", {
-                            value: String(asset.profile.top_k),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            {t(
-                              "admin.retrievalProfiles.metrics.assignedKnowledgeBases",
-                            )}
-                          </div>
-                          <div className="mt-2 text-2xl font-semibold text-slate-950">
-                            {asset.assignedKnowledgeBases}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {t(
-                              "admin.retrievalProfiles.metrics.workspaceCoverage",
-                              { count: String(asset.assignedWorkspaceCount) },
-                            )}
-                          </div>
-                        </div>
-                        <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            {t(
-                              "admin.retrievalProfiles.metrics.defaultFallbackCoverage",
-                            )}
-                          </div>
-                          <div className="mt-2 text-2xl font-semibold text-slate-950">
-                            {asset.fallbackCoverageCount}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {t(
-                              "admin.retrievalProfiles.metrics.publicationMix",
-                              {
-                                published: String(
-                                  asset.publishedKnowledgeBaseCount,
-                                ),
-                                draft: String(asset.draftKnowledgeBaseCount),
-                              },
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-sm leading-6 text-slate-600">
-                        {!asset.profile.is_enabled &&
-                        asset.assignedKnowledgeBases > 0
-                          ? t(
-                              "admin.retrievalProfiles.status.disabledAssigned",
-                              { count: String(asset.assignedKnowledgeBases) },
-                            )
-                          : asset.fallbackCoverageCount > 0
-                            ? t(
-                                "admin.retrievalProfiles.status.defaultFallback",
-                                { count: String(asset.fallbackCoverageCount) },
-                              )
-                            : asset.assignedKnowledgeBases === 0
-                              ? t("admin.retrievalProfiles.status.unused")
-                              : t(
-                                  "admin.retrievalProfiles.status.healthyAssigned",
-                                  {
-                                    count: String(asset.assignedKnowledgeBases),
-                                  },
-                                )}
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
                         <Button
                           asChild
                           className="bg-white"
@@ -9908,35 +9823,26 @@ export default function AdminConsolePage() {
                                   ? null
                                   : selectedTenantId,
                               section: "directory",
-                              retrievalProfileFilter: asset.profile.id,
+                              retrievalProfileFilter:
+                                DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE,
                             })}
                           >
-                            {t("admin.retrievalProfiles.reviewKnowledgeBases")}
+                            {t(
+                              "admin.runtimeGovernance.openDefaultFallbackKnowledgeBases",
+                            )}
                           </Link>
                         </Button>
-                        {asset.fallbackCoverageCount > 0 ? (
-                          <Button
-                            asChild
-                            className="bg-white"
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Link
-                              href={buildAdminHref({
-                                tenantId:
-                                  selectedTenantId === "all"
-                                    ? null
-                                    : selectedTenantId,
-                                section: "directory",
-                                retrievalProfileFilter:
-                                  DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE,
-                              })}
-                            >
-                              {t("admin.retrievalProfiles.openDefaultFallback")}
-                            </Link>
-                          </Button>
-                        ) : null}
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link href={focusedRuntimeDefinitionsHref}>
+                            {t("admin.runtimeGovernance.openActiveAgents")}
+                          </Link>
+                        </Button>
                         <Button
                           asChild
                           className="bg-white"
@@ -9945,1001 +9851,25 @@ export default function AdminConsolePage() {
                           variant="outline"
                         >
                           <Link
-                            href={buildSettingsHref({
-                              runtimeResource: "retrieval_profile",
-                              retrievalProfileId: asset.profile.id,
+                            href={buildAdminHref({
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? null
+                                  : selectedTenantId,
+                              section: "directory",
+                              retrievalProfileFilter:
+                                DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE,
                             })}
                           >
-                            {t("admin.runtimeGovernance.openSettings")}
+                            {t(
+                              "admin.runtimeGovernance.openDisabledRetrievalAssignments",
+                            )}
                           </Link>
                         </Button>
                       </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                    {t("settings.retrievalProfiles.empty")}
-                  </div>
-                )}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.runtimeRoutes.description")}
-                title={t("admin.runtimeRoutes.title")}
-              />
-              <div className="space-y-3 px-6 py-5">
-                {runtimeRoutes.length > 0 ? (
-                  runtimeRoutes.map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={item.agent.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold text-slate-900">
-                            {item.agent.name}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {t(`agents.modes.${item.agent.mode}`)}
-                          </div>
-                        </div>
-                        <Badge
-                          className={cn(
-                            "border",
-                            item.launchReady
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : item.retrievalIssue
-                                ? "border-amber-200 bg-amber-50 text-amber-700"
-                                : "border-amber-200 bg-amber-50 text-amber-700",
-                          )}
-                          variant="outline"
-                        >
-                          {item.launchReady
-                            ? t("admin.runtimeRoutes.scopeReady")
-                            : item.retrievalIssue === "disabled"
-                              ? t("admin.runtimeRoutes.retrievalDisabled")
-                              : item.retrievalIssue === "missing"
-                                ? t("admin.runtimeRoutes.retrievalMissing")
-                                : t("admin.runtimeRoutes.scopePending")}
-                        </Badge>
+                      <div className="pt-1 text-sm font-semibold text-slate-950">
+                        {t("admin.runtimeGovernance.issueActions")}
                       </div>
-                      <div className="mt-3 text-sm leading-6 text-slate-600">
-                        {item.agent.objective.trim().length > 0
-                          ? item.agent.objective
-                          : t("admin.runtimeRoutes.noObjective")}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.runtimeRoutes.scopeLabel", {
-                            value: item.scopeLabel?.trim().length
-                              ? item.scopeLabel
-                              : t("admin.runtimeRoutes.scopeUnbound"),
-                          })}
-                        </Badge>
-                        {item.resolvedWorkspace ? (
-                          <Badge
-                            className="border-slate-200 bg-white text-slate-700"
-                            variant="outline"
-                          >
-                            {t("admin.runtimeRoutes.resolvedWorkspace", {
-                              value: item.resolvedWorkspace.name,
-                            })}
-                          </Badge>
-                        ) : null}
-                        {item.resolvedKnowledgeBase ? (
-                          <Badge
-                            className="border-slate-200 bg-white text-slate-700"
-                            variant="outline"
-                          >
-                            {t("admin.runtimeRoutes.resolvedKnowledgeBase", {
-                              value: item.resolvedKnowledgeBase.name,
-                            })}
-                          </Badge>
-                        ) : null}
-                        {item.retrievalProfile ? (
-                          <Badge
-                            className="border-slate-200 bg-white text-slate-700"
-                            variant="outline"
-                          >
-                            {t("admin.runtimeRoutes.retrievalProfile", {
-                              value: item.retrievalProfile.name,
-                            })}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      {item.retrievalIssue ? (
-                        <div className="mt-3 rounded-[16px] border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-800">
-                          {item.retrievalIssue === "disabled"
-                            ? t("admin.runtimeRoutes.retrievalDisabledDetail", {
-                                profile:
-                                  item.retrievalProfile?.name ??
-                                  t("agents.dependencies.noRetrievalProfile"),
-                              })
-                            : t("admin.runtimeRoutes.retrievalMissingDetail")}
-                        </div>
-                      ) : null}
-                      <div className="mt-3 rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.runtimeRoutes.launchPrompt")}
-                        </div>
-                        <div className="mt-2 text-sm leading-6 text-slate-700">
-                          {item.prompt}
-                        </div>
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <AgentRunButtonLink
-                          href={item.recommendedHref}
-                          runRecord={item.recommendedRunRecord}
-                          size="sm"
-                          type="button"
-                        >
-                          {t("admin.runtimeRoutes.openRecommended")}
-                        </AgentRunButtonLink>
-                        <AgentRunButtonLink
-                          className="bg-white"
-                          href={item.secondaryHref}
-                          runRecord={item.secondaryRunRecord}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {t("admin.runtimeRoutes.openSecondary")}
-                        </AgentRunButtonLink>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.definitionHref}>
-                            {t("admin.runtimeRoutes.openDefinition")}
-                          </Link>
-                        </Button>
-                        {item.retrievalIssue === "disabled" ? (
-                          <Button
-                            asChild
-                            className="bg-white"
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Link
-                              href={
-                                item.resolvedKnowledgeBase
-                                  ? buildKnowledgeBaseGovernanceHref(
-                                      item.resolvedKnowledgeBase,
-                                      {
-                                        retrievalProfileFilter:
-                                          DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE,
-                                      },
-                                    )
-                                  : buildAdminHref({
-                                      tenantId: item.agent.tenant_id,
-                                      section: "directory",
-                                      retrievalProfileFilter:
-                                        DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE,
-                                    })
-                              }
-                            >
-                              {t("admin.runtimeRoutes.openRetrievalGovernance")}
-                            </Link>
-                          </Button>
-                        ) : item.retrievalIssue === "missing" ? (
-                          <Button
-                            asChild
-                            className="bg-white"
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Link
-                              href={
-                                item.resolvedKnowledgeBase
-                                  ? buildKnowledgeBaseGovernanceHref(
-                                      item.resolvedKnowledgeBase,
-                                    )
-                                  : buildSettingsHref({
-                                      runtimeResource: "retrieval_profile",
-                                    })
-                              }
-                            >
-                              {t("admin.runtimeRoutes.openRetrievalSettings")}
-                            </Link>
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                    {t("admin.runtimeRoutes.empty")}
-                  </div>
-                )}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={buildAgentsHref({
-                        tenantId:
-                          selectedTenantId === "all" ? null : selectedTenantId,
-                        status: "active",
-                      })}
-                    >
-                      {t("admin.agentRuntime.openAgents")}
-                    </Link>
-                  </Button>
-                }
-                description={t("admin.agentRuntime.description")}
-                title={t("admin.agentRuntime.title")}
-              />
-              <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("agents.runs.metrics.total")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentRunMetrics.total_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.agentRuntime.metrics.totalHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("agents.runs.metrics.chat")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentRunMetrics.chat_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.agentRuntime.metrics.chatHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("agents.runs.metrics.documents")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentRunMetrics.document_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.agentRuntime.metrics.documentsHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("agents.runs.metrics.operations")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedAgentRunMetrics.operations_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {scopedAgentRunMetrics.latest_launched_at
-                      ? t("admin.agentRuntime.latestLaunch", {
-                          value: formatTimestamp(
-                            scopedAgentRunMetrics.latest_launched_at,
-                          ),
-                        })
-                      : t("admin.agentRuntime.noLatestLaunch")}
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.agentRuntime.tenantBreakdown")}
-                  </div>
-                  {tenantAgentRuntimeActivity.slice(0, 4).map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={item.tenant.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold text-slate-900">
-                            {item.tenant.name}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {item.tenant.slug}
-                          </div>
-                        </div>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.agentRuntime.tenantRunCount", {
-                            count: String(item.metrics.total_runs),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("agents.runs.metrics.chat")}:{" "}
-                          {item.metrics.chat_runs}
-                        </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("agents.runs.metrics.documents")}:{" "}
-                          {item.metrics.document_runs}
-                        </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("agents.runs.metrics.operations")}:{" "}
-                          {item.metrics.operations_runs}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 text-sm text-slate-500">
-                        {item.metrics.latest_launched_at
-                          ? t("admin.agentRuntime.latestLaunch", {
-                              value: formatTimestamp(
-                                item.metrics.latest_launched_at,
-                              ),
-                            })
-                          : t("admin.agentRuntime.noLatestLaunch")}
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.agentsHref}>
-                            {t("admin.agentRuntime.openAgents")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.operationsHref}>
-                            {t("shell.userMenu.operations")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!isLoading && tenantAgentRuntimeActivity.length === 0 ? (
-                    <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                      {t("admin.agentRuntime.noTenantRuns")}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.agentRuntime.recentRuns")}
-                  </div>
-                  {recentScopedAgentRuns.length > 0 ? (
-                    recentScopedAgentRuns.map((agentRun) => {
-                      const linkedAgent =
-                        agents.find(
-                          (agent) => agent.id === agentRun.agent_definition_id,
-                        ) ?? null;
-
-                      return (
-                        <div
-                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                          key={agentRun.id}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-slate-950">
-                                {linkedAgent?.name ??
-                                  t("admin.agentRuntime.unknownAgent")}
-                              </div>
-                              <div className="mt-1 text-sm leading-6 text-slate-500">
-                                {agentRun.launch_prompt?.trim().length
-                                  ? agentRun.launch_prompt
-                                  : t("agents.runs.noPrompt")}
-                              </div>
-                            </div>
-                            <Badge
-                              className="border-emerald-200 bg-emerald-50 text-emerald-700"
-                              variant="outline"
-                            >
-                              {t(`agents.runs.statuses.${agentRun.run_status}`)}
-                            </Badge>
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-700"
-                              variant="outline"
-                            >
-                              {t(`agents.tools.${agentRun.target_surface}`)}
-                            </Badge>
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-700"
-                              variant="outline"
-                            >
-                              {formatAgentRunTriggerSourceLabel(
-                                agentRun.trigger_source,
-                                t,
-                              )}
-                            </Badge>
-                            <Badge
-                              className="border-slate-200 bg-white text-slate-700"
-                              variant="outline"
-                            >
-                              {formatTimestamp(agentRun.created_at)}
-                            </Badge>
-                          </div>
-                          {agentRun.navigation_href ? (
-                            <div className="mt-4">
-                              <Button
-                                asChild
-                                className="bg-white"
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                              >
-                                <a href={agentRun.navigation_href}>
-                                  {t("agents.runs.openRoute")}
-                                </a>
-                              </Button>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                      {t("admin.agentRuntime.empty")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={
-                        workflowSignals.highestPressureTenant?.overviewHref ??
-                        buildOperationsHref({
-                          tenantId:
-                            selectedTenantId === "all"
-                              ? null
-                              : selectedTenantId,
-                          lane: "overview",
-                          status: "all",
-                        })
-                      }
-                    >
-                      {t("admin.workflowRuntime.openOperations")}
-                    </Link>
-                  </Button>
-                }
-                description={t("admin.workflowRuntime.description")}
-                title={t("admin.workflowRuntime.title")}
-              />
-              <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.workflowRuntime.metrics.failed")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedRecoveryRunCount}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.workflowRuntime.metrics.failedHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.workflowRuntime.metrics.queued")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedWorkflowMetrics.queued_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.workflowRuntime.metrics.queuedHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.workflowRuntime.metrics.running")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedWorkflowMetrics.running_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.workflowRuntime.metrics.runningHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.workflowRuntime.metrics.retries")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedWorkflowMetrics.retry_runs}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.workflowRuntime.metrics.retriesHint")}
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.workflowRuntime.pressureSignals")}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.workflowRuntime.tenantsWithFailures")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {workflowSignals.tenantsWithFailures}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.workflowRuntime.tenantsWithQueuePressure")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {workflowSignals.tenantsWithQueuePressure}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.workflowRuntime.tenantsWithRetries")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {workflowSignals.tenantsWithRetries}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.workflowRuntime.tenantBreakdown")}
-                  </div>
-                  {tenantWorkflowActivity.slice(0, 4).map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={item.tenant.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold text-slate-900">
-                            {item.tenant.name}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {item.tenant.slug}
-                          </div>
-                        </div>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.workflowRuntime.failedRunCount", {
-                            count: String(item.recoveryPressure),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.workflowRuntime.queuePressureCount", {
-                            count: String(item.queuePressure),
-                          })}
-                        </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.workflowRuntime.retryRunCount", {
-                            count: String(item.metrics.retry_runs),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.failedHref}>
-                            {t("admin.workflowRuntime.openFailedLane")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.queueHref}>
-                            {t("admin.workflowRuntime.openQueueLane")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.workspaceWorkflowHref}>
-                            {t("admin.workflowRuntime.openWorkflowSurface")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!isLoading && tenantWorkflowActivity.length === 0 ? (
-                    <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                      {t("admin.workflowRuntime.noTenantPressure")}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                action={
-                  <Button
-                    asChild
-                    className="bg-white"
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <Link
-                      href={
-                        documentSignals.highestPressureTenant?.documentsHref ??
-                        buildAdminWorkspaceHref("overview", {
-                          view: "documents",
-                          tenantId:
-                            selectedTenantId === "all"
-                              ? null
-                              : selectedTenantId,
-                          workspaceId: scopedPrimaryWorkspace?.id ?? null,
-                          knowledgeBaseId:
-                            scopedPrimaryKnowledgeBase?.id ?? null,
-                        })
-                      }
-                    >
-                      {t("admin.documentRuntime.openDocuments")}
-                    </Link>
-                  </Button>
-                }
-                description={t("admin.documentRuntime.description")}
-                title={t("admin.documentRuntime.title")}
-              />
-              <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.documentRuntime.metrics.failed")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedDocumentMetrics.failed_documents}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.documentRuntime.metrics.failedHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.documentRuntime.metrics.active")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedDocumentMetrics.active_documents}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.documentRuntime.metrics.activeHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.documentRuntime.metrics.completed")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedDocumentMetrics.completed_documents}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.documentRuntime.metrics.completedHint")}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.documentRuntime.metrics.total")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedDocumentMetrics.total_documents}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.documentRuntime.metrics.totalHint")}
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.documentRuntime.pressureSignals")}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.documentRuntime.tenantsWithFailures")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {documentSignals.tenantsWithFailedDocuments}
-                      </div>
-                    </div>
-                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.documentRuntime.tenantsWithActiveIntake")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {documentSignals.tenantsWithActiveIntake}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    {t("admin.documentRuntime.tenantBreakdown")}
-                  </div>
-                  {tenantDocumentActivity.slice(0, 4).map((item) => (
-                    <div
-                      className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                      key={item.tenant.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold text-slate-900">
-                            {item.tenant.name}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {item.tenant.slug}
-                          </div>
-                        </div>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.documentRuntime.failedDocumentCount", {
-                            count: String(item.metrics.failed_documents),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.documentRuntime.activeDocumentCount", {
-                            count: String(item.metrics.active_documents),
-                          })}
-                        </Badge>
-                        <Badge
-                          className="border-slate-200 bg-white text-slate-700"
-                          variant="outline"
-                        >
-                          {t("admin.documentRuntime.knowledgeBaseCount", {
-                            count: String(item.knowledgeBaseCount),
-                          })}
-                        </Badge>
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.failedDocumentsHref}>
-                            {t("admin.documentRuntime.openFailedDocuments")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.documentsHref}>
-                            {t("admin.documentRuntime.openDocuments")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.operationsHref}>
-                            {t("admin.documentRuntime.openOperations")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!isLoading && tenantDocumentActivity.length === 0 ? (
-                    <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
-                      {t("admin.documentRuntime.noTenantPressure")}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.chatScope.description")}
-                title={t("admin.chatScope.title")}
-              />
-              <div className="space-y-3 px-6 py-5">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.chatScope.conversations")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedConversationMetrics.total_conversations}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.chatScope.activeConversationThreads", {
-                      count: String(
-                        scopedConversationMetrics.active_conversations,
-                      ),
-                    })}
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.chatScope.messages")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {scopedConversationMetrics.total_messages}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {scopedConversationMetrics.latest_activity_at
-                      ? t("admin.chatScope.latestActivity", {
-                          value: formatTimestamp(
-                            scopedConversationMetrics.latest_activity_at,
-                          ),
-                        })
-                      : t("admin.chatScope.noChatActivity")}
-                  </div>
-                </div>
-                <Button
-                  asChild
-                  className="w-full bg-white"
-                  type="button"
-                  variant="outline"
-                >
-                  <Link href={chatScopeHref}>
-                    {t("admin.chatScope.openScopedChatWorkspace")}
-                  </Link>
-                </Button>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.tenantChat.description")}
-                title={t("admin.tenantChat.title")}
-              />
-              <div className="space-y-3 px-6 py-5">
-                {tenantChatActivity.slice(0, 6).map((item) => (
-                  <div
-                    className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
-                    key={item.tenant.id}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-base font-semibold text-slate-900">
-                          {item.tenant.name}
-                        </div>
-                        <div className="mt-1 text-sm text-slate-500">
-                          {item.tenant.slug}
-                        </div>
-                      </div>
-                      <Badge
-                        className="border-slate-200 bg-white text-slate-700"
-                        variant="outline"
-                      >
-                        {t("admin.tenantChat.messages", {
-                          count: String(item.metrics.total_messages),
-                        })}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                      <Badge
-                        className="border-slate-200 bg-white text-slate-700"
-                        variant="outline"
-                      >
-                        {t("admin.tenantChat.conversations", {
-                          count: String(item.metrics.total_conversations),
-                        })}
-                      </Badge>
-                      <Badge
-                        className="border-slate-200 bg-white text-slate-700"
-                        variant="outline"
-                      >
-                        {t("admin.tenantChat.active", {
-                          count: String(item.metrics.active_conversations),
-                        })}
-                      </Badge>
-                      <Badge
-                        className="border-slate-200 bg-white text-slate-700"
-                        variant="outline"
-                      >
-                        {t("admin.tenantChat.workspaces", {
-                          count: String(item.workspaceCount),
-                        })}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 text-sm text-slate-500">
-                      {item.metrics.latest_activity_at
-                        ? t("admin.tenantChat.latestActivity", {
-                            value: formatTimestamp(
-                              item.metrics.latest_activity_at,
-                            ),
-                          })
-                        : t("admin.tenantChat.noChatActivity")}
-                    </div>
-                    <div className="mt-4">
                       <div className="flex flex-wrap gap-2">
                         <Button
                           asChild
@@ -10948,8 +9878,10 @@ export default function AdminConsolePage() {
                           type="button"
                           variant="outline"
                         >
-                          <Link href={item.openHref}>
-                            {t("admin.tenantChat.openTenantChat")}
+                          <Link
+                            href={buildScopedRuntimeIssueHref("scope_missing")}
+                          >
+                            {t("agents.readiness.issueLabels.scope_missing")}
                           </Link>
                         </Button>
                         <Button
@@ -10959,8 +9891,10 @@ export default function AdminConsolePage() {
                           type="button"
                           variant="outline"
                         >
-                          <Link href={item.documentsHref}>
-                            {t("shell.nav.documents")}
+                          <Link
+                            href={buildScopedRuntimeIssueHref("model_missing")}
+                          >
+                            {t("agents.readiness.issueLabels.model_missing")}
                           </Link>
                         </Button>
                         <Button
@@ -10970,8 +9904,13 @@ export default function AdminConsolePage() {
                           type="button"
                           variant="outline"
                         >
-                          <Link href={item.workflowsHref}>
-                            {t("shell.userMenu.operations")}
+                          <Link
+                            href={
+                              focusedDisabledModelDefinitionsHref ??
+                              buildScopedRuntimeIssueHref("model_disabled")
+                            }
+                          >
+                            {t("agents.readiness.issueLabels.model_disabled")}
                           </Link>
                         </Button>
                         <Button
@@ -10981,1832 +9920,3315 @@ export default function AdminConsolePage() {
                           type="button"
                           variant="outline"
                         >
-                          <Link href={item.failedDocumentsHref}>
-                            {t("admin.tenantChat.failedDocs")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.failedWorkflowsHref}>
-                            {t("admin.tenantChat.failedWorkflows")}
-                          </Link>
-                        </Button>
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.governanceHref}>
-                            {t("admin.tenantChat.governance")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {!isLoading && tenantChatActivity.length === 0 ? (
-                  <div className="text-sm text-slate-500">
-                    {t("admin.tenantChat.noTenantActivity")}
-                  </div>
-                ) : null}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.executionPackets.description")}
-                title={t("admin.executionPackets.title")}
-              />
-              <div className="grid gap-4 px-6 py-5 xl:grid-cols-2">
-                {adminExecutionPackets.map((item) => (
-                  <ConsoleActionPacketCard
-                    detail={item.detail}
-                    key={item.title}
-                    metricLabel={item.metricLabel}
-                    metricValue={item.metricValue}
-                    primaryActionHref={item.primaryActionHref}
-                    primaryActionLabel={item.primaryActionLabel}
-                    primaryActionRunRecord={item.primaryActionRunRecord}
-                    secondaryActions={item.secondaryActions}
-                    status={item.status}
-                    statusLabel={
-                      item.status === "attention"
-                        ? t("admin.watchlist.attention")
-                        : item.status === "review"
-                          ? t("admin.watchlist.review")
-                          : t("admin.watchlist.healthy")
-                    }
-                    title={item.title}
-                  />
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.chatSignals.description")}
-                title={t("admin.chatSignals.title")}
-              />
-              <div className="space-y-3 px-6 py-5">
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.chatSignals.mostActiveTenant")}
-                  </div>
-                  <div className="mt-2 text-base font-semibold text-slate-900">
-                    {chatSignals.activeTenant?.tenant.name ??
-                      t("admin.chatSignals.noTenantActivity")}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {chatSignals.activeTenant
-                      ? t("admin.chatSignals.activeTenantDetail", {
-                          conversationCount: String(
-                            chatSignals.activeTenant.metrics
-                              .total_conversations,
-                          ),
-                          messageCount: String(
-                            chatSignals.activeTenant.metrics.total_messages,
-                          ),
-                        })
-                      : t("admin.chatSignals.noPersistedMessages")}
-                  </div>
-                  <div className="mt-3">
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link
-                        href={
-                          chatSignals.activeTenant?.openHref ?? chatScopeHref
-                        }
-                      >
-                        {t("admin.chatSignals.openTenantChat")}
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.chatSignals.staleChatTenants")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {chatSignals.staleTenantCount}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.chatSignals.staleChatDetail")}
-                  </div>
-                  <div className="mt-3">
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link href={staleChatScopeHref}>
-                        {t("admin.chatSignals.reviewChatScope")}
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-                <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                    {t("admin.chatSignals.idleConversationScope")}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-950">
-                    {chatSignals.idleConversationTenantCount}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {t("admin.chatSignals.idleConversationDetail")}
-                  </div>
-                  <div className="mt-3">
-                    <Button
-                      asChild
-                      className="bg-white"
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Link href={idleConversationScopeHref}>
-                        {t("admin.chatSignals.inspectIdleScope")}
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </ConsoleSurface>
-          ) : null}
-
-          {showAdvancedAdminSections && adminSection === "overview" ? (
-            <ConsoleSurface>
-              <ConsoleSurfaceHeader
-                description={t("admin.watchlist.description")}
-                title={t("admin.watchlist.title")}
-              />
-              <div className="space-y-4 px-6 py-5">
-                {adminWatchItems.map((item) => (
-                  <div
-                    className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
-                    key={item.title}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-base font-semibold text-slate-900">
-                        {item.title}
-                      </div>
-                      <Badge
-                        className={cn(
-                          "border",
-                          getWatchStatusClass(item.status),
-                        )}
-                        variant="outline"
-                      >
-                        {item.status === "attention"
-                          ? t("admin.watchlist.attention")
-                          : item.status === "review"
-                            ? t("admin.watchlist.review")
-                            : t("admin.watchlist.healthy")}
-                      </Badge>
-                    </div>
-                    <div className="mt-3 text-sm leading-6 text-slate-500">
-                      {item.detail}
-                    </div>
-                    {item.actionHref && item.actionLabel ? (
-                      <div className="mt-4">
-                        <Button
-                          asChild
-                          className="bg-white"
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Link href={item.actionHref}>{item.actionLabel}</Link>
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </ConsoleSurface>
-          ) : null}
-        </div>
-
-        {managementPanel === "tenant-create" ? (
-          <AdminManagementDialog
-            description={t("workspace.sidebar.modal.tenantCreateDescription")}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("workspace.sidebar.modal.tenantCreateTitle")}
-          >
-            <DialogFormLayout>
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField
-                  className="xl:col-span-2"
-                  hint={t("workspace.sidebar.modal.tenantSlugHint")}
-                  label={t("workspace.sidebar.modal.tenantName")}
-                >
-                  <Input
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setCreateTenantName(nextName);
-                      if (!createTenantSlug.trim()) {
-                        setCreateTenantSlug(slugifyValue(nextName));
-                      }
-                    }}
-                    placeholder={t(
-                      "workspace.sidebar.modal.tenantNamePlaceholder",
-                    )}
-                    value={createTenantName}
-                  />
-                </AdminManagementField>
-
-                <AdminManagementField
-                  label={t("workspace.sidebar.modal.tenantSlug")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setCreateTenantSlug(slugifyValue(event.target.value))
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.tenantSlugPlaceholder",
-                    )}
-                    value={createTenantSlug}
-                  />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !createTenantName.trim() ||
-                    !createTenantSlug.trim() ||
-                    isCreatingResource
-                  }
-                  onClick={handleCreateTenant}
-                  type="button"
-                >
-                  {isCreatingResource
-                    ? t("workspace.sidebar.modal.creating")
-                    : t("workspace.sidebar.modal.createTenant")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
-
-        {managementPanel === "user-create" ? (
-          <AdminManagementDialog
-            description={t("admin.members.createDescription")}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("admin.members.createTitle")}
-          >
-            <DialogFormLayout>
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField label={t("admin.members.displayName")}>
-                  <Input
-                    onChange={(event) =>
-                      setCreateUserDisplayName(event.target.value)
-                    }
-                    placeholder={t("admin.members.displayNamePlaceholder")}
-                    value={createUserDisplayName}
-                  />
-                </AdminManagementField>
-
-                <AdminManagementField className="xl:col-span-2" label={t("admin.members.email")}>
-                  <Input
-                    onChange={(event) => setCreateUserEmail(event.target.value)}
-                    placeholder={t("admin.members.emailPlaceholder")}
-                    type="email"
-                    value={createUserEmail}
-                  />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <DialogFormGrid className="lg:grid-cols-3">
-                <AdminManagementField label={t("admin.members.role")}>
-                  <Select
-                    onValueChange={(value) =>
-                      setCreateUserRole(
-                        value as "super_admin" | "operator" | "reviewer",
-                      )
-                    }
-                    value={createUserRole}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("admin.members.role")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="super_admin">
-                        {t("auth.roles.superAdmin")}
-                      </SelectItem>
-                      <SelectItem value="operator">
-                        {t("auth.roles.operator")}
-                      </SelectItem>
-                      <SelectItem value="reviewer">
-                        {t("auth.roles.reviewer")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </AdminManagementField>
-
-                <AdminManagementField label={t("admin.members.initialTenant")}>
-                  <Select
-                    onValueChange={setCreateUserTenantId}
-                    value={createUserTenantId}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={t("admin.members.initialTenant")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">
-                        {t("admin.members.noInitialTenant")}
-                      </SelectItem>
-                      {tenants.map((tenant) => (
-                        <SelectItem key={tenant.id} value={tenant.id}>
-                          {tenant.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </AdminManagementField>
-
-                <AdminManagementField
-                  label={t("admin.members.initialMembershipStatus")}
-                >
-                  <Select
-                    onValueChange={(value) =>
-                      setCreateUserMembershipStatus(
-                        value as "active" | "invited" | "suspended",
-                      )
-                    }
-                    value={createUserMembershipStatus}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={t("admin.members.initialMembershipStatus")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">
-                        {t("admin.members.activeMembership")}
-                      </SelectItem>
-                      <SelectItem value="invited">
-                        {t("admin.members.invitedMembership")}
-                      </SelectItem>
-                      <SelectItem value="suspended">
-                        {t("admin.members.suspendedMembership")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !createUserDisplayName.trim() ||
-                    !createUserEmail.trim() ||
-                    isCreatingResource
-                  }
-                  onClick={handleCreateUser}
-                  type="button"
-                >
-                  {isCreatingResource
-                    ? t("workspace.sidebar.modal.creating")
-                    : t("admin.actions.createMember")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
-
-        {managementPanel === "user-edit" ? (
-          <AdminManagementDialog
-            description={t("admin.members.editDescription")}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("admin.members.editTitle")}
-          >
-            <DialogFormLayout>
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField label={t("admin.members.displayName")}>
-                  <Input
-                    onChange={(event) =>
-                      setEditUserDisplayName(event.target.value)
-                    }
-                    placeholder={t("admin.members.displayNamePlaceholder")}
-                    value={editUserDisplayName}
-                  />
-                </AdminManagementField>
-
-                <AdminManagementField className="xl:col-span-2" label={t("admin.members.email")}>
-                  <Input
-                    onChange={(event) => setEditUserEmail(event.target.value)}
-                    placeholder={t("admin.members.emailPlaceholder")}
-                    type="email"
-                    value={editUserEmail}
-                  />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <DialogFormGrid>
-                <AdminManagementField label={t("admin.members.role")}>
-                  <Select
-                    onValueChange={(value) =>
-                      setEditUserRole(
-                        value as "super_admin" | "operator" | "reviewer",
-                      )
-                    }
-                    value={editUserRole}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t("admin.members.role")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="super_admin">
-                        {t("auth.roles.superAdmin")}
-                      </SelectItem>
-                      <SelectItem value="operator">
-                        {t("auth.roles.operator")}
-                      </SelectItem>
-                      <SelectItem value="reviewer">
-                        {t("auth.roles.reviewer")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </AdminManagementField>
-
-                <AdminManagementField label={t("admin.members.accountFilter")}>
-                  <Select
-                    onValueChange={(value) =>
-                      setEditUserIsActive(value as "active" | "inactive")
-                    }
-                    value={editUserIsActive}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={t("admin.members.accountFilter")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">
-                        {t("admin.members.activeAccount")}
-                      </SelectItem>
-                      <SelectItem value="inactive">
-                        {t("admin.members.inactiveAccount")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="space-y-1">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {t("admin.members.accessPostureTitle")}
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    {t("admin.members.accessPostureDescription")}
-                  </div>
-                </div>
-
-                {editingUserAccessSummary ? (
-                  <>
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.activity.latestEvent")}
-                        </div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">
-                          {editingUserAccessSummary.latest_event_type
-                            ? getAccessEventLabel(
-                                editingUserAccessSummary.latest_event_type,
-                                t,
+                          <Link
+                            href={
+                              focusedUnconfiguredModelDefinitionsHref ??
+                              buildScopedRuntimeIssueHref(
+                                "model_runtime_unconfigured",
                               )
-                            : t("settings.activity.empty")}
-                        </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          {editingUserAccessSummary.latest_event_at
-                            ? formatTimestamp(
-                                editingUserAccessSummary.latest_event_at,
+                            }
+                          >
+                            {t(
+                              "agents.readiness.issueLabels.model_runtime_unconfigured",
+                            )}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={buildScopedRuntimeIssueHref(
+                              "retrieval_profile_missing",
+                            )}
+                          >
+                            {t(
+                              "agents.readiness.issueLabels.retrieval_profile_missing",
+                            )}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={
+                              focusedDisabledRetrievalDefinitionsHref ??
+                              buildScopedRuntimeIssueHref(
+                                "retrieval_profile_disabled",
                               )
-                            : t("settings.activity.notAvailable")}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.activity.lastSignIn")}
-                        </div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">
-                          {editingUserAccessSummary.recent_sign_in_events > 0
-                            ? t("settings.activity.loadedLoginEvents", {
-                                count:
-                                  editingUserAccessSummary.recent_sign_in_events,
-                              })
-                            : t("settings.activity.noLoginEvents")}
-                        </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          {editingUserAccessSummary.total_audit_events}{" "}
-                          {t("admin.members.auditEventsSuffix")}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.posture.recentFailedSignIns")}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-950">
-                          {
-                            editingUserAccessSummary.recent_failed_sign_in_events
-                          }
-                        </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          {t("settings.posture.recentFailedSignInsHint")}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.sessions.summary.total")}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-950">
-                          {editingUserAccessSummary.active_sessions}
-                        </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          {t("admin.members.sessionsExpiringHint", {
-                            count: String(
-                              editingUserAccessSummary.sessions_expiring_within_24_hours,
-                            ),
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {editingUserAccessSummary.review_items.filter(
-                      (item) =>
-                        item.severity !== "healthy" && item.item_count > 0,
-                    ).length > 0 ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {editingUserAccessSummary.review_items
-                          .filter(
-                            (item) =>
-                              item.severity !== "healthy" &&
-                              item.item_count > 0,
-                          )
-                          .map((item) => (
-                            <div
-                              className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3"
-                              key={`${editingUserAccessSummary.latest_event_at ?? "none"}-${item.category}`}
+                            }
+                          >
+                            {t(
+                              "agents.readiness.issueLabels.retrieval_profile_disabled",
+                            )}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={buildScopedRuntimeIssueHref("tools_missing")}
+                          >
+                            {t("agents.readiness.issueLabels.tools_missing")}
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={
+                              focusedDisabledToolDefinitionsHref ??
+                              buildScopedRuntimeIssueHref(
+                                "tool_registration_disabled",
+                              )
+                            }
+                          >
+                            {t(
+                              "agents.readiness.issueLabels.tool_registration_disabled",
+                            )}
+                          </Link>
+                        </Button>
+                        {focusedApprovalToolDefinitionsHref ? (
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Link href={focusedApprovalToolDefinitionsHref}>
+                              {t(
+                                "agents.readiness.issueLabels.tool_approval_required",
+                              )}
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {governancePosture.issue_counts.tool_mcp_reserved >
+                        0 ? (
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Link
+                              href={buildScopedRuntimeIssueHref(
+                                "tool_mcp_reserved",
+                                {
+                                  toolRegistrationId:
+                                    focusedReservedMcpToolRegistration?.id ??
+                                    null,
+                                },
+                              )}
                             >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="text-sm font-semibold text-slate-950">
-                                  {item.category === "expired_invitations"
-                                    ? t(
-                                        "admin.securityWatch.expiredInvitations",
-                                      )
-                                    : item.category === "expiring_invitations"
-                                      ? t(
-                                          "admin.securityWatch.expiringInvitations",
-                                        )
-                                      : item.category ===
-                                          "failed_sign_in_pressure"
-                                        ? t(
-                                            "admin.securityWatch.failedSignInPressure",
-                                          )
-                                        : item.category ===
-                                            "invitation_activation_pressure"
-                                          ? t(
-                                              "admin.securityWatch.invitationActivationPressure",
-                                            )
-                                          : t(
-                                              "admin.securityWatch.sessionSpreadPressure",
-                                            )}
-                                </div>
-                                <Badge
-                                  className={
-                                    item.severity === "attention"
-                                      ? "border-rose-200 bg-rose-50 text-rose-700"
-                                      : "border-amber-200 bg-amber-50 text-amber-700"
-                                  }
-                                  variant="outline"
-                                >
-                                  {item.item_count}
-                                </Badge>
+                              {t(
+                                "agents.readiness.issueLabels.tool_mcp_reserved",
+                              )}
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {governancePosture.issue_counts
+                          .tool_mcp_integration_pending > 0 ? (
+                          <Button
+                            asChild
+                            className="bg-white"
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Link
+                              href={buildScopedRuntimeIssueHref(
+                                "tool_mcp_integration_pending",
+                                {
+                                  toolRegistrationId:
+                                    focusedPendingMcpToolRegistration?.id ??
+                                    null,
+                                },
+                              )}
+                            >
+                              {t(
+                                "agents.readiness.issueLabels.tool_mcp_integration_pending",
+                              )}
+                            </Link>
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.retrievalProfiles.description")}
+                    title={t("admin.retrievalProfiles.title")}
+                  />
+                  <div className="grid gap-4 px-6 py-5 xl:grid-cols-2">
+                    {retrievalProfileAssets.length > 0 ? (
+                      retrievalProfileAssets.map((asset) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
+                          key={asset.profile.id}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="text-base font-semibold text-slate-950">
+                                {asset.profile.name}
                               </div>
-                              <div className="mt-2 text-sm leading-6 text-slate-600">
-                                {item.category === "expired_invitations"
-                                  ? t(
-                                      "admin.securityWatch.expiredInvitationsDetail",
-                                      { count: String(item.item_count) },
-                                    )
-                                  : item.category === "expiring_invitations"
-                                    ? t(
-                                        "admin.securityWatch.expiringInvitationsDetail",
-                                        { count: String(item.item_count) },
-                                      )
-                                    : item.category ===
-                                        "failed_sign_in_pressure"
-                                      ? editingUserAccessSummary.sign_in_lockout_expires_at
-                                        ? `${t("admin.securityWatch.failedSignInPressureDetail", { count: String(item.item_count) })} ${formatTimestamp(editingUserAccessSummary.sign_in_lockout_expires_at)}`
-                                        : t(
-                                            "admin.securityWatch.failedSignInPressureDetail",
-                                            { count: String(item.item_count) },
-                                          )
-                                      : item.category ===
-                                          "invitation_activation_pressure"
-                                        ? t(
-                                            "admin.securityWatch.invitationActivationPressureDetail",
-                                            { count: String(item.item_count) },
-                                          )
-                                        : t(
-                                            "admin.securityWatch.sessionSpreadPressureDetail",
-                                            { count: String(item.item_count) },
-                                          )}
+                              <div className="mt-1 text-sm text-slate-500">
+                                {asset.profile.slug}
                               </div>
                             </div>
-                          ))}
-                      </div>
-                    ) : null}
-
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.posture.activeMemberships")}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-950">
-                          {editingUserAccessSummary.active_memberships}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.posture.invitedMemberships")}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-950">
-                          {editingUserAccessSummary.invited_memberships}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.posture.expiringInvitations")}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-950">
-                          {editingUserAccessSummary.expiring_invitations +
-                            editingUserAccessSummary.expired_invitations}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("settings.posture.sensitiveEvents")}
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold text-slate-950">
-                          {editingUserAccessSummary.sensitive_audit_events}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.securityWatch.failedSignInPressure")}
-                        </div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">
-                          {editingUserAccessSummary.sign_in_lockout_active
-                            ? t("settings.fields.membershipAccessBlocked")
-                            : t("settings.fields.membershipAccessReady")}
-                        </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          {editingUserAccessSummary.sign_in_lockout_active &&
-                          editingUserAccessSummary.sign_in_lockout_expires_at
-                            ? formatTimestamp(
-                                editingUserAccessSummary.sign_in_lockout_expires_at,
-                              )
-                            : t(
-                                "admin.securityWatch.failedSignInPressureHealthy",
+                            <Badge
+                              className={cn(
+                                "border",
+                                getWatchStatusClass(asset.status),
                               )}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          {t("admin.securityWatch.sessionSpreadPressure")}
-                        </div>
-                        <div className="mt-2 text-sm font-semibold text-slate-950">
-                          {editingUserAccessSummary.session_spread_detected
-                            ? t("settings.fields.membershipAccessBlocked")
-                            : t("settings.fields.membershipAccessReady")}
-                        </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          {editingUserAccessSummary.session_spread_detected
-                            ? t(
-                                "admin.securityWatch.sessionSpreadPressureDetail",
-                                { count: "1" },
-                              )
-                            : t(
-                                "admin.securityWatch.sessionSpreadPressureHealthy",
+                              variant="outline"
+                            >
+                              {asset.status === "attention"
+                                ? t("admin.watchlist.attention")
+                                : asset.status === "review"
+                                  ? t("admin.watchlist.review")
+                                  : t("admin.watchlist.healthy")}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className={cn(
+                                "border",
+                                getRetrievalMethodBadgeClassName(
+                                  asset.profile.retrieval_mode,
+                                ),
                               )}
+                              variant="outline"
+                            >
+                              {t(
+                                `settings.retrievalProfiles.modes.${asset.profile.retrieval_mode}`,
+                              )}
+                            </Badge>
+                            {asset.profile.is_default ? (
+                              <Badge
+                                className="border-slate-200 bg-white text-slate-700"
+                                variant="outline"
+                              >
+                                {t("settings.retrievalProfiles.default")}
+                              </Badge>
+                            ) : null}
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {asset.profile.is_enabled
+                                ? t("settings.runtime.enabled")
+                                : t("settings.runtime.disabled")}
+                            </Badge>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("home.retrievalInspector.effectiveTopK", {
+                                value: String(asset.profile.top_k),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                {t(
+                                  "admin.retrievalProfiles.metrics.assignedKnowledgeBases",
+                                )}
+                              </div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-950">
+                                {asset.assignedKnowledgeBases}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {t(
+                                  "admin.retrievalProfiles.metrics.workspaceCoverage",
+                                  {
+                                    count: String(asset.assignedWorkspaceCount),
+                                  },
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                {t(
+                                  "admin.retrievalProfiles.metrics.defaultFallbackCoverage",
+                                )}
+                              </div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-950">
+                                {asset.fallbackCoverageCount}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {t(
+                                  "admin.retrievalProfiles.metrics.publicationMix",
+                                  {
+                                    published: String(
+                                      asset.publishedKnowledgeBaseCount,
+                                    ),
+                                    draft: String(
+                                      asset.draftKnowledgeBaseCount,
+                                    ),
+                                  },
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-sm leading-6 text-slate-600">
+                            {!asset.profile.is_enabled &&
+                            asset.assignedKnowledgeBases > 0
+                              ? t(
+                                  "admin.retrievalProfiles.status.disabledAssigned",
+                                  {
+                                    count: String(asset.assignedKnowledgeBases),
+                                  },
+                                )
+                              : asset.fallbackCoverageCount > 0
+                                ? t(
+                                    "admin.retrievalProfiles.status.defaultFallback",
+                                    {
+                                      count: String(
+                                        asset.fallbackCoverageCount,
+                                      ),
+                                    },
+                                  )
+                                : asset.assignedKnowledgeBases === 0
+                                  ? t("admin.retrievalProfiles.status.unused")
+                                  : t(
+                                      "admin.retrievalProfiles.status.healthyAssigned",
+                                      {
+                                        count: String(
+                                          asset.assignedKnowledgeBases,
+                                        ),
+                                      },
+                                    )}
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link
+                                href={buildAdminHref({
+                                  tenantId:
+                                    selectedTenantId === "all"
+                                      ? null
+                                      : selectedTenantId,
+                                  section: "directory",
+                                  retrievalProfileFilter: asset.profile.id,
+                                })}
+                              >
+                                {t(
+                                  "admin.retrievalProfiles.reviewKnowledgeBases",
+                                )}
+                              </Link>
+                            </Button>
+                            {asset.fallbackCoverageCount > 0 ? (
+                              <Button
+                                asChild
+                                className="bg-white"
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Link
+                                  href={buildAdminHref({
+                                    tenantId:
+                                      selectedTenantId === "all"
+                                        ? null
+                                        : selectedTenantId,
+                                    section: "directory",
+                                    retrievalProfileFilter:
+                                      DEFAULT_RETRIEVAL_PROFILE_FILTER_VALUE,
+                                  })}
+                                >
+                                  {t(
+                                    "admin.retrievalProfiles.openDefaultFallback",
+                                  )}
+                                </Link>
+                              </Button>
+                            ) : null}
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link
+                                href={buildSettingsHref({
+                                  runtimeResource: "retrieval_profile",
+                                  retrievalProfileId: asset.profile.id,
+                                })}
+                              >
+                                {t("admin.runtimeGovernance.openSettings")}
+                              </Link>
+                            </Button>
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                        {t("settings.retrievalProfiles.empty")}
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    {t("admin.members.accessPostureEmpty")}
+                    )}
                   </div>
-                )}
-              </div>
+                </ConsoleSurface>
+              ) : null}
 
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      {t("admin.members.accessEventsTitle")}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      {t("admin.members.accessEventsDescription")}
-                    </div>
-                  </div>
-                  <Button
-                    disabled={
-                      !editingUserId || isLoadingEditingUserAccessEvents
-                    }
-                    onClick={() =>
-                      editingUserId
-                        ? void refreshEditingUserSessions(editingUserId)
-                        : undefined
-                    }
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <RefreshCw
-                      className={`mr-2 h-4 w-4 ${isLoadingEditingUserAccessEvents ? "animate-spin" : ""}`}
-                    />
-                    {isLoadingEditingUserAccessEvents
-                      ? t("admin.actions.refreshingActivity")
-                      : t("admin.actions.refreshActivity")}
-                  </Button>
-                </div>
-
-                <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.audit.filter")}
-                    </div>
-                    <Select
-                      onValueChange={(value) =>
-                        setEditingUserAccessEventFilter(
-                          value as (typeof AUDIT_EVENT_FILTER_VALUES)[number],
-                        )
-                      }
-                      value={editingUserAccessEventFilter}
-                    >
-                      <SelectTrigger className="rounded-xl border-slate-200 bg-white">
-                        <SelectValue placeholder={t("admin.audit.allEvents")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t("admin.audit.allEvents")}
-                        </SelectItem>
-                        <SelectItem value="sign_in_failed">
-                          {t("admin.audit.eventTypes.signInFailed")}
-                        </SelectItem>
-                        <SelectItem value="sign_in_succeeded">
-                          {t("admin.audit.eventTypes.signInSucceeded")}
-                        </SelectItem>
-                        <SelectItem value="invitation_activation_failed">
-                          {t(
-                            "admin.audit.eventTypes.invitationActivationFailed",
-                          )}
-                        </SelectItem>
-                        <SelectItem value="sign_out_succeeded">
-                          {t("admin.audit.eventTypes.signOutSucceeded")}
-                        </SelectItem>
-                        <SelectItem value="session_revoked">
-                          {t("admin.audit.eventTypes.sessionRevoked")}
-                        </SelectItem>
-                        <SelectItem value="password_changed">
-                          {t("admin.audit.eventTypes.passwordChanged")}
-                        </SelectItem>
-                        <SelectItem value="password_reset">
-                          {t("admin.audit.eventTypes.passwordReset")}
-                        </SelectItem>
-                        <SelectItem value="invitation_issued">
-                          {t("admin.audit.eventTypes.invitationIssued")}
-                        </SelectItem>
-                        <SelectItem value="invitation_activated">
-                          {t("admin.audit.eventTypes.invitationActivated")}
-                        </SelectItem>
-                        <SelectItem value="invitation_revoked">
-                          {t("admin.audit.eventTypes.invitationRevoked")}
-                        </SelectItem>
-                        <SelectItem value="membership_active">
-                          {t("admin.audit.eventTypes.membershipActive")}
-                        </SelectItem>
-                        <SelectItem value="membership_suspended">
-                          {t("admin.audit.eventTypes.membershipSuspended")}
-                        </SelectItem>
-                        <SelectItem value="membership_deleted">
-                          {t("admin.audit.eventTypes.membershipDeleted")}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      {t("admin.members.accessEventsSearch")}
-                    </div>
-                    <Input
-                      className="rounded-xl border-slate-200 bg-white"
-                      onChange={(event) =>
-                        setEditingUserAccessSearchQuery(event.target.value)
-                      }
-                      placeholder={t(
-                        "admin.members.accessEventsSearchPlaceholder",
-                      )}
-                      value={editingUserAccessSearchQuery}
-                    />
-                  </div>
-                </div>
-
-                {editingUserAccessEventsErrorMessage ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {editingUserAccessEventsErrorMessage}
-                  </div>
-                ) : null}
-
-                {isLoadingEditingUserAccessEvents &&
-                editingUserAccessEvents.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    {t("admin.actions.refreshingActivity")}
-                  </div>
-                ) : null}
-
-                {!isLoadingEditingUserAccessEvents &&
-                editingUserAccessEvents.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    {t("admin.members.accessEventsEmpty")}
-                  </div>
-                ) : null}
-
-                {editingUserAccessEvents.length > 0 ? (
-                  <div className="space-y-3">
-                    {editingUserAccessEvents.map((event) => {
-                      const reason =
-                        typeof event.detail_json.reason === "string"
-                          ? event.detail_json.reason
-                          : null;
-                      const loginMode =
-                        typeof event.detail_json.login_mode === "string"
-                          ? event.detail_json.login_mode
-                          : null;
-                      const sessionId =
-                        typeof event.detail_json.session_id === "string"
-                          ? event.detail_json.session_id
-                          : null;
-
-                      return (
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.runtimeRoutes.description")}
+                    title={t("admin.runtimeRoutes.title")}
+                  />
+                  <div className="space-y-3 px-6 py-5">
+                    {runtimeRoutes.length > 0 ? (
+                      runtimeRoutes.map((item) => (
                         <div
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-4"
-                          key={event.id}
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={item.agent.id}
                         >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="space-y-3">
-                              <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-base font-semibold text-slate-900">
+                                {item.agent.name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {t(`agents.modes.${item.agent.mode}`)}
+                              </div>
+                            </div>
+                            <Badge
+                              className={cn(
+                                "border",
+                                item.launchReady
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : item.retrievalIssue
+                                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                                    : "border-amber-200 bg-amber-50 text-amber-700",
+                              )}
+                              variant="outline"
+                            >
+                              {item.launchReady
+                                ? t("admin.runtimeRoutes.scopeReady")
+                                : item.retrievalIssue === "disabled"
+                                  ? t("admin.runtimeRoutes.retrievalDisabled")
+                                  : item.retrievalIssue === "missing"
+                                    ? t("admin.runtimeRoutes.retrievalMissing")
+                                    : t("admin.runtimeRoutes.scopePending")}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 text-sm leading-6 text-slate-600">
+                            {item.agent.objective.trim().length > 0
+                              ? item.agent.objective
+                              : t("admin.runtimeRoutes.noObjective")}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.runtimeRoutes.scopeLabel", {
+                                value: item.scopeLabel?.trim().length
+                                  ? item.scopeLabel
+                                  : t("admin.runtimeRoutes.scopeUnbound"),
+                              })}
+                            </Badge>
+                            {item.resolvedWorkspace ? (
+                              <Badge
+                                className="border-slate-200 bg-white text-slate-700"
+                                variant="outline"
+                              >
+                                {t("admin.runtimeRoutes.resolvedWorkspace", {
+                                  value: item.resolvedWorkspace.name,
+                                })}
+                              </Badge>
+                            ) : null}
+                            {item.resolvedKnowledgeBase ? (
+                              <Badge
+                                className="border-slate-200 bg-white text-slate-700"
+                                variant="outline"
+                              >
+                                {t(
+                                  "admin.runtimeRoutes.resolvedKnowledgeBase",
+                                  {
+                                    value: item.resolvedKnowledgeBase.name,
+                                  },
+                                )}
+                              </Badge>
+                            ) : null}
+                            {item.retrievalProfile ? (
+                              <Badge
+                                className="border-slate-200 bg-white text-slate-700"
+                                variant="outline"
+                              >
+                                {t("admin.runtimeRoutes.retrievalProfile", {
+                                  value: item.retrievalProfile.name,
+                                })}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {item.retrievalIssue ? (
+                            <div className="mt-3 rounded-[16px] border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm leading-6 text-amber-800">
+                              {item.retrievalIssue === "disabled"
+                                ? t(
+                                    "admin.runtimeRoutes.retrievalDisabledDetail",
+                                    {
+                                      profile:
+                                        item.retrievalProfile?.name ??
+                                        t(
+                                          "agents.dependencies.noRetrievalProfile",
+                                        ),
+                                    },
+                                  )
+                                : t(
+                                    "admin.runtimeRoutes.retrievalMissingDetail",
+                                  )}
+                            </div>
+                          ) : null}
+                          <div className="mt-3 rounded-[16px] border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("admin.runtimeRoutes.launchPrompt")}
+                            </div>
+                            <div className="mt-2 text-sm leading-6 text-slate-700">
+                              {item.prompt}
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <AgentRunButtonLink
+                              href={item.recommendedHref}
+                              runRecord={item.recommendedRunRecord}
+                              size="sm"
+                              type="button"
+                            >
+                              {t("admin.runtimeRoutes.openRecommended")}
+                            </AgentRunButtonLink>
+                            <AgentRunButtonLink
+                              className="bg-white"
+                              href={item.secondaryHref}
+                              runRecord={item.secondaryRunRecord}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {t("admin.runtimeRoutes.openSecondary")}
+                            </AgentRunButtonLink>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.definitionHref}>
+                                {t("admin.runtimeRoutes.openDefinition")}
+                              </Link>
+                            </Button>
+                            {item.retrievalIssue === "disabled" ? (
+                              <Button
+                                asChild
+                                className="bg-white"
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Link
+                                  href={
+                                    item.resolvedKnowledgeBase
+                                      ? buildKnowledgeBaseGovernanceHref(
+                                          item.resolvedKnowledgeBase,
+                                          {
+                                            retrievalProfileFilter:
+                                              DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE,
+                                          },
+                                        )
+                                      : buildAdminHref({
+                                          tenantId: item.agent.tenant_id,
+                                          section: "directory",
+                                          retrievalProfileFilter:
+                                            DISABLED_RETRIEVAL_PROFILE_FILTER_VALUE,
+                                        })
+                                  }
+                                >
+                                  {t(
+                                    "admin.runtimeRoutes.openRetrievalGovernance",
+                                  )}
+                                </Link>
+                              </Button>
+                            ) : item.retrievalIssue === "missing" ? (
+                              <Button
+                                asChild
+                                className="bg-white"
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Link
+                                  href={
+                                    item.resolvedKnowledgeBase
+                                      ? buildKnowledgeBaseGovernanceHref(
+                                          item.resolvedKnowledgeBase,
+                                        )
+                                      : buildSettingsHref({
+                                          runtimeResource: "retrieval_profile",
+                                        })
+                                  }
+                                >
+                                  {t(
+                                    "admin.runtimeRoutes.openRetrievalSettings",
+                                  )}
+                                </Link>
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                        {t("admin.runtimeRoutes.empty")}
+                      </div>
+                    )}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Button
+                        asChild
+                        className="bg-white"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link
+                          href={buildAgentsHref({
+                            tenantId:
+                              selectedTenantId === "all"
+                                ? null
+                                : selectedTenantId,
+                            status: "active",
+                          })}
+                        >
+                          {t("admin.agentRuntime.openAgents")}
+                        </Link>
+                      </Button>
+                    }
+                    description={t("admin.agentRuntime.description")}
+                    title={t("admin.agentRuntime.title")}
+                  />
+                  <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("agents.runs.metrics.total")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentRunMetrics.total_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.agentRuntime.metrics.totalHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("agents.runs.metrics.chat")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentRunMetrics.chat_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.agentRuntime.metrics.chatHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("agents.runs.metrics.documents")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentRunMetrics.document_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.agentRuntime.metrics.documentsHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("agents.runs.metrics.operations")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedAgentRunMetrics.operations_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {scopedAgentRunMetrics.latest_launched_at
+                          ? t("admin.agentRuntime.latestLaunch", {
+                              value: formatTimestamp(
+                                scopedAgentRunMetrics.latest_launched_at,
+                              ),
+                            })
+                          : t("admin.agentRuntime.noLatestLaunch")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.agentRuntime.tenantBreakdown")}
+                      </div>
+                      {tenantAgentRuntimeActivity.slice(0, 4).map((item) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={item.tenant.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-base font-semibold text-slate-900">
+                                {item.tenant.name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {item.tenant.slug}
+                              </div>
+                            </div>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.agentRuntime.tenantRunCount", {
+                                count: String(item.metrics.total_runs),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("agents.runs.metrics.chat")}:{" "}
+                              {item.metrics.chat_runs}
+                            </Badge>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("agents.runs.metrics.documents")}:{" "}
+                              {item.metrics.document_runs}
+                            </Badge>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("agents.runs.metrics.operations")}:{" "}
+                              {item.metrics.operations_runs}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 text-sm text-slate-500">
+                            {item.metrics.latest_launched_at
+                              ? t("admin.agentRuntime.latestLaunch", {
+                                  value: formatTimestamp(
+                                    item.metrics.latest_launched_at,
+                                  ),
+                                })
+                              : t("admin.agentRuntime.noLatestLaunch")}
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.agentsHref}>
+                                {t("admin.agentRuntime.openAgents")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.operationsHref}>
+                                {t("shell.userMenu.operations")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {!isLoading && tenantAgentRuntimeActivity.length === 0 ? (
+                        <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                          {t("admin.agentRuntime.noTenantRuns")}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.agentRuntime.recentRuns")}
+                      </div>
+                      {recentScopedAgentRuns.length > 0 ? (
+                        recentScopedAgentRuns.map((agentRun) => {
+                          const linkedAgent =
+                            agents.find(
+                              (agent) =>
+                                agent.id === agentRun.agent_definition_id,
+                            ) ?? null;
+
+                          return (
+                            <div
+                              className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                              key={agentRun.id}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-950">
+                                    {linkedAgent?.name ??
+                                      t("admin.agentRuntime.unknownAgent")}
+                                  </div>
+                                  <div className="mt-1 text-sm leading-6 text-slate-500">
+                                    {agentRun.launch_prompt?.trim().length
+                                      ? agentRun.launch_prompt
+                                      : t("agents.runs.noPrompt")}
+                                  </div>
+                                </div>
                                 <Badge
-                                  className="border-slate-200 bg-slate-50 text-slate-700"
+                                  className="border-emerald-200 bg-emerald-50 text-emerald-700"
                                   variant="outline"
                                 >
-                                  {getAccessEventLabel(event.event_type, t)}
+                                  {t(
+                                    `agents.runs.statuses.${agentRun.run_status}`,
+                                  )}
+                                </Badge>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Badge
+                                  className="border-slate-200 bg-white text-slate-700"
+                                  variant="outline"
+                                >
+                                  {t(`agents.tools.${agentRun.target_surface}`)}
                                 </Badge>
                                 <Badge
                                   className="border-slate-200 bg-white text-slate-700"
                                   variant="outline"
                                 >
-                                  {event.tenant_name ??
-                                    t("settings.activity.noTenant")}
+                                  {formatAgentRunTriggerSourceLabel(
+                                    agentRun.trigger_source,
+                                    t,
+                                  )}
+                                </Badge>
+                                <Badge
+                                  className="border-slate-200 bg-white text-slate-700"
+                                  variant="outline"
+                                >
+                                  {formatTimestamp(agentRun.created_at)}
                                 </Badge>
                               </div>
-
-                              <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                                <div>
-                                  <span className="font-medium text-slate-700">
-                                    {t("admin.members.accessEventAt")}
-                                  </span>
-                                  <span className="ml-2">
-                                    {formatTimestamp(event.created_at)}
-                                  </span>
+                              {agentRun.navigation_href ? (
+                                <div className="mt-4">
+                                  <Button
+                                    asChild
+                                    className="bg-white"
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    <a href={agentRun.navigation_href}>
+                                      {t("agents.runs.openRoute")}
+                                    </a>
+                                  </Button>
                                 </div>
-                                <div>
-                                  <span className="font-medium text-slate-700">
-                                    {t("settings.activity.issuedBy")}
-                                  </span>
-                                  <span className="ml-2">
-                                    {event.actor_display_name ??
-                                      t("settings.activity.noActor")}
-                                  </span>
-                                </div>
-                                {loginMode ? (
-                                  <div>
-                                    <span className="font-medium text-slate-700">
-                                      {t("settings.activity.loginMode")}
-                                    </span>
-                                    <span className="ml-2">
-                                      {formatAuthenticationModeLabel(
-                                        loginMode,
-                                        t,
-                                      )}
-                                    </span>
-                                  </div>
-                                ) : null}
-                                {sessionId ? (
-                                  <div className="sm:col-span-2">
-                                    <span className="font-medium text-slate-700">
-                                      {t("settings.activity.sessionId")}
-                                    </span>
-                                    <span className="ml-2 font-mono text-xs text-slate-500">
-                                      {sessionId}
-                                    </span>
-                                  </div>
-                                ) : null}
-                                {reason ? (
-                                  <div className="sm:col-span-2">
-                                    <span className="font-medium text-slate-700">
-                                      {t("admin.audit.reasonLabel")}
-                                    </span>
-                                    <span className="ml-2">{reason}</span>
-                                  </div>
-                                ) : null}
-                              </div>
+                              ) : null}
                             </div>
-                            <div className="shrink-0 text-xs text-slate-400">
-                              {event.user_display_name}
-                            </div>
-                          </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                          {t("admin.agentRuntime.empty")}
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      {t("admin.members.sessionsTitle")}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      {t("admin.members.sessionsDescription")}
-                    </div>
-                  </div>
-                  <Button
-                    disabled={!editingUserId || isLoadingEditingUserSessions}
-                    onClick={() => void handleRefreshEditingUserSessions()}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    <RefreshCw
-                      className={`mr-2 h-4 w-4 ${isLoadingEditingUserSessions ? "animate-spin" : ""}`}
-                    />
-                    {isLoadingEditingUserSessions
-                      ? t("admin.actions.refreshingSessions")
-                      : t("admin.actions.refreshSessions")}
-                  </Button>
-                </div>
-
-                {editingUserSessionsErrorMessage ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {editingUserSessionsErrorMessage}
-                  </div>
-                ) : null}
-
-                {editingUserSessionSecuritySummary ? (
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.members.sessionSummary.total")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {
-                          editingUserSessionSecuritySummary.total_active_sessions
-                        }
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.members.sessionSummary.other")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {
-                          editingUserSessionSecuritySummary.other_active_sessions
-                        }
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.members.sessionSummary.expiring")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {
-                          editingUserSessionSecuritySummary.expires_within_24_hours
-                        }
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.members.sessionSummary.currentExpiry")}
-                      </div>
-                      <div className="mt-2 text-sm font-semibold text-slate-950">
-                        {editingUserSessionSecuritySummary.current_session_expires_at
-                          ? formatTimestamp(
-                              editingUserSessionSecuritySummary.current_session_expires_at,
-                            )
-                          : t("admin.directory.notAvailable")}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.members.sessionSummary.devices")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {
-                          editingUserSessionSecuritySummary.distinct_device_count
-                        }
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        {t("admin.members.sessionSummary.ips")}
-                      </div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-950">
-                        {editingUserSessionSecuritySummary.distinct_ip_count}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {isLoadingEditingUserSessions &&
-                editingUserSessions.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    {t("admin.actions.refreshingSessions")}
-                  </div>
-                ) : null}
-
-                {!isLoadingEditingUserSessions &&
-                editingUserSessions.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    {t("admin.members.sessionsEmpty")}
-                  </div>
-                ) : null}
-
-                {editingUserSessions.length > 0 ? (
-                  <div className="space-y-3">
-                    {editingUserSessions.map((trackedSession) => (
-                      <div
-                        className="rounded-xl border border-slate-200 bg-white px-4 py-4"
-                        key={trackedSession.id}
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge
-                                className={
-                                  trackedSession.is_current
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : ""
-                                }
-                                variant={
-                                  trackedSession.is_current
-                                    ? "outline"
-                                    : "secondary"
-                                }
-                              >
-                                {trackedSession.is_current
-                                  ? t("admin.members.sessionsCurrent")
-                                  : t("admin.members.sessionsOther")}
-                              </Badge>
-                              <Badge variant="outline">
-                                {formatAuthenticationModeLabel(
-                                  trackedSession.authentication_mode,
-                                  t,
-                                )}
-                              </Badge>
-                            </div>
-                            <div className="text-sm font-medium text-slate-900">
-                              {trackedSession.id}
-                            </div>
-                            <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                              <div>
-                                <span className="font-medium text-slate-700">
-                                  {t("admin.members.sessionsStartedAt")}
-                                </span>
-                                <span className="ml-2">
-                                  {formatTimestamp(trackedSession.created_at)}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="font-medium text-slate-700">
-                                  {t("admin.members.sessionsExpiresAt")}
-                                </span>
-                                <span className="ml-2">
-                                  {formatTimestamp(trackedSession.expires_at)}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="font-medium text-slate-700">
-                                  {t("admin.members.sessionsDeviceLabel")}
-                                </span>
-                                <span className="ml-2">
-                                  {trackedSession.device_label ||
-                                    t("admin.directory.notAvailable")}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="font-medium text-slate-700">
-                                  {t("admin.members.sessionsIpAddress")}
-                                </span>
-                                <span className="ml-2">
-                                  {trackedSession.ip_address ||
-                                    t("admin.directory.notAvailable")}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <Button
-                            disabled={
-                              trackedSession.is_current ||
-                              activeUserSessionActionId === trackedSession.id
-                            }
-                            onClick={() =>
-                              void handleRevokeEditingUserSession(
-                                trackedSession.id,
-                              )
-                            }
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            {activeUserSessionActionId === trackedSession.id
-                              ? t("admin.actions.revokingSession")
-                              : t("admin.actions.revokeSession")}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              {directoryAuthMode?.supports_password_input ? (
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                  <div className="space-y-1">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      {t("admin.members.passwordResetTitle")}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      {t("admin.members.passwordResetDescription")}
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <AdminManagementField
-                      label={t("admin.members.passwordResetNewPassword")}
-                    >
-                      <Input
-                        autoComplete="new-password"
-                        onChange={(event) =>
-                          setEditUserResetPassword(event.target.value)
-                        }
-                        placeholder={t(
-                          "admin.members.passwordResetNewPasswordPlaceholder",
-                        )}
-                        type="password"
-                        value={editUserResetPassword}
-                      />
-                    </AdminManagementField>
-                    <AdminManagementField
-                      label={t("admin.members.passwordResetConfirmPassword")}
-                    >
-                      <Input
-                        autoComplete="new-password"
-                        onChange={(event) =>
-                          setEditUserResetPasswordConfirm(event.target.value)
-                        }
-                        placeholder={t(
-                          "admin.members.passwordResetConfirmPasswordPlaceholder",
-                        )}
-                        type="password"
-                        value={editUserResetPasswordConfirm}
-                      />
-                    </AdminManagementField>
-                  </div>
-                  <AdminManagementField
-                    label={t("admin.members.passwordResetReason")}
-                  >
-                    <Textarea
-                      className="min-h-[88px] rounded-xl border-slate-200 bg-white"
-                      onChange={(event) =>
-                        setEditUserResetPasswordReason(event.target.value)
-                      }
-                      placeholder={t(
-                        "admin.members.passwordResetReasonPlaceholder",
                       )}
-                      value={editUserResetPasswordReason}
-                    />
-                  </AdminManagementField>
-                  <div className="flex justify-end">
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Button
+                        asChild
+                        className="bg-white"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link
+                          href={
+                            workflowSignals.highestPressureTenant
+                              ?.overviewHref ??
+                            buildOperationsHref({
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? null
+                                  : selectedTenantId,
+                              lane: "overview",
+                              status: "all",
+                            })
+                          }
+                        >
+                          {t("admin.workflowRuntime.openOperations")}
+                        </Link>
+                      </Button>
+                    }
+                    description={t("admin.workflowRuntime.description")}
+                    title={t("admin.workflowRuntime.title")}
+                  />
+                  <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.workflowRuntime.metrics.failed")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedRecoveryRunCount}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.workflowRuntime.metrics.failedHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.workflowRuntime.metrics.queued")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedWorkflowMetrics.queued_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.workflowRuntime.metrics.queuedHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.workflowRuntime.metrics.running")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedWorkflowMetrics.running_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.workflowRuntime.metrics.runningHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.workflowRuntime.metrics.retries")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedWorkflowMetrics.retry_runs}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.workflowRuntime.metrics.retriesHint")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.workflowRuntime.pressureSignals")}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.workflowRuntime.tenantsWithFailures")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {workflowSignals.tenantsWithFailures}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t(
+                              "admin.workflowRuntime.tenantsWithQueuePressure",
+                            )}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {workflowSignals.tenantsWithQueuePressure}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.workflowRuntime.tenantsWithRetries")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {workflowSignals.tenantsWithRetries}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.workflowRuntime.tenantBreakdown")}
+                      </div>
+                      {tenantWorkflowActivity.slice(0, 4).map((item) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={item.tenant.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-base font-semibold text-slate-900">
+                                {item.tenant.name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {item.tenant.slug}
+                              </div>
+                            </div>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.workflowRuntime.failedRunCount", {
+                                count: String(item.recoveryPressure),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.workflowRuntime.queuePressureCount", {
+                                count: String(item.queuePressure),
+                              })}
+                            </Badge>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.workflowRuntime.retryRunCount", {
+                                count: String(item.metrics.retry_runs),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.failedHref}>
+                                {t("admin.workflowRuntime.openFailedLane")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.queueHref}>
+                                {t("admin.workflowRuntime.openQueueLane")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.workspaceWorkflowHref}>
+                                {t("admin.workflowRuntime.openWorkflowSurface")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {!isLoading && tenantWorkflowActivity.length === 0 ? (
+                        <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                          {t("admin.workflowRuntime.noTenantPressure")}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    action={
+                      <Button
+                        asChild
+                        className="bg-white"
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <Link
+                          href={
+                            documentSignals.highestPressureTenant
+                              ?.documentsHref ??
+                            buildAdminWorkspaceHref("overview", {
+                              view: "documents",
+                              tenantId:
+                                selectedTenantId === "all"
+                                  ? null
+                                  : selectedTenantId,
+                              workspaceId: scopedPrimaryWorkspace?.id ?? null,
+                              knowledgeBaseId:
+                                scopedPrimaryKnowledgeBase?.id ?? null,
+                            })
+                          }
+                        >
+                          {t("admin.documentRuntime.openDocuments")}
+                        </Link>
+                      </Button>
+                    }
+                    description={t("admin.documentRuntime.description")}
+                    title={t("admin.documentRuntime.title")}
+                  />
+                  <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.documentRuntime.metrics.failed")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedDocumentMetrics.failed_documents}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.documentRuntime.metrics.failedHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.documentRuntime.metrics.active")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedDocumentMetrics.active_documents}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.documentRuntime.metrics.activeHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.documentRuntime.metrics.completed")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedDocumentMetrics.completed_documents}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.documentRuntime.metrics.completedHint")}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.documentRuntime.metrics.total")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedDocumentMetrics.total_documents}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.documentRuntime.metrics.totalHint")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 border-t border-slate-100 p-6 xl:grid-cols-2">
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.documentRuntime.pressureSignals")}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.documentRuntime.tenantsWithFailures")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {documentSignals.tenantsWithFailedDocuments}
+                          </div>
+                        </div>
+                        <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.documentRuntime.tenantsWithActiveIntake")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {documentSignals.tenantsWithActiveIntake}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-slate-950">
+                        {t("admin.documentRuntime.tenantBreakdown")}
+                      </div>
+                      {tenantDocumentActivity.slice(0, 4).map((item) => (
+                        <div
+                          className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                          key={item.tenant.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-base font-semibold text-slate-900">
+                                {item.tenant.name}
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {item.tenant.slug}
+                              </div>
+                            </div>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.documentRuntime.failedDocumentCount", {
+                                count: String(item.metrics.failed_documents),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.documentRuntime.activeDocumentCount", {
+                                count: String(item.metrics.active_documents),
+                              })}
+                            </Badge>
+                            <Badge
+                              className="border-slate-200 bg-white text-slate-700"
+                              variant="outline"
+                            >
+                              {t("admin.documentRuntime.knowledgeBaseCount", {
+                                count: String(item.knowledgeBaseCount),
+                              })}
+                            </Badge>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.failedDocumentsHref}>
+                                {t("admin.documentRuntime.openFailedDocuments")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.documentsHref}>
+                                {t("admin.documentRuntime.openDocuments")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.operationsHref}>
+                                {t("admin.documentRuntime.openOperations")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {!isLoading && tenantDocumentActivity.length === 0 ? (
+                        <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-sm text-slate-500">
+                          {t("admin.documentRuntime.noTenantPressure")}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.chatScope.description")}
+                    title={t("admin.chatScope.title")}
+                  />
+                  <div className="space-y-3 px-6 py-5">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.chatScope.conversations")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedConversationMetrics.total_conversations}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.chatScope.activeConversationThreads", {
+                          count: String(
+                            scopedConversationMetrics.active_conversations,
+                          ),
+                        })}
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.chatScope.messages")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {scopedConversationMetrics.total_messages}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {scopedConversationMetrics.latest_activity_at
+                          ? t("admin.chatScope.latestActivity", {
+                              value: formatTimestamp(
+                                scopedConversationMetrics.latest_activity_at,
+                              ),
+                            })
+                          : t("admin.chatScope.noChatActivity")}
+                      </div>
+                    </div>
                     <Button
-                      disabled={
-                        isResettingEditingUserPassword ||
-                        !editUserResetPassword.trim() ||
-                        !editUserResetPasswordConfirm.trim()
-                      }
-                      onClick={() => void handleResetEditingUserPassword()}
+                      asChild
+                      className="w-full bg-white"
                       type="button"
                       variant="outline"
                     >
-                      {isResettingEditingUserPassword
-                        ? t("admin.actions.resettingMemberPassword")
-                        : t("admin.actions.resetMemberPassword")}
+                      <Link href={chatScopeHref}>
+                        {t("admin.chatScope.openScopedChatWorkspace")}
+                      </Link>
                     </Button>
                   </div>
-                </div>
+                </ConsoleSurface>
               ) : null}
 
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !editUserDisplayName.trim() ||
-                    !editUserEmail.trim() ||
-                    isUpdatingResource
-                  }
-                  onClick={() => void handleUpdateUser()}
-                  type="button"
-                >
-                  {isUpdatingResource
-                    ? t("workspace.sidebar.modal.saving")
-                    : t("admin.actions.saveMember")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
-
-        {managementPanel === "workspace-create" ? (
-          <AdminManagementDialog
-            description={t(
-              "workspace.sidebar.modal.workspaceCreateDescription",
-            )}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("workspace.sidebar.modal.workspaceCreateTitle")}
-          >
-            <DialogFormLayout>
-              <AdminManagementField
-                label={t("workspace.sidebar.sectionTenant")}
-              >
-                <Select
-                  onValueChange={setCreateWorkspaceTenantId}
-                  value={createWorkspaceTenantId}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t("workspace.sidebar.selectTenant")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tenants.map((tenant) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>
-                        {tenant.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </AdminManagementField>
-
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField
-                  className="xl:col-span-2"
-                  label={t("workspace.sidebar.modal.workspaceName")}
-                >
-                  <Input
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setCreateWorkspaceName(nextName);
-                      if (!createWorkspaceSlug.trim()) {
-                        setCreateWorkspaceSlug(slugifyValue(nextName));
-                      }
-                    }}
-                    placeholder={t(
-                      "workspace.sidebar.modal.workspaceNamePlaceholder",
-                    )}
-                    value={createWorkspaceName}
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.tenantChat.description")}
+                    title={t("admin.tenantChat.title")}
                   />
-                </AdminManagementField>
-
-                <AdminManagementField
-                  hint={t("workspace.sidebar.modal.workspaceSlugHint")}
-                  label={t("workspace.sidebar.modal.workspaceSlug")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setCreateWorkspaceSlug(slugifyValue(event.target.value))
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.workspaceSlugPlaceholder",
-                    )}
-                    value={createWorkspaceSlug}
-                  />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <AdminManagementField
-                hint={t("workspace.sidebar.modal.workspaceDescriptionHint")}
-                label={t("workspace.sidebar.modal.workspaceDescription")}
-              >
-                <Textarea
-                  className="min-h-[112px] resize-y"
-                  onChange={(event) =>
-                    setCreateWorkspaceDescription(event.target.value)
-                  }
-                  placeholder={t(
-                    "workspace.sidebar.modal.workspaceDescriptionPlaceholder",
-                  )}
-                  value={createWorkspaceDescription}
-                />
-              </AdminManagementField>
-
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !createWorkspaceTenantId ||
-                    !createWorkspaceName.trim() ||
-                    !createWorkspaceSlug.trim() ||
-                    isCreatingResource
-                  }
-                  onClick={handleCreateWorkspace}
-                  type="button"
-                >
-                  {isCreatingResource
-                    ? t("workspace.sidebar.modal.creating")
-                    : t("workspace.sidebar.modal.createWorkspace")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
-
-        {managementPanel === "workspace-edit" ? (
-          <AdminManagementDialog
-            description={t("workspace.sidebar.modal.workspaceEditDescription")}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("workspace.sidebar.modal.workspaceEditTitle")}
-          >
-            <DialogFormLayout>
-              <AdminManagementField
-                label={t("workspace.sidebar.sectionTenant")}
-              >
-                <Select
-                  onValueChange={setEditWorkspaceTenantId}
-                  value={editWorkspaceTenantId}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t("workspace.sidebar.selectTenant")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tenants.map((tenant) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>
-                        {tenant.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </AdminManagementField>
-
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField
-                  className="xl:col-span-2"
-                  label={t("workspace.sidebar.modal.workspaceName")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setEditWorkspaceName(event.target.value)
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.workspaceNamePlaceholder",
-                    )}
-                    value={editWorkspaceName}
-                  />
-                </AdminManagementField>
-
-                <AdminManagementField
-                  hint={t("workspace.sidebar.modal.workspaceSlugHint")}
-                  label={t("workspace.sidebar.modal.workspaceSlug")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setEditWorkspaceSlug(slugifyValue(event.target.value))
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.workspaceSlugPlaceholder",
-                    )}
-                    value={editWorkspaceSlug}
-                  />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <AdminManagementField
-                hint={t("workspace.sidebar.modal.workspaceDescriptionHint")}
-                label={t("workspace.sidebar.modal.workspaceDescription")}
-              >
-                <Textarea
-                  className="min-h-[112px] resize-y"
-                  onChange={(event) =>
-                    setEditWorkspaceDescription(event.target.value)
-                  }
-                  placeholder={t(
-                    "workspace.sidebar.modal.workspaceDescriptionPlaceholder",
-                  )}
-                  value={editWorkspaceDescription}
-                />
-              </AdminManagementField>
-
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !editWorkspaceTenantId ||
-                    !editWorkspaceName.trim() ||
-                    !editWorkspaceSlug.trim() ||
-                    isUpdatingResource
-                  }
-                  onClick={handleUpdateWorkspace}
-                  type="button"
-                >
-                  {isUpdatingResource
-                    ? t("workspace.sidebar.modal.saving")
-                    : t("workspace.sidebar.modal.saveWorkspace")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
-
-        {managementPanel === "knowledge-base-create" ? (
-          <AdminManagementDialog
-            description={t(
-              "workspace.sidebar.modal.knowledgeBaseCreateDescription",
-            )}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("workspace.sidebar.modal.knowledgeBaseCreateTitle")}
-          >
-            <DialogFormLayout>
-              <AdminManagementField
-                label={t("workspace.sidebar.sectionWorkspace")}
-              >
-                <Select
-                  onValueChange={setCreateKnowledgeBaseWorkspaceId}
-                  value={createKnowledgeBaseWorkspaceId}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t("workspace.sidebar.selectWorkspace")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(filteredWorkspaces.length > 0
-                      ? filteredWorkspaces
-                      : workspaces
-                    ).map((workspace) => (
-                      <SelectItem key={workspace.id} value={workspace.id}>
-                        {workspace.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </AdminManagementField>
-
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField
-                  className="xl:col-span-2"
-                  label={t("workspace.sidebar.modal.knowledgeBaseName")}
-                >
-                  <Input
-                    onChange={(event) => {
-                      const nextName = event.target.value;
-                      setCreateKnowledgeBaseName(nextName);
-                      if (!createKnowledgeBaseSlug.trim()) {
-                        setCreateKnowledgeBaseSlug(slugifyValue(nextName));
-                      }
-                    }}
-                    placeholder={t(
-                      "workspace.sidebar.modal.knowledgeBaseNamePlaceholder",
-                    )}
-                    value={createKnowledgeBaseName}
-                  />
-                </AdminManagementField>
-
-                <AdminManagementField
-                  hint={t("workspace.sidebar.modal.knowledgeBaseSlugHint")}
-                  label={t("workspace.sidebar.modal.knowledgeBaseSlug")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setCreateKnowledgeBaseSlug(
-                        slugifyValue(event.target.value),
-                      )
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.knowledgeBaseSlugPlaceholder",
-                    )}
-                    value={createKnowledgeBaseSlug}
-                  />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <AdminManagementField
-                hint={t("workspace.sidebar.modal.knowledgeBaseDescriptionHint")}
-                label={t("workspace.sidebar.modal.knowledgeBaseDescription")}
-              >
-                <Textarea
-                  className="min-h-[112px] resize-y"
-                  onChange={(event) =>
-                    setCreateKnowledgeBaseDescription(event.target.value)
-                  }
-                  placeholder={t(
-                    "workspace.sidebar.modal.knowledgeBaseDescriptionPlaceholder",
-                  )}
-                  value={createKnowledgeBaseDescription}
-                />
-              </AdminManagementField>
-
-              <AdminManagementField
-                hint={t(
-                  "workspace.sidebar.modal.knowledgeBaseRetrievalProfileHint",
-                )}
-                label={t(
-                  "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
-                )}
-              >
-                <Select
-                  onValueChange={(value) =>
-                    setCreateKnowledgeBaseRetrievalProfileId(
-                      value === "none" ? "" : value,
-                    )
-                  }
-                  value={createKnowledgeBaseRetrievalProfileId || "none"}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t(
-                        "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
-                      )}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      {t(
-                        "workspace.sidebar.modal.knowledgeBaseRetrievalProfileDefault",
-                      )}
-                    </SelectItem>
-                    {retrievalProfiles.map((retrievalProfile) => (
-                      <SelectItem
-                        key={retrievalProfile.id}
-                        value={retrievalProfile.id}
+                  <div className="space-y-3 px-6 py-5">
+                    {tenantChatActivity.slice(0, 6).map((item) => (
+                      <div
+                        className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                        key={item.tenant.id}
                       >
-                        {retrievalProfile.name}
-                      </SelectItem>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-base font-semibold text-slate-900">
+                              {item.tenant.name}
+                            </div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {item.tenant.slug}
+                            </div>
+                          </div>
+                          <Badge
+                            className="border-slate-200 bg-white text-slate-700"
+                            variant="outline"
+                          >
+                            {t("admin.tenantChat.messages", {
+                              count: String(item.metrics.total_messages),
+                            })}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                          <Badge
+                            className="border-slate-200 bg-white text-slate-700"
+                            variant="outline"
+                          >
+                            {t("admin.tenantChat.conversations", {
+                              count: String(item.metrics.total_conversations),
+                            })}
+                          </Badge>
+                          <Badge
+                            className="border-slate-200 bg-white text-slate-700"
+                            variant="outline"
+                          >
+                            {t("admin.tenantChat.active", {
+                              count: String(item.metrics.active_conversations),
+                            })}
+                          </Badge>
+                          <Badge
+                            className="border-slate-200 bg-white text-slate-700"
+                            variant="outline"
+                          >
+                            {t("admin.tenantChat.workspaces", {
+                              count: String(item.workspaceCount),
+                            })}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 text-sm text-slate-500">
+                          {item.metrics.latest_activity_at
+                            ? t("admin.tenantChat.latestActivity", {
+                                value: formatTimestamp(
+                                  item.metrics.latest_activity_at,
+                                ),
+                              })
+                            : t("admin.tenantChat.noChatActivity")}
+                        </div>
+                        <div className="mt-4">
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.openHref}>
+                                {t("admin.tenantChat.openTenantChat")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.documentsHref}>
+                                {t("shell.nav.documents")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.workflowsHref}>
+                                {t("shell.userMenu.operations")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.failedDocumentsHref}>
+                                {t("admin.tenantChat.failedDocs")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.failedWorkflowsHref}>
+                                {t("admin.tenantChat.failedWorkflows")}
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.governanceHref}>
+                                {t("admin.tenantChat.governance")}
+                              </Link>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     ))}
-                  </SelectContent>
-                </Select>
-              </AdminManagementField>
+                    {!isLoading && tenantChatActivity.length === 0 ? (
+                      <div className="text-sm text-slate-500">
+                        {t("admin.tenantChat.noTenantActivity")}
+                      </div>
+                    ) : null}
+                  </div>
+                </ConsoleSurface>
+              ) : null}
 
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !createKnowledgeBaseWorkspaceId ||
-                    !createKnowledgeBaseName.trim() ||
-                    !createKnowledgeBaseSlug.trim() ||
-                    isCreatingResource
-                  }
-                  onClick={handleCreateKnowledgeBase}
-                  type="button"
-                >
-                  {isCreatingResource
-                    ? t("workspace.sidebar.modal.creating")
-                    : t("workspace.sidebar.modal.createKnowledgeBase")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
-
-        {managementPanel === "knowledge-base-edit" ? (
-          <AdminManagementDialog
-            description={t(
-              "workspace.sidebar.modal.knowledgeBaseEditDescription",
-            )}
-            eyebrow={t("admin.title")}
-            onClose={() => setManagementPanel(null)}
-            title={t("workspace.sidebar.modal.knowledgeBaseEditTitle")}
-          >
-            <DialogFormLayout>
-              <AdminManagementField
-                label={t("workspace.sidebar.sectionWorkspace")}
-              >
-                <Select
-                  onValueChange={setEditKnowledgeBaseWorkspaceId}
-                  value={editKnowledgeBaseWorkspaceId}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t("workspace.sidebar.selectWorkspace")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {workspaces.map((workspace) => (
-                      <SelectItem key={workspace.id} value={workspace.id}>
-                        {workspace.name}
-                      </SelectItem>
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.executionPackets.description")}
+                    title={t("admin.executionPackets.title")}
+                  />
+                  <div className="grid gap-4 px-6 py-5 xl:grid-cols-2">
+                    {adminExecutionPackets.map((item) => (
+                      <ConsoleActionPacketCard
+                        detail={item.detail}
+                        key={item.title}
+                        metricLabel={item.metricLabel}
+                        metricValue={item.metricValue}
+                        primaryActionHref={item.primaryActionHref}
+                        primaryActionLabel={item.primaryActionLabel}
+                        primaryActionRunRecord={item.primaryActionRunRecord}
+                        secondaryActions={item.secondaryActions}
+                        status={item.status}
+                        statusLabel={
+                          item.status === "attention"
+                            ? t("admin.watchlist.attention")
+                            : item.status === "review"
+                              ? t("admin.watchlist.review")
+                              : t("admin.watchlist.healthy")
+                        }
+                        title={item.title}
+                      />
                     ))}
-                  </SelectContent>
-                </Select>
-              </AdminManagementField>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
 
-              <DialogFormGrid className="xl:grid-cols-3">
-                <AdminManagementField
-                  className="xl:col-span-2"
-                  label={t("workspace.sidebar.modal.knowledgeBaseName")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setEditKnowledgeBaseName(event.target.value)
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.knowledgeBaseNamePlaceholder",
-                    )}
-                    value={editKnowledgeBaseName}
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.chatSignals.description")}
+                    title={t("admin.chatSignals.title")}
                   />
-                </AdminManagementField>
+                  <div className="space-y-3 px-6 py-5">
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.chatSignals.mostActiveTenant")}
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900">
+                        {chatSignals.activeTenant?.tenant.name ??
+                          t("admin.chatSignals.noTenantActivity")}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {chatSignals.activeTenant
+                          ? t("admin.chatSignals.activeTenantDetail", {
+                              conversationCount: String(
+                                chatSignals.activeTenant.metrics
+                                  .total_conversations,
+                              ),
+                              messageCount: String(
+                                chatSignals.activeTenant.metrics.total_messages,
+                              ),
+                            })
+                          : t("admin.chatSignals.noPersistedMessages")}
+                      </div>
+                      <div className="mt-3">
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link
+                            href={
+                              chatSignals.activeTenant?.openHref ??
+                              chatScopeHref
+                            }
+                          >
+                            {t("admin.chatSignals.openTenantChat")}
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.chatSignals.staleChatTenants")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {chatSignals.staleTenantCount}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.chatSignals.staleChatDetail")}
+                      </div>
+                      <div className="mt-3">
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link href={staleChatScopeHref}>
+                            {t("admin.chatSignals.reviewChatScope")}
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {t("admin.chatSignals.idleConversationScope")}
+                      </div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">
+                        {chatSignals.idleConversationTenantCount}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {t("admin.chatSignals.idleConversationDetail")}
+                      </div>
+                      <div className="mt-3">
+                        <Button
+                          asChild
+                          className="bg-white"
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Link href={idleConversationScopeHref}>
+                            {t("admin.chatSignals.inspectIdleScope")}
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
 
-                <AdminManagementField
-                  hint={t("workspace.sidebar.modal.knowledgeBaseSlugHint")}
-                  label={t("workspace.sidebar.modal.knowledgeBaseSlug")}
-                >
-                  <Input
-                    onChange={(event) =>
-                      setEditKnowledgeBaseSlug(slugifyValue(event.target.value))
-                    }
-                    placeholder={t(
-                      "workspace.sidebar.modal.knowledgeBaseSlugPlaceholder",
-                    )}
-                    value={editKnowledgeBaseSlug}
+              {showAdvancedAdminSections && adminSection === "overview" ? (
+                <ConsoleSurface>
+                  <ConsoleSurfaceHeader
+                    description={t("admin.watchlist.description")}
+                    title={t("admin.watchlist.title")}
                   />
-                </AdminManagementField>
-              </DialogFormGrid>
-
-              <AdminManagementField
-                hint={t("workspace.sidebar.modal.knowledgeBaseDescriptionHint")}
-                label={t("workspace.sidebar.modal.knowledgeBaseDescription")}
-              >
-                <Textarea
-                  className="min-h-[112px] resize-y"
-                  onChange={(event) =>
-                    setEditKnowledgeBaseDescription(event.target.value)
-                  }
-                  placeholder={t(
-                    "workspace.sidebar.modal.knowledgeBaseDescriptionPlaceholder",
-                  )}
-                  value={editKnowledgeBaseDescription}
-                />
-              </AdminManagementField>
-
-              <AdminManagementField
-                hint={t(
-                  "workspace.sidebar.modal.knowledgeBaseRetrievalProfileHint",
-                )}
-                label={t(
-                  "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
-                )}
-              >
-                <Select
-                  onValueChange={(value) =>
-                    setEditKnowledgeBaseRetrievalProfileId(
-                      value === "none" ? "" : value,
-                    )
-                  }
-                  value={editKnowledgeBaseRetrievalProfileId || "none"}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t(
-                        "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
-                      )}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      {t(
-                        "workspace.sidebar.modal.knowledgeBaseRetrievalProfileDefault",
-                      )}
-                    </SelectItem>
-                    {retrievalProfiles.map((retrievalProfile) => (
-                      <SelectItem
-                        key={retrievalProfile.id}
-                        value={retrievalProfile.id}
+                  <div className="space-y-4 px-6 py-5">
+                    {adminWatchItems.map((item) => (
+                      <div
+                        className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-5"
+                        key={item.title}
                       >
-                        {retrievalProfile.name}
-                      </SelectItem>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-base font-semibold text-slate-900">
+                            {item.title}
+                          </div>
+                          <Badge
+                            className={cn(
+                              "border",
+                              getWatchStatusClass(item.status),
+                            )}
+                            variant="outline"
+                          >
+                            {item.status === "attention"
+                              ? t("admin.watchlist.attention")
+                              : item.status === "review"
+                                ? t("admin.watchlist.review")
+                                : t("admin.watchlist.healthy")}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 text-sm leading-6 text-slate-500">
+                          {item.detail}
+                        </div>
+                        {item.actionHref && item.actionLabel ? (
+                          <div className="mt-4">
+                            <Button
+                              asChild
+                              className="bg-white"
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Link href={item.actionHref}>
+                                {item.actionLabel}
+                              </Link>
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
                     ))}
-                  </SelectContent>
-                </Select>
-              </AdminManagementField>
+                  </div>
+                </ConsoleSurface>
+              ) : null}
+            </div>
 
-              <DialogFormActions>
-                <Button
-                  onClick={() => setManagementPanel(null)}
-                  type="button"
-                  variant="outline"
-                >
-                  {t("workspace.sidebar.modal.cancel")}
-                </Button>
-                <Button
-                  disabled={
-                    !editKnowledgeBaseWorkspaceId ||
-                    !editKnowledgeBaseName.trim() ||
-                    !editKnowledgeBaseSlug.trim() ||
-                    isUpdatingResource
-                  }
-                  onClick={handleUpdateKnowledgeBase}
-                  type="button"
-                >
-                  {isUpdatingResource
-                    ? t("workspace.sidebar.modal.saving")
-                    : t("workspace.sidebar.modal.saveKnowledgeBase")}
-                </Button>
-              </DialogFormActions>
-            </DialogFormLayout>
-          </AdminManagementDialog>
-        ) : null}
+            {managementPanel === "tenant-create" ? (
+              <AdminManagementDialog
+                description={t(
+                  "workspace.sidebar.modal.tenantCreateDescription",
+                )}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("workspace.sidebar.modal.tenantCreateTitle")}
+              >
+                <DialogFormLayout>
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      hint={t("workspace.sidebar.modal.tenantSlugHint")}
+                      label={t("workspace.sidebar.modal.tenantName")}
+                    >
+                      <Input
+                        onChange={(event) => {
+                          const nextName = event.target.value;
+                          setCreateTenantName(nextName);
+                          if (!createTenantSlug.trim()) {
+                            setCreateTenantSlug(slugifyValue(nextName));
+                          }
+                        }}
+                        placeholder={t(
+                          "workspace.sidebar.modal.tenantNamePlaceholder",
+                        )}
+                        value={createTenantName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      label={t("workspace.sidebar.modal.tenantSlug")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setCreateTenantSlug(slugifyValue(event.target.value))
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.tenantSlugPlaceholder",
+                        )}
+                        value={createTenantSlug}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !createTenantName.trim() ||
+                        !createTenantSlug.trim() ||
+                        isCreatingResource
+                      }
+                      onClick={handleCreateTenant}
+                      type="button"
+                    >
+                      {isCreatingResource
+                        ? t("workspace.sidebar.modal.creating")
+                        : t("workspace.sidebar.modal.createTenant")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
+
+            {managementPanel === "user-create" ? (
+              <AdminManagementDialog
+                description={t("admin.members.createDescription")}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("admin.members.createTitle")}
+              >
+                <DialogFormLayout>
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      label={t("admin.members.displayName")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setCreateUserDisplayName(event.target.value)
+                        }
+                        placeholder={t("admin.members.displayNamePlaceholder")}
+                        value={createUserDisplayName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      label={t("admin.members.email")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setCreateUserEmail(event.target.value)
+                        }
+                        placeholder={t("admin.members.emailPlaceholder")}
+                        type="email"
+                        value={createUserEmail}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <DialogFormGrid className="lg:grid-cols-3">
+                    <AdminManagementField label={t("admin.members.role")}>
+                      <Select
+                        onValueChange={(value) =>
+                          setCreateUserRole(
+                            value as "super_admin" | "operator" | "reviewer",
+                          )
+                        }
+                        value={createUserRole}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("admin.members.role")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="super_admin">
+                            {t("auth.roles.superAdmin")}
+                          </SelectItem>
+                          <SelectItem value="operator">
+                            {t("auth.roles.operator")}
+                          </SelectItem>
+                          <SelectItem value="reviewer">
+                            {t("auth.roles.reviewer")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      label={t("admin.members.initialTenant")}
+                    >
+                      <Select
+                        onValueChange={setCreateUserTenantId}
+                        value={createUserTenantId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={t("admin.members.initialTenant")}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">
+                            {t("admin.members.noInitialTenant")}
+                          </SelectItem>
+                          {tenants.map((tenant) => (
+                            <SelectItem key={tenant.id} value={tenant.id}>
+                              {tenant.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      label={t("admin.members.initialMembershipStatus")}
+                    >
+                      <Select
+                        onValueChange={(value) =>
+                          setCreateUserMembershipStatus(
+                            value as "active" | "invited" | "suspended",
+                          )
+                        }
+                        value={createUserMembershipStatus}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={t(
+                              "admin.members.initialMembershipStatus",
+                            )}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">
+                            {t("admin.members.activeMembership")}
+                          </SelectItem>
+                          <SelectItem value="invited">
+                            {t("admin.members.invitedMembership")}
+                          </SelectItem>
+                          <SelectItem value="suspended">
+                            {t("admin.members.suspendedMembership")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !createUserDisplayName.trim() ||
+                        !createUserEmail.trim() ||
+                        isCreatingResource
+                      }
+                      onClick={handleCreateUser}
+                      type="button"
+                    >
+                      {isCreatingResource
+                        ? t("workspace.sidebar.modal.creating")
+                        : t("admin.actions.createMember")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
+
+            {managementPanel === "user-edit" ? (
+              <AdminManagementDialog
+                description={t("admin.members.editDescription")}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("admin.members.editTitle")}
+              >
+                <DialogFormLayout>
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      label={t("admin.members.displayName")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setEditUserDisplayName(event.target.value)
+                        }
+                        placeholder={t("admin.members.displayNamePlaceholder")}
+                        value={editUserDisplayName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      label={t("admin.members.email")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setEditUserEmail(event.target.value)
+                        }
+                        placeholder={t("admin.members.emailPlaceholder")}
+                        type="email"
+                        value={editUserEmail}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <DialogFormGrid>
+                    <AdminManagementField label={t("admin.members.role")}>
+                      <Select
+                        onValueChange={(value) =>
+                          setEditUserRole(
+                            value as "super_admin" | "operator" | "reviewer",
+                          )
+                        }
+                        value={editUserRole}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("admin.members.role")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="super_admin">
+                            {t("auth.roles.superAdmin")}
+                          </SelectItem>
+                          <SelectItem value="operator">
+                            {t("auth.roles.operator")}
+                          </SelectItem>
+                          <SelectItem value="reviewer">
+                            {t("auth.roles.reviewer")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      label={t("admin.members.accountFilter")}
+                    >
+                      <Select
+                        onValueChange={(value) =>
+                          setEditUserIsActive(value as "active" | "inactive")
+                        }
+                        value={editUserIsActive}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={t("admin.members.accountFilter")}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">
+                            {t("admin.members.activeAccount")}
+                          </SelectItem>
+                          <SelectItem value="inactive">
+                            {t("admin.members.inactiveAccount")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        {t("admin.members.accessPostureTitle")}
+                      </div>
+                      <div className="text-sm text-slate-600">
+                        {t("admin.members.accessPostureDescription")}
+                      </div>
+                    </div>
+
+                    {editingUserAccessSummary ? (
+                      <>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.activity.latestEvent")}
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-slate-950">
+                              {editingUserAccessSummary.latest_event_type
+                                ? getAccessEventLabel(
+                                    editingUserAccessSummary.latest_event_type,
+                                    t,
+                                  )
+                                : t("settings.activity.empty")}
+                            </div>
+                            <div className="mt-2 text-sm text-slate-500">
+                              {editingUserAccessSummary.latest_event_at
+                                ? formatTimestamp(
+                                    editingUserAccessSummary.latest_event_at,
+                                  )
+                                : t("settings.activity.notAvailable")}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.activity.lastSignIn")}
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-slate-950">
+                              {editingUserAccessSummary.recent_sign_in_events >
+                              0
+                                ? t("settings.activity.loadedLoginEvents", {
+                                    count:
+                                      editingUserAccessSummary.recent_sign_in_events,
+                                  })
+                                : t("settings.activity.noLoginEvents")}
+                            </div>
+                            <div className="mt-2 text-sm text-slate-500">
+                              {editingUserAccessSummary.total_audit_events}{" "}
+                              {t("admin.members.auditEventsSuffix")}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.posture.recentFailedSignIns")}
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-950">
+                              {
+                                editingUserAccessSummary.recent_failed_sign_in_events
+                              }
+                            </div>
+                            <div className="mt-2 text-sm text-slate-500">
+                              {t("settings.posture.recentFailedSignInsHint")}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.sessions.summary.total")}
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-950">
+                              {editingUserAccessSummary.active_sessions}
+                            </div>
+                            <div className="mt-2 text-sm text-slate-500">
+                              {t("admin.members.sessionsExpiringHint", {
+                                count: String(
+                                  editingUserAccessSummary.sessions_expiring_within_24_hours,
+                                ),
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {editingUserAccessSummary.review_items.filter(
+                          (item) =>
+                            item.severity !== "healthy" && item.item_count > 0,
+                        ).length > 0 ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {editingUserAccessSummary.review_items
+                              .filter(
+                                (item) =>
+                                  item.severity !== "healthy" &&
+                                  item.item_count > 0,
+                              )
+                              .map((item) => (
+                                <div
+                                  className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3"
+                                  key={`${editingUserAccessSummary.latest_event_at ?? "none"}-${item.category}`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-sm font-semibold text-slate-950">
+                                      {item.category === "expired_invitations"
+                                        ? t(
+                                            "admin.securityWatch.expiredInvitations",
+                                          )
+                                        : item.category ===
+                                            "expiring_invitations"
+                                          ? t(
+                                              "admin.securityWatch.expiringInvitations",
+                                            )
+                                          : item.category ===
+                                              "failed_sign_in_pressure"
+                                            ? t(
+                                                "admin.securityWatch.failedSignInPressure",
+                                              )
+                                            : item.category ===
+                                                "invitation_activation_pressure"
+                                              ? t(
+                                                  "admin.securityWatch.invitationActivationPressure",
+                                                )
+                                              : t(
+                                                  "admin.securityWatch.sessionSpreadPressure",
+                                                )}
+                                    </div>
+                                    <Badge
+                                      className={
+                                        item.severity === "attention"
+                                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                                          : "border-amber-200 bg-amber-50 text-amber-700"
+                                      }
+                                      variant="outline"
+                                    >
+                                      {item.item_count}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-2 text-sm leading-6 text-slate-600">
+                                    {item.category === "expired_invitations"
+                                      ? t(
+                                          "admin.securityWatch.expiredInvitationsDetail",
+                                          { count: String(item.item_count) },
+                                        )
+                                      : item.category === "expiring_invitations"
+                                        ? t(
+                                            "admin.securityWatch.expiringInvitationsDetail",
+                                            { count: String(item.item_count) },
+                                          )
+                                        : item.category ===
+                                            "failed_sign_in_pressure"
+                                          ? editingUserAccessSummary.sign_in_lockout_expires_at
+                                            ? `${t("admin.securityWatch.failedSignInPressureDetail", { count: String(item.item_count) })} ${formatTimestamp(editingUserAccessSummary.sign_in_lockout_expires_at)}`
+                                            : t(
+                                                "admin.securityWatch.failedSignInPressureDetail",
+                                                {
+                                                  count: String(
+                                                    item.item_count,
+                                                  ),
+                                                },
+                                              )
+                                          : item.category ===
+                                              "invitation_activation_pressure"
+                                            ? t(
+                                                "admin.securityWatch.invitationActivationPressureDetail",
+                                                {
+                                                  count: String(
+                                                    item.item_count,
+                                                  ),
+                                                },
+                                              )
+                                            : t(
+                                                "admin.securityWatch.sessionSpreadPressureDetail",
+                                                {
+                                                  count: String(
+                                                    item.item_count,
+                                                  ),
+                                                },
+                                              )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        ) : null}
+
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.posture.activeMemberships")}
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-950">
+                              {editingUserAccessSummary.active_memberships}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.posture.invitedMemberships")}
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-950">
+                              {editingUserAccessSummary.invited_memberships}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.posture.expiringInvitations")}
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-950">
+                              {editingUserAccessSummary.expiring_invitations +
+                                editingUserAccessSummary.expired_invitations}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("settings.posture.sensitiveEvents")}
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-950">
+                              {editingUserAccessSummary.sensitive_audit_events}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("admin.securityWatch.failedSignInPressure")}
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-slate-950">
+                              {editingUserAccessSummary.sign_in_lockout_active
+                                ? t("settings.fields.membershipAccessBlocked")
+                                : t("settings.fields.membershipAccessReady")}
+                            </div>
+                            <div className="mt-2 text-sm text-slate-500">
+                              {editingUserAccessSummary.sign_in_lockout_active &&
+                              editingUserAccessSummary.sign_in_lockout_expires_at
+                                ? formatTimestamp(
+                                    editingUserAccessSummary.sign_in_lockout_expires_at,
+                                  )
+                                : t(
+                                    "admin.securityWatch.failedSignInPressureHealthy",
+                                  )}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              {t("admin.securityWatch.sessionSpreadPressure")}
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-slate-950">
+                              {editingUserAccessSummary.session_spread_detected
+                                ? t("settings.fields.membershipAccessBlocked")
+                                : t("settings.fields.membershipAccessReady")}
+                            </div>
+                            <div className="mt-2 text-sm text-slate-500">
+                              {editingUserAccessSummary.session_spread_detected
+                                ? t(
+                                    "admin.securityWatch.sessionSpreadPressureDetail",
+                                    { count: "1" },
+                                  )
+                                : t(
+                                    "admin.securityWatch.sessionSpreadPressureHealthy",
+                                  )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                        {t("admin.members.accessPostureEmpty")}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          {t("admin.members.accessEventsTitle")}
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {t("admin.members.accessEventsDescription")}
+                        </div>
+                      </div>
+                      <Button
+                        disabled={
+                          !editingUserId || isLoadingEditingUserAccessEvents
+                        }
+                        onClick={() =>
+                          editingUserId
+                            ? void refreshEditingUserSessions(editingUserId)
+                            : undefined
+                        }
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <RefreshCw
+                          className={`mr-2 h-4 w-4 ${isLoadingEditingUserAccessEvents ? "animate-spin" : ""}`}
+                        />
+                        {isLoadingEditingUserAccessEvents
+                          ? t("admin.actions.refreshingActivity")
+                          : t("admin.actions.refreshActivity")}
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t("admin.audit.filter")}
+                        </div>
+                        <Select
+                          onValueChange={(value) =>
+                            setEditingUserAccessEventFilter(
+                              value as (typeof AUDIT_EVENT_FILTER_VALUES)[number],
+                            )
+                          }
+                          value={editingUserAccessEventFilter}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white">
+                            <SelectValue
+                              placeholder={t("admin.audit.allEvents")}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("admin.audit.allEvents")}
+                            </SelectItem>
+                            <SelectItem value="sign_in_failed">
+                              {t("admin.audit.eventTypes.signInFailed")}
+                            </SelectItem>
+                            <SelectItem value="sign_in_succeeded">
+                              {t("admin.audit.eventTypes.signInSucceeded")}
+                            </SelectItem>
+                            <SelectItem value="invitation_activation_failed">
+                              {t(
+                                "admin.audit.eventTypes.invitationActivationFailed",
+                              )}
+                            </SelectItem>
+                            <SelectItem value="sign_out_succeeded">
+                              {t("admin.audit.eventTypes.signOutSucceeded")}
+                            </SelectItem>
+                            <SelectItem value="session_revoked">
+                              {t("admin.audit.eventTypes.sessionRevoked")}
+                            </SelectItem>
+                            <SelectItem value="password_changed">
+                              {t("admin.audit.eventTypes.passwordChanged")}
+                            </SelectItem>
+                            <SelectItem value="password_reset">
+                              {t("admin.audit.eventTypes.passwordReset")}
+                            </SelectItem>
+                            <SelectItem value="invitation_issued">
+                              {t("admin.audit.eventTypes.invitationIssued")}
+                            </SelectItem>
+                            <SelectItem value="invitation_activated">
+                              {t("admin.audit.eventTypes.invitationActivated")}
+                            </SelectItem>
+                            <SelectItem value="invitation_revoked">
+                              {t("admin.audit.eventTypes.invitationRevoked")}
+                            </SelectItem>
+                            <SelectItem value="membership_active">
+                              {t("admin.audit.eventTypes.membershipActive")}
+                            </SelectItem>
+                            <SelectItem value="membership_suspended">
+                              {t("admin.audit.eventTypes.membershipSuspended")}
+                            </SelectItem>
+                            <SelectItem value="membership_deleted">
+                              {t("admin.audit.eventTypes.membershipDeleted")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {t("admin.members.accessEventsSearch")}
+                        </div>
+                        <Input
+                          className="rounded-xl border-slate-200 bg-white"
+                          onChange={(event) =>
+                            setEditingUserAccessSearchQuery(event.target.value)
+                          }
+                          placeholder={t(
+                            "admin.members.accessEventsSearchPlaceholder",
+                          )}
+                          value={editingUserAccessSearchQuery}
+                        />
+                      </div>
+                    </div>
+
+                    {editingUserAccessEventsErrorMessage ? (
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                        {editingUserAccessEventsErrorMessage}
+                      </div>
+                    ) : null}
+
+                    {isLoadingEditingUserAccessEvents &&
+                    editingUserAccessEvents.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                        {t("admin.actions.refreshingActivity")}
+                      </div>
+                    ) : null}
+
+                    {!isLoadingEditingUserAccessEvents &&
+                    editingUserAccessEvents.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                        {t("admin.members.accessEventsEmpty")}
+                      </div>
+                    ) : null}
+
+                    {editingUserAccessEvents.length > 0 ? (
+                      <div className="space-y-3">
+                        {editingUserAccessEvents.map((event) => {
+                          const reason =
+                            typeof event.detail_json.reason === "string"
+                              ? event.detail_json.reason
+                              : null;
+                          const loginMode =
+                            typeof event.detail_json.login_mode === "string"
+                              ? event.detail_json.login_mode
+                              : null;
+                          const sessionId =
+                            typeof event.detail_json.session_id === "string"
+                              ? event.detail_json.session_id
+                              : null;
+
+                          return (
+                            <div
+                              className="rounded-xl border border-slate-200 bg-white px-4 py-4"
+                              key={event.id}
+                            >
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="space-y-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      className="border-slate-200 bg-slate-50 text-slate-700"
+                                      variant="outline"
+                                    >
+                                      {getAccessEventLabel(event.event_type, t)}
+                                    </Badge>
+                                    <Badge
+                                      className="border-slate-200 bg-white text-slate-700"
+                                      variant="outline"
+                                    >
+                                      {event.tenant_name ??
+                                        t("settings.activity.noTenant")}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                                    <div>
+                                      <span className="font-medium text-slate-700">
+                                        {t("admin.members.accessEventAt")}
+                                      </span>
+                                      <span className="ml-2">
+                                        {formatTimestamp(event.created_at)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-slate-700">
+                                        {t("settings.activity.issuedBy")}
+                                      </span>
+                                      <span className="ml-2">
+                                        {event.actor_display_name ??
+                                          t("settings.activity.noActor")}
+                                      </span>
+                                    </div>
+                                    {loginMode ? (
+                                      <div>
+                                        <span className="font-medium text-slate-700">
+                                          {t("settings.activity.loginMode")}
+                                        </span>
+                                        <span className="ml-2">
+                                          {formatAuthenticationModeLabel(
+                                            loginMode,
+                                            t,
+                                          )}
+                                        </span>
+                                      </div>
+                                    ) : null}
+                                    {sessionId ? (
+                                      <div className="sm:col-span-2">
+                                        <span className="font-medium text-slate-700">
+                                          {t("settings.activity.sessionId")}
+                                        </span>
+                                        <span className="ml-2 font-mono text-xs text-slate-500">
+                                          {sessionId}
+                                        </span>
+                                      </div>
+                                    ) : null}
+                                    {reason ? (
+                                      <div className="sm:col-span-2">
+                                        <span className="font-medium text-slate-700">
+                                          {t("admin.audit.reasonLabel")}
+                                        </span>
+                                        <span className="ml-2">{reason}</span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="shrink-0 text-xs text-slate-400">
+                                  {event.user_display_name}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          {t("admin.members.sessionsTitle")}
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {t("admin.members.sessionsDescription")}
+                        </div>
+                      </div>
+                      <Button
+                        disabled={
+                          !editingUserId || isLoadingEditingUserSessions
+                        }
+                        onClick={() => void handleRefreshEditingUserSessions()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <RefreshCw
+                          className={`mr-2 h-4 w-4 ${isLoadingEditingUserSessions ? "animate-spin" : ""}`}
+                        />
+                        {isLoadingEditingUserSessions
+                          ? t("admin.actions.refreshingSessions")
+                          : t("admin.actions.refreshSessions")}
+                      </Button>
+                    </div>
+
+                    {editingUserSessionsErrorMessage ? (
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                        {editingUserSessionsErrorMessage}
+                      </div>
+                    ) : null}
+
+                    {editingUserSessionSecuritySummary ? (
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.members.sessionSummary.total")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              editingUserSessionSecuritySummary.total_active_sessions
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.members.sessionSummary.other")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              editingUserSessionSecuritySummary.other_active_sessions
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.members.sessionSummary.expiring")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              editingUserSessionSecuritySummary.expires_within_24_hours
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.members.sessionSummary.currentExpiry")}
+                          </div>
+                          <div className="mt-2 text-sm font-semibold text-slate-950">
+                            {editingUserSessionSecuritySummary.current_session_expires_at
+                              ? formatTimestamp(
+                                  editingUserSessionSecuritySummary.current_session_expires_at,
+                                )
+                              : t("admin.directory.notAvailable")}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.members.sessionSummary.devices")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              editingUserSessionSecuritySummary.distinct_device_count
+                            }
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {t("admin.members.sessionSummary.ips")}
+                          </div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">
+                            {
+                              editingUserSessionSecuritySummary.distinct_ip_count
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {isLoadingEditingUserSessions &&
+                    editingUserSessions.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                        {t("admin.actions.refreshingSessions")}
+                      </div>
+                    ) : null}
+
+                    {!isLoadingEditingUserSessions &&
+                    editingUserSessions.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                        {t("admin.members.sessionsEmpty")}
+                      </div>
+                    ) : null}
+
+                    {editingUserSessions.length > 0 ? (
+                      <div className="space-y-3">
+                        {editingUserSessions.map((trackedSession) => (
+                          <div
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-4"
+                            key={trackedSession.id}
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="space-y-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    className={
+                                      trackedSession.is_current
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : ""
+                                    }
+                                    variant={
+                                      trackedSession.is_current
+                                        ? "outline"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {trackedSession.is_current
+                                      ? t("admin.members.sessionsCurrent")
+                                      : t("admin.members.sessionsOther")}
+                                  </Badge>
+                                  <Badge variant="outline">
+                                    {formatAuthenticationModeLabel(
+                                      trackedSession.authentication_mode,
+                                      t,
+                                    )}
+                                  </Badge>
+                                </div>
+                                <div className="text-sm font-medium text-slate-900">
+                                  {trackedSession.id}
+                                </div>
+                                <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                                  <div>
+                                    <span className="font-medium text-slate-700">
+                                      {t("admin.members.sessionsStartedAt")}
+                                    </span>
+                                    <span className="ml-2">
+                                      {formatTimestamp(
+                                        trackedSession.created_at,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-slate-700">
+                                      {t("admin.members.sessionsExpiresAt")}
+                                    </span>
+                                    <span className="ml-2">
+                                      {formatTimestamp(
+                                        trackedSession.expires_at,
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-slate-700">
+                                      {t("admin.members.sessionsDeviceLabel")}
+                                    </span>
+                                    <span className="ml-2">
+                                      {trackedSession.device_label ||
+                                        t("admin.directory.notAvailable")}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-slate-700">
+                                      {t("admin.members.sessionsIpAddress")}
+                                    </span>
+                                    <span className="ml-2">
+                                      {trackedSession.ip_address ||
+                                        t("admin.directory.notAvailable")}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <Button
+                                disabled={
+                                  trackedSession.is_current ||
+                                  activeUserSessionActionId ===
+                                    trackedSession.id
+                                }
+                                onClick={() =>
+                                  void handleRevokeEditingUserSession(
+                                    trackedSession.id,
+                                  )
+                                }
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                {activeUserSessionActionId === trackedSession.id
+                                  ? t("admin.actions.revokingSession")
+                                  : t("admin.actions.revokeSession")}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {directoryAuthMode?.supports_password_input ? (
+                    <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          {t("admin.members.passwordResetTitle")}
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          {t("admin.members.passwordResetDescription")}
+                        </div>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <AdminManagementField
+                          label={t("admin.members.passwordResetNewPassword")}
+                        >
+                          <Input
+                            autoComplete="new-password"
+                            onChange={(event) =>
+                              setEditUserResetPassword(event.target.value)
+                            }
+                            placeholder={t(
+                              "admin.members.passwordResetNewPasswordPlaceholder",
+                            )}
+                            type="password"
+                            value={editUserResetPassword}
+                          />
+                        </AdminManagementField>
+                        <AdminManagementField
+                          label={t(
+                            "admin.members.passwordResetConfirmPassword",
+                          )}
+                        >
+                          <Input
+                            autoComplete="new-password"
+                            onChange={(event) =>
+                              setEditUserResetPasswordConfirm(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={t(
+                              "admin.members.passwordResetConfirmPasswordPlaceholder",
+                            )}
+                            type="password"
+                            value={editUserResetPasswordConfirm}
+                          />
+                        </AdminManagementField>
+                      </div>
+                      <AdminManagementField
+                        label={t("admin.members.passwordResetReason")}
+                      >
+                        <Textarea
+                          className="min-h-[88px] rounded-xl border-slate-200 bg-white"
+                          onChange={(event) =>
+                            setEditUserResetPasswordReason(event.target.value)
+                          }
+                          placeholder={t(
+                            "admin.members.passwordResetReasonPlaceholder",
+                          )}
+                          value={editUserResetPasswordReason}
+                        />
+                      </AdminManagementField>
+                      <div className="flex justify-end">
+                        <Button
+                          disabled={
+                            isResettingEditingUserPassword ||
+                            !editUserResetPassword.trim() ||
+                            !editUserResetPasswordConfirm.trim()
+                          }
+                          onClick={() => void handleResetEditingUserPassword()}
+                          type="button"
+                          variant="outline"
+                        >
+                          {isResettingEditingUserPassword
+                            ? t("admin.actions.resettingMemberPassword")
+                            : t("admin.actions.resetMemberPassword")}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !editUserDisplayName.trim() ||
+                        !editUserEmail.trim() ||
+                        isUpdatingResource
+                      }
+                      onClick={() => void handleUpdateUser()}
+                      type="button"
+                    >
+                      {isUpdatingResource
+                        ? t("workspace.sidebar.modal.saving")
+                        : t("admin.actions.saveMember")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
+
+            {managementPanel === "workspace-create" ? (
+              <AdminManagementDialog
+                description={t(
+                  "workspace.sidebar.modal.workspaceCreateDescription",
+                )}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("workspace.sidebar.modal.workspaceCreateTitle")}
+              >
+                <DialogFormLayout>
+                  <AdminManagementField
+                    label={t("workspace.sidebar.sectionTenant")}
+                  >
+                    <Select
+                      onValueChange={setCreateWorkspaceTenantId}
+                      value={createWorkspaceTenantId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t("workspace.sidebar.selectTenant")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tenants.map((tenant) => (
+                          <SelectItem key={tenant.id} value={tenant.id}>
+                            {tenant.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </AdminManagementField>
+
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      label={t("workspace.sidebar.modal.workspaceName")}
+                    >
+                      <Input
+                        onChange={(event) => {
+                          const nextName = event.target.value;
+                          setCreateWorkspaceName(nextName);
+                          if (!createWorkspaceSlug.trim()) {
+                            setCreateWorkspaceSlug(slugifyValue(nextName));
+                          }
+                        }}
+                        placeholder={t(
+                          "workspace.sidebar.modal.workspaceNamePlaceholder",
+                        )}
+                        value={createWorkspaceName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      hint={t("workspace.sidebar.modal.workspaceSlugHint")}
+                      label={t("workspace.sidebar.modal.workspaceSlug")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setCreateWorkspaceSlug(
+                            slugifyValue(event.target.value),
+                          )
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.workspaceSlugPlaceholder",
+                        )}
+                        value={createWorkspaceSlug}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <AdminManagementField
+                    hint={t("workspace.sidebar.modal.workspaceDescriptionHint")}
+                    label={t("workspace.sidebar.modal.workspaceDescription")}
+                  >
+                    <Textarea
+                      className="min-h-[112px] resize-y"
+                      onChange={(event) =>
+                        setCreateWorkspaceDescription(event.target.value)
+                      }
+                      placeholder={t(
+                        "workspace.sidebar.modal.workspaceDescriptionPlaceholder",
+                      )}
+                      value={createWorkspaceDescription}
+                    />
+                  </AdminManagementField>
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !createWorkspaceTenantId ||
+                        !createWorkspaceName.trim() ||
+                        !createWorkspaceSlug.trim() ||
+                        isCreatingResource
+                      }
+                      onClick={handleCreateWorkspace}
+                      type="button"
+                    >
+                      {isCreatingResource
+                        ? t("workspace.sidebar.modal.creating")
+                        : t("workspace.sidebar.modal.createWorkspace")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
+
+            {managementPanel === "workspace-edit" ? (
+              <AdminManagementDialog
+                description={t(
+                  "workspace.sidebar.modal.workspaceEditDescription",
+                )}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("workspace.sidebar.modal.workspaceEditTitle")}
+              >
+                <DialogFormLayout>
+                  <AdminManagementField
+                    label={t("workspace.sidebar.sectionTenant")}
+                  >
+                    <Select
+                      onValueChange={setEditWorkspaceTenantId}
+                      value={editWorkspaceTenantId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t("workspace.sidebar.selectTenant")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tenants.map((tenant) => (
+                          <SelectItem key={tenant.id} value={tenant.id}>
+                            {tenant.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </AdminManagementField>
+
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      label={t("workspace.sidebar.modal.workspaceName")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setEditWorkspaceName(event.target.value)
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.workspaceNamePlaceholder",
+                        )}
+                        value={editWorkspaceName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      hint={t("workspace.sidebar.modal.workspaceSlugHint")}
+                      label={t("workspace.sidebar.modal.workspaceSlug")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setEditWorkspaceSlug(slugifyValue(event.target.value))
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.workspaceSlugPlaceholder",
+                        )}
+                        value={editWorkspaceSlug}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <AdminManagementField
+                    hint={t("workspace.sidebar.modal.workspaceDescriptionHint")}
+                    label={t("workspace.sidebar.modal.workspaceDescription")}
+                  >
+                    <Textarea
+                      className="min-h-[112px] resize-y"
+                      onChange={(event) =>
+                        setEditWorkspaceDescription(event.target.value)
+                      }
+                      placeholder={t(
+                        "workspace.sidebar.modal.workspaceDescriptionPlaceholder",
+                      )}
+                      value={editWorkspaceDescription}
+                    />
+                  </AdminManagementField>
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !editWorkspaceTenantId ||
+                        !editWorkspaceName.trim() ||
+                        !editWorkspaceSlug.trim() ||
+                        isUpdatingResource
+                      }
+                      onClick={handleUpdateWorkspace}
+                      type="button"
+                    >
+                      {isUpdatingResource
+                        ? t("workspace.sidebar.modal.saving")
+                        : t("workspace.sidebar.modal.saveWorkspace")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
+
+            {managementPanel === "knowledge-base-create" ? (
+              <AdminManagementDialog
+                description={t(
+                  "workspace.sidebar.modal.knowledgeBaseCreateDescription",
+                )}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("workspace.sidebar.modal.knowledgeBaseCreateTitle")}
+              >
+                <DialogFormLayout>
+                  <AdminManagementField
+                    label={t("workspace.sidebar.sectionWorkspace")}
+                  >
+                    <Select
+                      onValueChange={setCreateKnowledgeBaseWorkspaceId}
+                      value={createKnowledgeBaseWorkspaceId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t("workspace.sidebar.selectWorkspace")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(filteredWorkspaces.length > 0
+                          ? filteredWorkspaces
+                          : workspaces
+                        ).map((workspace) => (
+                          <SelectItem key={workspace.id} value={workspace.id}>
+                            {workspace.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </AdminManagementField>
+
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      label={t("workspace.sidebar.modal.knowledgeBaseName")}
+                    >
+                      <Input
+                        onChange={(event) => {
+                          const nextName = event.target.value;
+                          setCreateKnowledgeBaseName(nextName);
+                          if (!createKnowledgeBaseSlug.trim()) {
+                            setCreateKnowledgeBaseSlug(slugifyValue(nextName));
+                          }
+                        }}
+                        placeholder={t(
+                          "workspace.sidebar.modal.knowledgeBaseNamePlaceholder",
+                        )}
+                        value={createKnowledgeBaseName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      hint={t("workspace.sidebar.modal.knowledgeBaseSlugHint")}
+                      label={t("workspace.sidebar.modal.knowledgeBaseSlug")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setCreateKnowledgeBaseSlug(
+                            slugifyValue(event.target.value),
+                          )
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.knowledgeBaseSlugPlaceholder",
+                        )}
+                        value={createKnowledgeBaseSlug}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <AdminManagementField
+                    hint={t(
+                      "workspace.sidebar.modal.knowledgeBaseDescriptionHint",
+                    )}
+                    label={t(
+                      "workspace.sidebar.modal.knowledgeBaseDescription",
+                    )}
+                  >
+                    <Textarea
+                      className="min-h-[112px] resize-y"
+                      onChange={(event) =>
+                        setCreateKnowledgeBaseDescription(event.target.value)
+                      }
+                      placeholder={t(
+                        "workspace.sidebar.modal.knowledgeBaseDescriptionPlaceholder",
+                      )}
+                      value={createKnowledgeBaseDescription}
+                    />
+                  </AdminManagementField>
+
+                  <AdminManagementField
+                    hint={t(
+                      "workspace.sidebar.modal.knowledgeBaseRetrievalProfileHint",
+                    )}
+                    label={t(
+                      "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
+                    )}
+                  >
+                    <Select
+                      onValueChange={(value) =>
+                        setCreateKnowledgeBaseRetrievalProfileId(
+                          value === "none" ? "" : value,
+                        )
+                      }
+                      value={createKnowledgeBaseRetrievalProfileId || "none"}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t(
+                            "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
+                          )}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">
+                          {t(
+                            "workspace.sidebar.modal.knowledgeBaseRetrievalProfileDefault",
+                          )}
+                        </SelectItem>
+                        {retrievalProfiles.map((retrievalProfile) => (
+                          <SelectItem
+                            key={retrievalProfile.id}
+                            value={retrievalProfile.id}
+                          >
+                            {retrievalProfile.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </AdminManagementField>
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !createKnowledgeBaseWorkspaceId ||
+                        !createKnowledgeBaseName.trim() ||
+                        !createKnowledgeBaseSlug.trim() ||
+                        isCreatingResource
+                      }
+                      onClick={handleCreateKnowledgeBase}
+                      type="button"
+                    >
+                      {isCreatingResource
+                        ? t("workspace.sidebar.modal.creating")
+                        : t("workspace.sidebar.modal.createKnowledgeBase")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
+
+            {managementPanel === "knowledge-base-edit" ? (
+              <AdminManagementDialog
+                description={t(
+                  "workspace.sidebar.modal.knowledgeBaseEditDescription",
+                )}
+                eyebrow={t("admin.title")}
+                onClose={() => setManagementPanel(null)}
+                title={t("workspace.sidebar.modal.knowledgeBaseEditTitle")}
+              >
+                <DialogFormLayout>
+                  <AdminManagementField
+                    label={t("workspace.sidebar.sectionWorkspace")}
+                  >
+                    <Select
+                      onValueChange={setEditKnowledgeBaseWorkspaceId}
+                      value={editKnowledgeBaseWorkspaceId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t("workspace.sidebar.selectWorkspace")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workspaces.map((workspace) => (
+                          <SelectItem key={workspace.id} value={workspace.id}>
+                            {workspace.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </AdminManagementField>
+
+                  <DialogFormGrid className="xl:grid-cols-3">
+                    <AdminManagementField
+                      className="xl:col-span-2"
+                      label={t("workspace.sidebar.modal.knowledgeBaseName")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setEditKnowledgeBaseName(event.target.value)
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.knowledgeBaseNamePlaceholder",
+                        )}
+                        value={editKnowledgeBaseName}
+                      />
+                    </AdminManagementField>
+
+                    <AdminManagementField
+                      hint={t("workspace.sidebar.modal.knowledgeBaseSlugHint")}
+                      label={t("workspace.sidebar.modal.knowledgeBaseSlug")}
+                    >
+                      <Input
+                        onChange={(event) =>
+                          setEditKnowledgeBaseSlug(
+                            slugifyValue(event.target.value),
+                          )
+                        }
+                        placeholder={t(
+                          "workspace.sidebar.modal.knowledgeBaseSlugPlaceholder",
+                        )}
+                        value={editKnowledgeBaseSlug}
+                      />
+                    </AdminManagementField>
+                  </DialogFormGrid>
+
+                  <AdminManagementField
+                    hint={t(
+                      "workspace.sidebar.modal.knowledgeBaseDescriptionHint",
+                    )}
+                    label={t(
+                      "workspace.sidebar.modal.knowledgeBaseDescription",
+                    )}
+                  >
+                    <Textarea
+                      className="min-h-[112px] resize-y"
+                      onChange={(event) =>
+                        setEditKnowledgeBaseDescription(event.target.value)
+                      }
+                      placeholder={t(
+                        "workspace.sidebar.modal.knowledgeBaseDescriptionPlaceholder",
+                      )}
+                      value={editKnowledgeBaseDescription}
+                    />
+                  </AdminManagementField>
+
+                  <AdminManagementField
+                    hint={t(
+                      "workspace.sidebar.modal.knowledgeBaseRetrievalProfileHint",
+                    )}
+                    label={t(
+                      "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
+                    )}
+                  >
+                    <Select
+                      onValueChange={(value) =>
+                        setEditKnowledgeBaseRetrievalProfileId(
+                          value === "none" ? "" : value,
+                        )
+                      }
+                      value={editKnowledgeBaseRetrievalProfileId || "none"}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t(
+                            "workspace.sidebar.modal.knowledgeBaseRetrievalProfile",
+                          )}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">
+                          {t(
+                            "workspace.sidebar.modal.knowledgeBaseRetrievalProfileDefault",
+                          )}
+                        </SelectItem>
+                        {retrievalProfiles.map((retrievalProfile) => (
+                          <SelectItem
+                            key={retrievalProfile.id}
+                            value={retrievalProfile.id}
+                          >
+                            {retrievalProfile.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </AdminManagementField>
+
+                  <DialogFormActions>
+                    <Button
+                      onClick={() => setManagementPanel(null)}
+                      type="button"
+                      variant="outline"
+                    >
+                      {t("workspace.sidebar.modal.cancel")}
+                    </Button>
+                    <Button
+                      disabled={
+                        !editKnowledgeBaseWorkspaceId ||
+                        !editKnowledgeBaseName.trim() ||
+                        !editKnowledgeBaseSlug.trim() ||
+                        isUpdatingResource
+                      }
+                      onClick={handleUpdateKnowledgeBase}
+                      type="button"
+                    >
+                      {isUpdatingResource
+                        ? t("workspace.sidebar.modal.saving")
+                        : t("workspace.sidebar.modal.saveKnowledgeBase")}
+                    </Button>
+                  </DialogFormActions>
+                </DialogFormLayout>
+              </AdminManagementDialog>
+            ) : null}
           </main>
         </div>
       </ConsolePage>
     </ConsoleShell>
   );
 }
-

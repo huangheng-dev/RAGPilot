@@ -39,7 +39,7 @@ def build_tool_registration(**overrides):
         "slug": "search-tool",
         "transport_type": "http",
         "surface_area": "agents",
-        "endpoint_url": "http://localhost:18000/tools/search",
+        "endpoint_url": "http://localhost:8000/tools/search",
         "connector_reference": None,
         "description": "Search tool",
         "capabilities_json": ["search"],

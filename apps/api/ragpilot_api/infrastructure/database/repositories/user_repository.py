@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
@@ -36,15 +38,46 @@ class UserAccessEventRecord:
     tenant: Tenant | None
 
 
+@dataclass(slots=True)
+class TenantMembershipInvitationCredential:
+    membership: TenantMembership
+    invitation_token: str
+
+
 class UserRepository:
     INVITATION_EXPIRATION_DAYS = 7
+    BOOTSTRAP_ADVISORY_LOCK_KEY = 0x52414750494C4F54
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     @staticmethod
     def generate_invitation_token() -> str:
-        return f"RP-{secrets.token_hex(4).upper()}"
+        return f"RP-{secrets.token_hex(32).upper()}"
+
+    @staticmethod
+    def hash_invitation_token(invitation_token: str) -> str:
+        normalized_token = invitation_token.strip().upper()
+        return hashlib.sha256(normalized_token.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def invitation_token_matches(cls, membership: TenantMembership, invitation_token: str) -> bool:
+        presented_hash = cls.hash_invitation_token(invitation_token)
+        stored_hash = getattr(membership, "invitation_token_hash", None)
+        if stored_hash:
+            return hmac.compare_digest(stored_hash, presented_hash)
+
+        legacy_token = getattr(membership, "invitation_token", None)
+        if not legacy_token:
+            return False
+        return hmac.compare_digest(cls.hash_invitation_token(legacy_token), presented_hash)
+
+    @classmethod
+    def set_membership_invitation_token(cls, membership: TenantMembership) -> str:
+        invitation_token = cls.generate_invitation_token()
+        membership.invitation_token = None
+        membership.invitation_token_hash = cls.hash_invitation_token(invitation_token)
+        return invitation_token
 
     @classmethod
     def generate_invitation_expiration(cls) -> datetime:
@@ -53,6 +86,10 @@ class UserRepository:
     async def count_users(self) -> int:
         statement = select(func.count()).select_from(User).where(User.deleted_at.is_(None))
         return int(await self.session.scalar(statement) or 0)
+
+    async def acquire_bootstrap_lock(self) -> None:
+        """Serialize first-administrator creation across API replicas until commit."""
+        await self.session.execute(select(func.pg_advisory_xact_lock(self.BOOTSTRAP_ADVISORY_LOCK_KEY)))
 
     async def create_user(
         self,
@@ -252,13 +289,15 @@ class UserRepository:
             tenant_id=tenant_id,
             user_id=user_id,
             membership_status=membership_status,
-            invitation_token=self.generate_invitation_token() if is_invited else None,
+            invitation_token=None,
             invitation_issue_count=1 if is_invited else 0,
             last_invitation_issued_by_user_id=invitation_issued_by_user_id if is_invited else None,
             invited_at=datetime.now(timezone.utc) if is_invited else None,
             invitation_expires_at=self.generate_invitation_expiration() if is_invited else None,
             activated_at=datetime.now(timezone.utc) if is_active else None,
         )
+        if is_invited:
+            self.set_membership_invitation_token(membership)
         self.session.add(membership)
 
         try:
@@ -290,7 +329,7 @@ class UserRepository:
 
         membership.membership_status = membership_status
         if membership_status == "invited":
-            membership.invitation_token = self.generate_invitation_token()
+            self.set_membership_invitation_token(membership)
             membership.invitation_issue_count = int(membership.invitation_issue_count or 0) + 1
             membership.last_invitation_issued_by_user_id = invitation_issued_by_user_id
             membership.invited_at = datetime.now(timezone.utc)
@@ -298,10 +337,12 @@ class UserRepository:
             membership.activated_at = None
         elif membership_status == "active":
             membership.invitation_token = None
+            membership.invitation_token_hash = None
             membership.invitation_expires_at = None
             membership.activated_at = datetime.now(timezone.utc)
         else:
             membership.invitation_token = None
+            membership.invitation_token_hash = None
             membership.invitation_expires_at = None
         await self.session.commit()
         await self.session.refresh(membership)
@@ -312,13 +353,13 @@ class UserRepository:
         *,
         membership_id: UUID,
         invitation_issued_by_user_id: UUID | None = None,
-    ) -> TenantMembership | None:
+    ) -> TenantMembershipInvitationCredential | None:
         membership = await self.get_tenant_membership(membership_id=membership_id)
         if membership is None:
             return None
 
         membership.membership_status = "invited"
-        membership.invitation_token = self.generate_invitation_token()
+        invitation_token = self.set_membership_invitation_token(membership)
         membership.invitation_issue_count = int(membership.invitation_issue_count or 0) + 1
         membership.last_invitation_issued_by_user_id = invitation_issued_by_user_id
         membership.invited_at = datetime.now(timezone.utc)
@@ -326,7 +367,10 @@ class UserRepository:
         membership.activated_at = None
         await self.session.commit()
         await self.session.refresh(membership)
-        return membership
+        return TenantMembershipInvitationCredential(
+            membership=membership,
+            invitation_token=invitation_token,
+        )
 
     async def delete_tenant_membership(self, *, membership_id: UUID) -> bool:
         membership = await self.get_tenant_membership(membership_id=membership_id)

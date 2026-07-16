@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ModelProviderType = Literal["deterministic", "openai_compatible", "ollama", "ollama_reserved", "vllm", "vllm_reserved"]
 ModelCapability = Literal["chat", "embeddings"]
-CredentialMode = Literal["none", "environment", "managed_reserved"]
+CredentialMode = Literal["none", "environment", "managed_reserved", "managed_encrypted"]
 ModelEndpointPreviewStatus = Literal["completed", "blocked", "failed"]
 ModelEndpointGovernanceActionType = Literal["enable_endpoint", "disable_endpoint", "promote_default"]
 ModelProviderRoutingStyle = Literal["builtin", "native_http", "openai_compatible"]

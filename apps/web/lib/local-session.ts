@@ -77,7 +77,7 @@ export function clearStoredAuthSessionWithReason(reason: AuthExitReason) {
 }
 
 export function isStoredAuthSessionExpired(session: StoredAuthSession | null) {
-  if (!session?.sessionToken || !session.sessionExpiresAt) {
+  if (!session?.sessionExpiresAt) {
     return false;
   }
 
@@ -141,8 +141,6 @@ export function buildSessionAuthHeaders(headers?: HeadersInit): Record<string, s
 
   if (isStoredAuthSessionExpired(session)) {
     clearStoredAuthSessionWithReason("session_revoked");
-  } else if (session?.sessionToken) {
-    mergedHeaders.set("Authorization", `Bearer ${session.sessionToken}`);
   }
 
   const nextHeaders: Record<string, string> = {};

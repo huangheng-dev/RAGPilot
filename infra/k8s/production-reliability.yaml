@@ -1,0 +1,91 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-api, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-api } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-web, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-web } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-worker, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-worker } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ragpilot-agent-worker, namespace: ragpilot }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: ragpilot-agent-worker } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: ragpilot-api, namespace: ragpilot }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ragpilot-api }
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 300 }
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: 75 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ragpilot-default-deny-ingress, namespace: ragpilot }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ragpilot-api-ingress, namespace: ragpilot }
+spec:
+  podSelector: { matchLabels: { app: ragpilot-api } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: ragpilot-web-ingress, namespace: ragpilot }
+spec:
+  podSelector: { matchLabels: { app: ragpilot-web } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports: [{ protocol: TCP, port: 3000 }]
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata: { name: ragpilot-secrets, namespace: ragpilot }
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { name: production-secret-store, kind: ClusterSecretStore }
+  target:
+    name: ragpilot-secrets
+    creationPolicy: Owner
+  dataFrom:
+    - extract: { key: ragpilot/production }

@@ -46,6 +46,27 @@ def test_deterministic_model_gateway_returns_grounded_answer() -> None:
     assert result.usage_json["provider"] == "deterministic"
 
 
+def test_deterministic_model_gateway_streams_completion_fallback() -> None:
+    gateway = ModelGateway(Settings(chat_model_provider="deterministic", chat_model_name="fallback-model"))
+    deltas: list[str] = []
+
+    async def run():
+        return await gateway.generate_grounded_answer(
+            question="Which system is durable?",
+            retrieval_results=[{"document_title": "Guide", "content": "Temporal is durable.", "chunk_index": 0}],
+            on_delta=lambda delta: _append_delta(deltas, delta),
+        )
+
+    result = asyncio.run(run())
+
+    assert "".join(deltas) == result.content
+    assert result.usage_json["streaming_mode"] == "completion_chunked_fallback"
+
+
+async def _append_delta(target: list[str], delta: str) -> None:
+    target.append(delta)
+
+
 def test_model_gateway_allows_runtime_binding_override() -> None:
     gateway = ModelGateway(
         Settings(
