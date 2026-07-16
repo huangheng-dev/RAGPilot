@@ -126,7 +126,7 @@ The standalone `apps/mcp-server` package is an active read-only outbound-server 
 - bounded metrics and spans for latency, errors, queue state, retries, usage, fallback, projection, Agent, and Tool behavior
 - Collector, Prometheus, Tempo, Grafana, dashboards, alert baselines, and operator reliability runbook
 - health-gated Docker dependency stack, stable host-managed API/Web mode, Kubernetes baseline, and release preflight
-- API, Worker, Web build, MCP build/protocol tests, versioned retrieval gate, and authenticated browser E2E validation
+- API, Worker, Web build, MCP build/protocol tests, versioned deterministic/database retrieval gates, Native-versus-LlamaIndex quality gates, Native-versus-LangGraph branch-contract gates, and authenticated browser E2E validation
 
 ## Technology Boundaries
 
@@ -136,7 +136,7 @@ The standalone `apps/mcp-server` package is an active read-only outbound-server 
 - LangGraph, when selected on an Agent definition, owns typed document-intake and workflow-recovery decisions, branch-specific plans, output validation, and node timing inside a Temporal-owned execution; it does not own durable business workflow state.
 - LlamaIndex, when selected on the effective Retrieval Profile, owns optional authorized-candidate post-processing and comparison evidence; PostgreSQL authorization and the application retrieval contract remain authoritative.
 - `AGENT_RUNTIME_ENGINE`, `RETRIEVAL_ENGINE`, and the LlamaIndex environment settings are legacy/deployment fallbacks for records that predate persisted policies, not the primary governance interface.
-- Optional framework packages are aligned deployment profiles: core omits both, Agent installs LangGraph in the API and Agent Worker, and full development/evaluation installs both adapters in each execution service. Health and runtime-governance contracts expose missing selected dependencies.
+- Optional framework packages are aligned deployment profiles: core omits both, Agent installs LangGraph in the API and Agent Worker, and the full capability/development/evaluation profile installs both adapters in each execution service. The maintained production template selects the full profile while runtime records remain opt-in. Health and runtime-governance contracts expose missing selected dependencies.
 - Model-provider behavior stays behind the model gateway.
 - MCP and HTTP Tools remain explicitly registered, tenant-scoped, policy-checked, and auditable.
 - Browser pages consume backend-owned policy and governance contracts instead of recreating them locally.

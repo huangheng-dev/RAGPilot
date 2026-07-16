@@ -32,6 +32,9 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - an authorized LlamaIndex comparison lane with official similarity/long-context processors, final PostgreSQL reauthorization, and processor evidence
 - typed LangGraph decision lanes for document intake and workflow recovery with branch-specific plans, validation, node timing, and operator-visible traces
 - persisted, versioned framework policies on Retrieval Profiles and Agent definitions, immutable execution binding, and deployment-readiness governance for missing optional adapters
+- release-blocking Native/LlamaIndex quality comparisons and Native/LangGraph branch, validation, trace, fallback, and steady-state overhead contracts
+- multilingual, Chinese OCR, long-context, ACL, stale/deleted lifecycle, and adversarial cross-scope retrieval regression cases
+- manifest-verified PostgreSQL and MinIO backup/restore drills with isolated resources, exact schema/version checks, fault-injection recovery assertions, and guaranteed cleanup
 
 ### Changed
 
@@ -49,6 +52,7 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - retrieval and Agent runtime defaults are consistently `native` across application, Compose, Kubernetes, and environment templates; installed framework adapters require explicit activation
 - optional framework dependencies are split into core API, Agent Worker, and full development/evaluation build profiles instead of being mandatory container dependencies
 - Chinese documentation navigation uses translated labels while clearly identifying English technical and governance bodies as the current canonical source
+- production ingestion and retrieval embedding identities are aligned, full framework image capabilities stay consistent across API and Agent Worker, and health dependency probes are bounded independently from retrieval timeouts
 
 ### Security
 

@@ -9,6 +9,16 @@ from ragpilot_api.infrastructure.search.projection_diagnostics import build_sear
 from ragpilot_api.shared.settings import get_settings
 
 
+MAX_HEALTH_DEPENDENCY_TIMEOUT_SECONDS = 5.0
+
+
+def resolve_health_dependency_timeout(settings: object) -> float:
+    configured_timeout = float(
+        getattr(settings, "elasticsearch_request_timeout_seconds", MAX_HEALTH_DEPENDENCY_TIMEOUT_SECONDS)
+    )
+    return min(max(configured_timeout, 0.1), MAX_HEALTH_DEPENDENCY_TIMEOUT_SECONDS)
+
+
 async def build_health_response(session: AsyncSession) -> HealthResponse:
     settings = get_settings()
     runtime_readiness = build_runtime_readiness_snapshot()
@@ -34,7 +44,7 @@ async def build_health_response(session: AsyncSession) -> HealthResponse:
             enabled=bool(getattr(settings, "elasticsearch_retrieval_enabled", False)),
             base_url=getattr(settings, "elasticsearch_url", "http://elasticsearch:9200"),
             read_alias=read_alias,
-            timeout_seconds=float(getattr(settings, "elasticsearch_request_timeout_seconds", 5.0)),
+            timeout_seconds=resolve_health_dependency_timeout(settings),
         )
     return HealthResponse(
         service=settings.service_name,

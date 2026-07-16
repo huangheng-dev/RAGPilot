@@ -3,7 +3,20 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ragpilot_api.application.system.health_service import build_health_response
+from ragpilot_api.application.system.health_service import (
+    build_health_response,
+    resolve_health_dependency_timeout,
+)
+
+
+def test_health_dependency_timeout_is_independent_and_bounded() -> None:
+    assert resolve_health_dependency_timeout(SimpleNamespace()) == 5.0
+    assert resolve_health_dependency_timeout(
+        SimpleNamespace(elasticsearch_request_timeout_seconds=30)
+    ) == 5.0
+    assert resolve_health_dependency_timeout(
+        SimpleNamespace(elasticsearch_request_timeout_seconds=0.01)
+    ) == 0.1
 
 
 @pytest.mark.anyio

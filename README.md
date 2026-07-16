@@ -52,6 +52,7 @@ Tenant and identity scope
 - governed fusion, reranking, context assembly, and retrieval diagnostics
 - Document and Chunk user/group grants enforced during candidate retrieval
 - versioned retrieval evaluation contracts covering ranking, isolation, forbidden content, groundedness, Citations, latency, and cost
+- release-blocking Native/LlamaIndex comparison gates and Native/LangGraph branch-contract gates using the installed framework runtimes
 
 ### Chat and Prompt history
 

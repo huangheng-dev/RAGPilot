@@ -29,10 +29,12 @@ $requiredPaths = @(
   @{ Path = "infra/k8s/migration-job.yaml"; Description = "Kubernetes database migration job" },
   @{ Path = "infra/k8s/api-deployment.yaml"; Description = "Kubernetes API deployment" },
   @{ Path = "infra/k8s/worker-deployment.yaml"; Description = "Kubernetes worker deployment" },
+  @{ Path = "infra/k8s/agent-worker-deployment.yaml"; Description = "Kubernetes Agent Worker deployment" },
   @{ Path = "infra/k8s/web-deployment.yaml"; Description = "Kubernetes web deployment" },
   @{ Path = "infra/k8s/api-service.yaml"; Description = "Kubernetes API service" },
   @{ Path = "infra/k8s/web-service.yaml"; Description = "Kubernetes web service" },
-  @{ Path = "infra/k8s/ingress.yaml"; Description = "Kubernetes ingress manifest" }
+  @{ Path = "infra/k8s/ingress.yaml"; Description = "Kubernetes ingress manifest" },
+  @{ Path = "infra/k8s/production-reliability.yaml"; Description = "Kubernetes reliability baseline" }
 )
 
 foreach ($requiredPath in $requiredPaths) {
@@ -49,10 +51,12 @@ $requiredTrackedPaths = @(
   "infra/k8s/migration-job.yaml",
   "infra/k8s/api-deployment.yaml",
   "infra/k8s/worker-deployment.yaml",
+  "infra/k8s/agent-worker-deployment.yaml",
   "infra/k8s/web-deployment.yaml",
   "infra/k8s/api-service.yaml",
   "infra/k8s/web-service.yaml",
-  "infra/k8s/ingress.yaml"
+  "infra/k8s/ingress.yaml",
+  "infra/k8s/production-reliability.yaml"
 )
 
 foreach ($trackedPath in $requiredTrackedPaths) {
@@ -60,6 +64,51 @@ foreach ($trackedPath in $requiredTrackedPaths) {
   if ($LASTEXITCODE -ne 0) {
     throw "Required public delivery asset '$trackedPath' exists locally but is not tracked by Git."
   }
+}
+
+$productionEnvironment = @{}
+foreach ($line in Get-Content ".env.production.example") {
+  if ($line -match '^([A-Z0-9_]+)=(.*)$') {
+    $productionEnvironment[$Matches[1]] = $Matches[2]
+  }
+}
+if (
+  $productionEnvironment["RAGPILOT_API_OPTIONAL_EXTRAS"] -ne
+  $productionEnvironment["RAGPILOT_AGENT_WORKER_OPTIONAL_EXTRAS"]
+) {
+  throw "Production API and Agent Worker optional framework extras must remain aligned."
+}
+if (
+  $productionEnvironment["EMBEDDING_MODEL"] -ne
+  $productionEnvironment["RETRIEVAL_EMBEDDING_MODEL"]
+) {
+  throw "Production ingestion and retrieval embedding model identifiers must remain aligned."
+}
+
+$configMapContent = Get-Content "infra/k8s/configmap.yaml" -Raw
+$ingestionEmbeddingModel = [regex]::Match(
+  $configMapContent, '(?m)^\s{2}EMBEDDING_MODEL:\s*([^\r\n]+)$'
+).Groups[1].Value.Trim(' ', '"')
+$retrievalEmbeddingModel = [regex]::Match(
+  $configMapContent, '(?m)^\s{2}RETRIEVAL_EMBEDDING_MODEL:\s*([^\r\n]+)$'
+).Groups[1].Value.Trim(' ', '"')
+if (-not $ingestionEmbeddingModel -or $ingestionEmbeddingModel -ne $retrievalEmbeddingModel) {
+  throw "Kubernetes ingestion and retrieval embedding model identifiers must remain aligned."
+}
+
+& docker compose --env-file ".env.production.example" -f "infra/docker/compose.yaml" config --quiet
+if ($LASTEXITCODE -ne 0) {
+  throw "Production Compose profile does not render successfully."
+}
+
+$kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
+if ($kubectl) {
+  & $kubectl.Source kustomize "infra/k8s" *> $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Kubernetes production baseline does not render successfully."
+  }
+} else {
+  Write-Warning "kubectl is unavailable; Kubernetes render validation was skipped on this host."
 }
 
 $webDockerfile = Get-Content "infra/docker/web.Dockerfile" -Raw

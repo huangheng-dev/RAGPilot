@@ -1,0 +1,80 @@
+{
+  "schema_version": "1",
+  "dataset_id": "ragpilot-agent-runtime-contract",
+  "version": "1.0.0",
+  "warmup_runs": 1,
+  "gates": {
+    "required_native_contract_coverage": 1.0,
+    "required_branch_accuracy": 1.0,
+    "required_validation_coverage": 1.0,
+    "required_trace_coverage": 1.0,
+    "required_fallback_accuracy": 1.0,
+    "max_p95_overhead_ms": 250.0
+  },
+  "cases": [
+    {
+      "case_id": "document-intake-failed-001",
+      "agent_mode": "document_intake",
+      "execution_input": "Review failed intake items.",
+      "document_metrics": {"total_documents": 8, "failed_documents": 2, "active_documents": 1, "completed_documents": 5},
+      "expected_executed_engine": "langgraph_pilot",
+      "expected_branch": "recover_failed",
+      "expected_risk_level": "high",
+      "expected_trace_steps": ["collect_document_context", "classify_intake_posture", "recover_failed", "validate_intake_result", "compose_document_intake"]
+    },
+    {
+      "case_id": "document-intake-processing-001",
+      "agent_mode": "document_intake",
+      "execution_input": "Review active intake items.",
+      "document_metrics": {"total_documents": 8, "failed_documents": 0, "active_documents": 3, "completed_documents": 5},
+      "expected_executed_engine": "langgraph_pilot",
+      "expected_branch": "review_processing",
+      "expected_risk_level": "medium",
+      "expected_trace_steps": ["collect_document_context", "classify_intake_posture", "review_processing", "validate_intake_result", "compose_document_intake"]
+    },
+    {
+      "case_id": "document-intake-ready-001",
+      "agent_mode": "document_intake",
+      "execution_input": "Review completed intake items.",
+      "document_metrics": {"total_documents": 8, "failed_documents": 0, "active_documents": 0, "completed_documents": 8},
+      "expected_executed_engine": "langgraph_pilot",
+      "expected_branch": "release_ready",
+      "expected_risk_level": "low",
+      "expected_trace_steps": ["collect_document_context", "classify_intake_posture", "release_ready", "validate_intake_result", "compose_document_intake"]
+    },
+    {
+      "case_id": "workflow-recovery-failed-001",
+      "agent_mode": "workflow_recovery",
+      "execution_input": "Triage failed workflows.",
+      "workflow_metrics": {"failed_runs": 2, "queued_runs": 1, "retry_runs": 1},
+      "expected_executed_engine": "langgraph_pilot",
+      "expected_risk_level": "high",
+      "expected_trace_steps": ["collect_workflow_metrics", "classify_workflow_pressure", "compose_workflow_summary"]
+    },
+    {
+      "case_id": "workflow-recovery-pressure-001",
+      "agent_mode": "workflow_recovery",
+      "execution_input": "Review queued workflows.",
+      "workflow_metrics": {"failed_runs": 0, "queued_runs": 3, "retry_runs": 1},
+      "expected_executed_engine": "langgraph_pilot",
+      "expected_risk_level": "medium",
+      "expected_trace_steps": ["collect_workflow_metrics", "classify_workflow_pressure", "compose_workflow_summary"]
+    },
+    {
+      "case_id": "workflow-recovery-clear-001",
+      "agent_mode": "workflow_recovery",
+      "execution_input": "Confirm workflow health.",
+      "workflow_metrics": {"failed_runs": 0, "queued_runs": 0, "retry_runs": 0},
+      "expected_executed_engine": "langgraph_pilot",
+      "expected_risk_level": "low",
+      "expected_trace_steps": ["collect_workflow_metrics", "classify_workflow_pressure", "compose_workflow_summary"]
+    },
+    {
+      "case_id": "grounded-chat-native-fallback-001",
+      "agent_mode": "grounded_chat",
+      "execution_input": "Answer from governed evidence.",
+      "expected_executed_engine": "native",
+      "expected_fallback": true
+    }
+  ]
+}

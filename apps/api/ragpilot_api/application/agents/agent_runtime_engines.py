@@ -133,7 +133,10 @@ class LangGraphPilotAgentRuntimeEngine:
                     "configured_engine": "langgraph_pilot",
                     "executed_engine": "native",
                     "fallback_applied": True,
-                    "fallback_reason": "LangGraph pilot is currently limited to workflow_recovery executions.",
+                    "fallback_reason": (
+                        "LangGraph pilot is currently limited to document_intake and "
+                        "workflow_recovery executions."
+                    ),
                 },
             }
 

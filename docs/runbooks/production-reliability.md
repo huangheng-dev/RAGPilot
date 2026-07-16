@@ -38,22 +38,25 @@ Use resource health history and operator actions. Credential failures require ro
 
 ## Backup and restore
 
-Run `infra/scripts/backup-production.ps1`. Store the generated directory outside the cluster with its SHA-256 manifest. Run `infra/scripts/restore-drill.ps1 -BackupDirectory <path>` monthly and before a major release. The drill restores into an isolated database, validates schema and Alembic head, then removes the drill database.
+Run `infra/scripts/backup-production.ps1`. The script resolves the active Compose containers instead of assuming generated container names, creates a PostgreSQL custom-format dump without piping binary data through the host shell, archives MinIO data, snapshots the production ConfigMap and writes a SHA-256 manifest. Store the generated directory outside the cluster.
+
+Run `infra/scripts/restore-drill.ps1 -BackupDirectory <path>` monthly and before a major release. Before restoration, the drill verifies every manifest entry. It restores PostgreSQL into a uniquely named database and requires its table count and Alembic version to match the source database exactly. It also extracts the MinIO archive into an isolated Docker volume. Temporary database, dump and volume resources are removed even when validation fails.
 
 ## Reliability exercise
 
-Run `infra/scripts/reliability-drill.ps1` in the staging/local production-like stack. It applies concurrent health load and pauses Elasticsearch and Redis independently, verifies API survival, and restores both dependencies.
+Run `infra/scripts/reliability-drill.ps1` only in the staging/local production-like Compose stack. The default guard rejects non-local health URLs. It applies concurrent health load, pauses Elasticsearch and Redis independently, requires the Elasticsearch health projection to transition from reachable to degraded and back, verifies the Redis PING interruption and recovery, and restores both dependencies in `finally` blocks. Health dependency probing is capped at five seconds independently of the longer retrieval request timeout.
 
 ## OCR lifecycle
 
 PDF ingestion first uses structure-preserving page extraction. A scanned PDF with no embedded text falls back to Tesseract (`chi_sim+eng`), writes page-labelled text, and records `pdf_ocr_parser`. PNG, JPEG, WebP, TIFF, and BMP assets use the same governed OCR runtime, enforce a 40-million-pixel safety limit, and record `image_ocr_parser`. Both paths continue through the normal chunk, embedding, Outbox, rebuild, and tenant-isolation chain.
 
-## Validation evidence — 2026-07-14
+## Latest local production-like qualification evidence — 2026-07-16
 
-- production identity drill: 139 API tests passed across password authentication, provider-mode contracts, bearer sessions, membership lifecycle, database RBAC and credential rotation
-- parser drill: 24 Worker tests passed; the deployed Worker reports Tesseract languages `chi_sim`, `eng`, and `osd`
-- real OCR smoke: an image-only generated PDF selected `pdf_ocr_parser`, preserved the `Page 1 [OCR]` structure marker, and recognized the rendered validation text
-- backup: PostgreSQL custom-format dump, MinIO archive, configuration snapshot and SHA-256 manifest produced successfully
-- restore: isolated database restored with 35 public tables at Alembic `202607140004`, validated, then removed
-- reliability: 20 concurrent health requests succeeded while Elasticsearch and Redis were paused and recovered independently
-- Kubernetes manifests render successfully with HPA, PodDisruptionBudget, NetworkPolicy and hourly External Secret refresh
+These results qualify the maintained local stack and automation. They are not a substitute for environment-owned staging and production evidence.
+
+- backup: PostgreSQL custom-format dump, 4.7 MB MinIO archive, ConfigMap snapshot and SHA-256 manifest produced without fixed container names
+- restore: every manifest hash verified; the isolated database restored with 46 public tables at Alembic `202607160001`; the isolated MinIO volume restored 31 files from the final qualification backup; all temporary resources were removed
+- reliability: 20 concurrent health requests succeeded; Elasticsearch degradation and recovery were visible in the API health contract; Redis interruption and recovery were confirmed by PING
+- framework qualification: the versioned 10-case database corpus passed for Native and LlamaIndex with no recall regression; the versioned 7-case agent corpus passed all LangGraph branch, validation, trace and fallback gates
+
+Record Kubernetes render results, external secret delivery, production identity checks, live OCR language availability, off-cluster backup replication and alert delivery separately for each deployed environment.

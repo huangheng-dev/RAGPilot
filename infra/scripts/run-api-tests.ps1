@@ -166,6 +166,16 @@ try {
     throw "PostgreSQL/pgvector retrieval regression gate failed."
   }
 
+  & $pythonCommand -m ragpilot_api.commands.retrieval_framework_gate "packages/evals/retrieval/database-contract-v1.json"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Native versus LlamaIndex retrieval comparison gate failed."
+  }
+
+  & $pythonCommand -m ragpilot_api.commands.agent_runtime_framework_gate "packages/evals/agents/runtime-contract-v1.json"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Native versus LangGraph agent runtime comparison gate failed."
+  }
+
   Push-Location $apiRoot
   try {
     & $pythonCommand -m pytest tests
