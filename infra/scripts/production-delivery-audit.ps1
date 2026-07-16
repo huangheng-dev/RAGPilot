@@ -190,6 +190,22 @@ $ciWorkflowContent = Get-Content ".github/workflows/ci.yml" -Raw
 if ($ciWorkflowContent -notmatch 'docker/build-push-action@' -or $ciWorkflowContent -notmatch 'push:\s*false') {
   throw "CI workflow is not smoke-building the release container profiles."
 }
+if ($ciWorkflowContent -notmatch 'alembic\s+-c\s+apps/api/alembic\.ini\s+upgrade\s+head') {
+  throw "CI workflow must run Alembic through the API project's explicit configuration path."
+}
+
+$alembicConfigContent = Get-Content "apps/api/alembic.ini" -Raw
+if ($alembicConfigContent -notmatch '(?m)^script_location\s*=\s*%\(here\)s/migrations\s*$') {
+  throw "API Alembic configuration must resolve migrations relative to alembic.ini."
+}
+if ($alembicConfigContent -notmatch '(?m)^prepend_sys_path\s*=\s*%\(here\)s\s*$') {
+  throw "API Alembic configuration must resolve its Python path relative to alembic.ini."
+}
+
+$releasePreflightContent = Get-Content "infra/scripts/release-preflight.ps1" -Raw
+if ($releasePreflightContent -notmatch 'GITHUB_HEAD_REF' -or $releasePreflightContent -notmatch 'detached@') {
+  throw "Release preflight must identify GitHub pull-request and detached-HEAD checkouts safely."
+}
 
 $workloadPaths = @(
   "infra/k8s/api-deployment.yaml",

@@ -122,7 +122,7 @@ jobs:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
         run: |
-          uv run --project apps/api --locked alembic upgrade head
+          uv run --project apps/api --locked alembic -c apps/api/alembic.ini upgrade head
           uv run --project apps/api --locked python -m ragpilot_api.commands.retrieval_contract_gate packages/evals/retrieval/core-contract-v1.json
           uv run --project apps/api --locked python -m ragpilot_api.commands.retrieval_database_gate packages/evals/retrieval/database-contract-v1.json
           uv run --project apps/api --locked python -m ragpilot_api.commands.retrieval_framework_gate packages/evals/retrieval/database-contract-v1.json

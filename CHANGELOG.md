@@ -61,6 +61,7 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - direct PostCSS build tooling is updated to the patched line; the separate version bundled exactly by Next.js remains governed as a temporary upstream risk instead of being hidden by an unsupported lockfile override or destructive framework downgrade
 - Platform API Key usage telemetry is write-throttled per process to prevent concurrent requests from serializing on a shared audit row
 - the staging capacity corpus now validates every configured path against the actual FastAPI router, correcting the authenticated retrieval path before environment promotion
+- release qualification now supports detached pull-request checkouts and runs Alembic from an explicit, location-independent project configuration
 
 ### Security
 

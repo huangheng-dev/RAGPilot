@@ -40,7 +40,31 @@ if (-not $gitDirectoryPresent) {
   throw "The repository is not initialized as Git."
 }
 
-$currentBranch = (& git branch --show-current).Trim()
+$branchOutput = @(& git branch --show-current)
+$currentBranch = if ($branchOutput.Count -gt 0) {
+  ([string]$branchOutput[0]).Trim()
+} else {
+  ""
+}
+
+if (-not $currentBranch) {
+  $githubBranch = @($env:GITHUB_HEAD_REF, $env:GITHUB_REF_NAME) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Select-Object -First 1
+  if ($githubBranch) {
+    $currentBranch = ([string]$githubBranch).Trim()
+  }
+}
+
+if (-not $currentBranch) {
+  $headOutput = @(& git rev-parse --short HEAD)
+  $shortHead = if ($LASTEXITCODE -eq 0 -and $headOutput.Count -gt 0) {
+    ([string]$headOutput[0]).Trim()
+  } else {
+    "unknown"
+  }
+  $currentBranch = "detached@$shortHead"
+}
 $statusBranchOutput = @(& git status --short --branch)
 $hasCommit = -not ($statusBranchOutput | Where-Object { $_ -like "## No commits yet on *" })
 
