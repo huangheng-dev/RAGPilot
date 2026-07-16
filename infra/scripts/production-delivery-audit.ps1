@@ -207,6 +207,15 @@ if ($releasePreflightContent -notmatch 'GITHUB_HEAD_REF' -or $releasePreflightCo
   throw "Release preflight must identify GitHub pull-request and detached-HEAD checkouts safely."
 }
 
+$e2eScriptContent = Get-Content "infra/scripts/run-e2e-tests.ps1" -Raw
+if (
+  $e2eScriptContent -notmatch '\$probeStartArguments' -or
+  $e2eScriptContent -notmatch '\$IsWindows' -or
+  $e2eScriptContent -notmatch '\["WindowStyle"\]\s*=\s*"Hidden"'
+) {
+  throw "Authenticated browser E2E startup must guard Windows-only process options."
+}
+
 $workloadPaths = @(
   "infra/k8s/api-deployment.yaml",
   "infra/k8s/worker-deployment.yaml",

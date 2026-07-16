@@ -75,12 +75,16 @@ function Wait-TemporalReady {
     $env:RAGPILOT_TEMPORAL_PROBE_ADDRESS = $Address
     while ([DateTime]::UtcNow -lt $deadline) {
       $probeCode = "import asyncio, os; from temporalio.client import Client; asyncio.run(asyncio.wait_for(Client.connect(os.environ['RAGPILOT_TEMPORAL_PROBE_ADDRESS']), timeout=5))"
-      $probeProcess = Start-Process `
-        -FilePath $PythonCommand `
-        -ArgumentList @("-c", "`"$probeCode`"") `
-        -WindowStyle Hidden `
-        -Wait `
-        -PassThru
+      $probeStartArguments = @{
+        FilePath = $PythonCommand
+        ArgumentList = @("-c", "`"$probeCode`"")
+        Wait = $true
+        PassThru = $true
+      }
+      if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        $probeStartArguments["WindowStyle"] = "Hidden"
+      }
+      $probeProcess = Start-Process @probeStartArguments
       if ($probeProcess.ExitCode -eq 0) {
         return
       }
