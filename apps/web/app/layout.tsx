@@ -24,11 +24,11 @@ export default function RootLayout({
       <body>
         <PreferencesProvider>
           <ChunkRecoveryProvider>
-            <NotificationProvider>
-              <I18nProvider>
+            <I18nProvider>
+              <NotificationProvider>
                 <AuthProvider>{children}</AuthProvider>
-              </I18nProvider>
-            </NotificationProvider>
+              </NotificationProvider>
+            </I18nProvider>
           </ChunkRecoveryProvider>
         </PreferencesProvider>
       </body>

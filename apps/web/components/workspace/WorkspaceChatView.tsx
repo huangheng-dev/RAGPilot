@@ -224,10 +224,14 @@ export function WorkspaceChatView({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const welcomeInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const latestMessageContent = messages.at(-1)?.content ?? "";
 
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [isLoadingMessages, isSending, messages.length, selectedConversation?.id]);
+    messageEndRef.current?.scrollIntoView({
+      behavior: isSending ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [isLoadingMessages, isSending, latestMessageContent, messages.length, selectedConversation?.id]);
 
   async function copyAnswer(message: Message) {
     await navigator.clipboard.writeText(message.content);
@@ -250,8 +254,17 @@ export function WorkspaceChatView({
       ) ?? null
     );
   }
+  function isStreamingAssistantMessage(message: Message) {
+    return message.role === "assistant" && message.id.startsWith("streaming-");
+  }
+  function formatMessageRole(message: Message) {
+    return message.role === "assistant"
+      ? t("workspace.chatView.messageRoles.assistant")
+      : t("workspace.chatView.messageRoles.user");
+  }
   const hasConversationSelection = selectedConversation !== null;
   const hasMessages = messages.length > 0;
+  const hasStreamingAssistantMessage = messages.some(isStreamingAssistantMessage);
   const hasActiveConversationView =
     hasConversationSelection || hasMessages || isSending;
   useEffect(() => {
@@ -703,39 +716,60 @@ export function WorkspaceChatView({
               {messages.map((message) => (
                 <article
                   key={message.id}
+                  data-message-role={message.role}
+                  data-streaming={isStreamingAssistantMessage(message) ? "true" : "false"}
                   className={cn(
-                    "max-w-4xl rounded-xl border px-5 py-4 shadow-sm",
+                    "rounded-xl border px-5 py-4 shadow-sm",
                     message.role === "assistant"
-                      ? "border-slate-200 bg-white text-slate-900"
-                      : "ml-auto border-blue-500 bg-blue-600 text-white",
+                      ? "w-full max-w-4xl self-start border-slate-200 bg-white text-slate-900"
+                      : "ml-auto w-fit min-w-56 max-w-[88%] self-end border-blue-500 bg-blue-600 text-white sm:max-w-2xl",
                   )}
                 >
                   <div className="mb-3 flex items-center justify-between gap-4">
                     <span
                       className={cn(
-                        "text-xs font-semibold uppercase tracking-[0.16em]",
+                        "text-xs font-semibold tracking-[0.12em]",
                         message.role === "assistant"
                           ? "text-primary"
                           : "text-blue-100",
                       )}
                     >
-                      {message.role}
+                      {formatMessageRole(message)}
                     </span>
-                    <span
+                    {!isStreamingAssistantMessage(message) || message.content.trim().length > 0 ? (
+                      <span
+                        className={cn(
+                          "text-xs",
+                          message.role === "assistant"
+                            ? "text-slate-500"
+                            : "text-blue-100",
+                        )}
+                      >
+                        {formatTimestamp(message.created_at)}
+                      </span>
+                    ) : null}
+                  </div>
+                  {message.content.trim().length > 0 ? (
+                    <div className="whitespace-pre-wrap text-sm leading-7">
+                      {message.content}
+                    </div>
+                  ) : null}
+                  {isStreamingAssistantMessage(message) ? (
+                    <div
+                      aria-live="polite"
                       className={cn(
-                        "text-xs",
-                        message.role === "assistant"
-                          ? "text-slate-500"
-                          : "text-blue-100",
+                        "flex items-center gap-2 text-sm font-medium text-slate-500",
+                        message.content.trim().length > 0 && "mt-3",
                       )}
+                      role="status"
                     >
-                      {formatTimestamp(message.created_at)}
-                    </span>
-                  </div>
-                  <div className="whitespace-pre-wrap text-sm leading-7">
-                    {message.content}
-                  </div>
-                  {message.role === "assistant" ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+                      {t("workspace.chatView.generating")}
+                    </div>
+                  ) : null}
+                  {message.role === "assistant" &&
+                  !isStreamingAssistantMessage(message) &&
+                  message.content.trim().length > 0 ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Button
                         className="bg-white"
@@ -823,6 +857,7 @@ export function WorkspaceChatView({
                     </div>
                   ) : null}
                   {message.role === "assistant" &&
+                    !isStreamingAssistantMessage(message) &&
                     message.citations.length > 0 && (
                       <div className="mt-4 space-y-2.5 border-t border-slate-200 pt-3">
                         <div className="flex items-center justify-between gap-3">
@@ -884,9 +919,16 @@ export function WorkspaceChatView({
                     )}
                 </article>
               ))}
-              {isSending ? (
-                <article className="max-w-4xl rounded-xl border border-slate-200 bg-white px-5 py-4 text-slate-600 shadow-sm">
-                  <div className="flex items-center gap-2 text-sm font-medium">
+              {isSending && !hasStreamingAssistantMessage ? (
+                <article
+                  className="w-full max-w-4xl self-start rounded-xl border border-slate-200 bg-white px-5 py-4 text-slate-600 shadow-sm"
+                  data-message-role="assistant"
+                  data-streaming="true"
+                >
+                  <div className="mb-3 text-xs font-semibold tracking-[0.12em] text-primary">
+                    {t("workspace.chatView.messageRoles.assistant")}
+                  </div>
+                  <div aria-live="polite" className="flex items-center gap-2 text-sm font-medium" role="status">
                     <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
                     {t("workspace.chatView.generating")}
                   </div>

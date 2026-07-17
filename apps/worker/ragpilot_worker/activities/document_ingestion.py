@@ -1,3 +1,5 @@
+from typing import Any
+
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
@@ -13,7 +15,7 @@ from opentelemetry import trace
 
 @activity.defn(name="ingest_document")
 @traced_activity("worker.document_ingestion")
-async def ingest_document(payload: dict[str, str]) -> dict[str, str]:
+async def ingest_document(payload: dict[str, Any]) -> dict[str, str]:
     workflow_run_id = payload["workflow_run_id"]
     document_id = payload["document_id"]
     settings = get_settings()

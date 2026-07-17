@@ -30,6 +30,9 @@ const en = {
     },
     actions: {
       openRepository: "Open GitHub repository",
+      themeLight: "Switch to light mode",
+      themeDark: "Switch to dark mode",
+      dismissNotification: "Dismiss notification",
     },
   },
   accessControl: {
@@ -377,7 +380,7 @@ const en = {
         "Only the explicitly approved surfaces below should be available to this agent.",
       registeredTools: "Registered tools",
       registeredToolsHint:
-        "Bind persisted tool registrations that the future runtime can invoke for this agent.",
+        "Bind persisted tool registrations that this agent may invoke through the governed runtime.",
       noRegisteredTools:
         "No enabled tool registrations are available yet. Add them in Settings first.",
       namePlaceholder: "Agent name",
@@ -417,7 +420,7 @@ const en = {
     connectivity: {
       title: "Connected surfaces",
       description:
-        "The surfaces below already exist in RAGPilot and can serve as the operational base for future agent delivery.",
+        "Use the existing RAGPilot surfaces as governed handoff targets for this agent.",
       enabled: "Enabled",
       disabled: "Disabled",
       runtimeUnavailable: "Runtime unavailable",
@@ -511,7 +514,7 @@ const en = {
     dependencies: {
       title: "Runtime dependencies",
       description:
-        "Inspect the resolved model contract and the exact registered tools that will be carried into future runtime execution.",
+        "Inspect the resolved model contract and the exact registered tools carried into runtime execution.",
       resolvedModelTitle: "Resolved model contract",
       noResolvedModel: "No resolved model endpoint",
       modelRuntimeReady: "Runtime ready",
@@ -1574,7 +1577,7 @@ const en = {
     governance: {
       title: "Runtime governance",
       description:
-        "Persisted model endpoints, tool registrations, and retrieval profiles that future chat, agent, and execution lanes can build on.",
+        "Persisted model endpoints, tool registrations, and retrieval profiles used by Chat, Agent, and execution lanes.",
       overview: {
         title: "Governance focus",
         loading: "Loading governed runtime overview...",
@@ -1795,7 +1798,7 @@ const en = {
     tools: {
       title: "Tool registrations",
       description:
-        "Track callable tools before future agent runtime and MCP expansion starts consuming them.",
+        "Register and govern callable native, HTTP, and MCP tools before Agents can consume them.",
       governance: {
         nativeTools: "Native tools",
         httpTools: "HTTP tools",
@@ -2222,7 +2225,7 @@ const en = {
     architecture: {
       title: "Operating architecture",
       description:
-        "Follow the actual RAGPilot business path from governance and knowledge preparation into execution, grounded answers, and future automation.",
+        "Follow the actual RAGPilot business path from governance and knowledge preparation into execution, grounded answers, and supervised automation.",
       stage: "Stage {index}",
       openStage: "Open stage",
       govern: {
@@ -2860,6 +2863,8 @@ const en = {
       search: "Search by name, slug, or resource ID",
       enabled: "Enabled",
       disabled: "Disabled",
+      approvalRequired: "Administrator approval required",
+      approvalNotRequired: "No administrator approval required",
       default: "Default",
       edit: "Edit",
       test: "Test",
@@ -3472,6 +3477,20 @@ const en = {
       lastToolPreview: "Latest tool preview {status} · {value}",
       lastConnectorPreview: "Latest connector preview {status} · {value}",
       previewFailures: "{count} preview failures",
+      resourceTypes: {
+        modelEndpoint: "Model endpoint",
+        toolRegistration: "Tool registration",
+        mcpConnector: "MCP connector",
+      },
+      eventActions: {
+        created: "Created",
+        updated: "Updated",
+        deleted: "Deleted",
+        governanceAction: "Governance action",
+        previewCompleted: "Preview completed",
+        previewBlocked: "Preview blocked",
+        previewFailed: "Preview failed",
+      },
       filters: {
         category: "Category",
         severity: "Severity",
@@ -4845,7 +4864,11 @@ const en = {
       agentObjective: "Agent objective:",
       agentObjectiveMissing:
         "No explicit agent objective is attached to the current chat runtime.",
-      generating: "Generating...",
+      messageRoles: {
+        user: "You",
+        assistant: "Assistant",
+      },
+      generating: "Generating response...",
       sendQuestion: "Send Question",
       documentSignals: "Document Signals",
       indexedDocuments: "Indexed Documents",
@@ -4863,23 +4886,17 @@ const en = {
     },
     documentsView: {
       dataSources: {
-        title: "Data sources",
-        description: "Durable connector identities, incremental cursors, and recent synchronization state for this knowledge base.",
-        add: "Add web source",
-        create: "Create source",
-        createTitle: "Add public web data source",
-        refresh: "Refresh",
-        empty: "No durable data sources are connected to this knowledge base.",
-        name: "Source name",
-        url: "Public URL",
-        urlHint: "Only public HTTP(S) pages are accepted. Private, local, credentialed, and unsafe redirect destinations are blocked.",
         sync: "Sync now",
         syncing: "Syncing...",
-        neverRun: "No synchronization run yet",
-        runSummary: "{changed} changed · {unchanged} unchanged · {deleted} deleted",
+        syncStatus: "Sync: {status}",
         loadFailed: "Data sources could not be loaded.",
-        createFailed: "Data source could not be created.",
         syncFailed: "Data-source synchronization could not be started.",
+        invalidRequest: "The synchronization request was invalid. Refresh the page and try again.",
+        unsupportedSource: "This source cannot be synchronized as a connector. Reindex it from Documents instead.",
+        types: {
+          web: "Web",
+          connector: "Connector"
+        },
         status: {
           never_synced: "Never synced",
           syncing: "Syncing",
@@ -5133,9 +5150,9 @@ const en = {
       },
     },
     registry: {
-      title: "Document Registry",
+      title: "Knowledge assets",
       description:
-        "Search, filter, and inspect document processing state for the active knowledge base.",
+        "Manage document processing and external-source synchronization in one list.",
       activeAgent: "Agent {name}",
       agentScope: "Scope {scope}",
       searchPlaceholder: "Search title or source URI",
@@ -5171,7 +5188,7 @@ const en = {
       openFailedQueue: "Failed queue",
       openWorkflowSupervision: "Workflow supervision",
       selectAllAria: "Select all documents on page",
-      document: "Document",
+      document: "Knowledge asset",
       ingestion: "Document ingestion",
       indexing: "Document indexing",
       latestProcessing: "Latest processing",
@@ -5186,6 +5203,12 @@ const en = {
     },
     selectedDocument: {
       selectedDocument: "Selected Document",
+      sourceInformation: "Source Information",
+      sourceType: "Source Type",
+      sourceUrl: "Source URL",
+      lastSynchronized: "Last Synchronized",
+      neverSynchronized: "Never synchronized",
+      syncError: "Synchronization Error",
       recommendedAgents: "Recommended Agents",
       recommendedAgentsDescription:
         "Switch directly into a better-matched agent context for the current document state.",

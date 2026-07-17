@@ -39,6 +39,22 @@ uv run --project apps/api --locked python -m ragpilot_api.commands.staging_capac
 
 Promotion passes only when all three scenarios complete within the versioned error, throughput and p95 thresholds. Reports contain aggregate timings, status counts and transport-error classes; they exclude headers, credentials, request bodies and response bodies. Archive the report with the release evidence. Recalibrate thresholds from measured environment SLOs rather than weakening them to make a failing release pass.
 
+For the local Compose stack, use the loopback-only wrapper below. It creates a 30-minute, `access_chat`-only temporary API Key in the local database, keeps the secret in process memory, bypasses ambient HTTP proxy variables for loopback traffic, and revokes the key in a `finally` block even when qualification fails. The actor ID is recorded for audit attribution and must identify the local operator running the drill:
+
+```powershell
+$env:POSTGRES_HOST = "localhost"
+uv run --project apps/api --locked python -m ragpilot_api.commands.local_staging_capacity_gate packages/evals/staging/capacity-contract-v1.json --base-url http://localhost:8000 --tenant-id <tenant-id> --knowledge-base-id <knowledge-base-id> --actor-user-id <operator-user-id> --output output/capacity/local.json
+```
+
+Run capacity qualification only on an otherwise idle target with representative replica and dependency resources. Record host saturation or competing workloads as invalid environment evidence and rerun; do not weaken the versioned thresholds to turn a resource-contended run green. Warmup transport failures are emitted as sanitized failed-scenario evidence instead of aborting the report.
+
+Qualify the locally configured real model against non-sensitive seeded knowledge separately from the capacity corpus. The loopback-only command creates an expiry-bounded API Key with only the two Chat scopes, verifies non-empty generated content, the expected model identity and at least one Citation, emits only aggregate evidence, deletes the test conversation, and revokes the key:
+
+```powershell
+$env:POSTGRES_HOST = "localhost"
+uv run --project apps/api --locked python -m ragpilot_api.commands.local_real_model_gate --base-url http://localhost:8000 --tenant-id <tenant-id> --workspace-id <workspace-id> --knowledge-base-id <knowledge-base-id> --actor-user-id <operator-user-id> --question "<non-sensitive grounded question>" --expected-model <model-name>
+```
+
 The same contract is available as the manually dispatched `Staging Capacity` GitHub Actions workflow. Protect a GitHub environment named `staging`, require the appropriate reviewers, configure `RAGPILOT_CAPACITY_BASE_URL`, `RAGPILOT_CAPACITY_TENANT_ID`, and `RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID` as environment variables, and configure `RAGPILOT_CAPACITY_API_KEY` as an environment secret. The workflow archives only the sanitized aggregate report for 30 days. A missing input or failed scenario blocks the job.
 
 ## Worker retries
@@ -57,22 +73,23 @@ Run `infra/scripts/restore-drill.ps1 -BackupDirectory <path>` monthly and before
 
 ## Reliability exercise
 
-Run `infra/scripts/reliability-drill.ps1` only in the staging/local production-like Compose stack. The default guard rejects non-local health URLs. It applies concurrent health load, pauses Elasticsearch and Redis independently, requires the Elasticsearch health projection to transition from reachable to degraded and back, verifies the Redis PING interruption and recovery, and restores both dependencies in `finally` blocks. Health dependency probing is capped at five seconds independently of the longer retrieval request timeout.
+Run `infra/scripts/reliability-drill.ps1` only in the staging/local production-like Compose stack. The default guard rejects non-local health URLs. It applies concurrent health load, pauses Elasticsearch and Redis independently, requires the Elasticsearch health projection to transition from reachable to degraded and back, verifies Redis interruption from the API container network path and recovery with `PING`, and restores both dependencies in `finally` blocks. Health dependency probing is capped at five seconds independently of the longer retrieval request timeout.
 
 ## OCR lifecycle
 
 PDF ingestion first uses structure-preserving page extraction. A scanned PDF with no embedded text falls back to Tesseract (`chi_sim+eng`), writes page-labelled text, and records `pdf_ocr_parser`. PNG, JPEG, WebP, TIFF, and BMP assets use the same governed OCR runtime, enforce a 40-million-pixel safety limit, and record `image_ocr_parser`. Both paths continue through the normal chunk, embedding, Outbox, rebuild, and tenant-isolation chain.
 
-## Latest local production-like qualification evidence — 2026-07-16
+## Latest local production-like qualification evidence — 2026-07-17
 
 These results qualify the maintained local stack and automation. They are not a substitute for environment-owned staging and production evidence.
 
 - backup: PostgreSQL custom-format dump, 4.7 MB MinIO archive, ConfigMap snapshot and SHA-256 manifest produced without fixed container names
-- restore: every manifest hash verified; the isolated database restored with 46 public tables at Alembic `202607160001`; the isolated MinIO volume restored 31 files from the final qualification backup; all temporary resources were removed
+- restore: every manifest hash verified; the isolated database restored with 46 public tables at Alembic `202607160001`; the isolated MinIO volume restored 60 files from the final qualification backup; all temporary resources were removed
 - reliability: 20 concurrent health requests succeeded; Elasticsearch degradation and recovery were visible in the API health contract; Redis interruption and recovery were confirmed by PING
 - framework qualification: the versioned 10-case database corpus passed for Native and LlamaIndex with no recall regression; the versioned 7-case agent corpus passed all LangGraph branch, validation, trace and fallback gates
-- control-plane capacity: local liveness completed 200 requests at concurrency 20 with zero errors and p95 109.2 ms; database readiness completed 100 requests at concurrency 20 with zero errors and p95 400.1 ms
-- authenticated retrieval capacity: an ephemeral, `access_chat`-only Platform API Key completed 50 requests at concurrency 10 with zero errors, 40.02 requests/second, and p95 381.0 ms; the key was revoked immediately after the run
+- control-plane capacity: local liveness completed 200 requests at concurrency 20 with zero errors, 158.09 requests/second, and p95 336.0 ms; database readiness completed 100 requests at concurrency 20 with zero errors, 104.38 requests/second, and p95 518.6 ms
+- authenticated retrieval capacity: an ephemeral, `access_chat`-only Platform API Key completed 50 requests at concurrency 10 with zero errors, 27.11 requests/second, and p95 544.4 ms; the key was revoked immediately after the run
+- real-model qualification: the governed Ollama `qwen3.5:latest` endpoint completed a grounded Chat request in 88.8 seconds with three retrieved results and three Citations; the test conversation was deleted and the two-scope temporary API Key was revoked
 - container delivery: the digest-pinned full-capability API, OCR Worker, and production Web Dockerfiles all completed local `linux/amd64` builds from committed dependency locks; multi-architecture publication, registry attestation, and signature verification remain release-workflow evidence
 
 This local evidence qualifies the maintained single-instance Compose path, not a staging promotion. The protected staging workflow must still run against the actual release, environment-owned identity, seeded knowledge, managed dependencies, and target replica count. Record the staging capacity report, Kubernetes render results, image signature verification, external secret delivery, production identity checks, live OCR language availability, off-cluster backup replication and alert delivery separately for each deployed environment.

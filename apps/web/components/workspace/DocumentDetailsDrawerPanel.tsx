@@ -9,6 +9,7 @@ import { DialogFormActions, DialogFormField, DialogFormGrid, DialogFormLayout, F
 import { Input } from "@/components/ui/input";
 import { WorkspaceRecommendedAgentsPanel } from "@/components/workspace/WorkspaceRecommendedAgentsPanel";
 import type { DocumentDetail, WorkspaceAgentRecommendation, WorkflowRun } from "@/components/workspace/workspace-types";
+import type { DataSource } from "@/lib/data-sources";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 import {
@@ -23,6 +24,7 @@ import {
 
 type DocumentDetailsDrawerPanelProps = {
   canManageDocuments: boolean;
+  dataSource: DataSource | null;
   detail: DocumentDetail;
   focusedChunkId: string | null;
   isActivatingRecommendation: boolean;
@@ -43,6 +45,7 @@ const sectionClassName = "space-y-4 rounded-xl border border-slate-200 bg-white 
 
 export function DocumentDetailsDrawerPanel({
   canManageDocuments,
+  dataSource,
   detail,
   focusedChunkId,
   isActivatingRecommendation,
@@ -62,6 +65,9 @@ export function DocumentDetailsDrawerPanel({
     .filter((workflowRun) => workflowRun.subject_id === detail.document.id)
     .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())[0] ?? null;
   const isDeleted = Boolean(detail.document.is_deleted);
+  const dataSourceStatus = dataSource?.latest_sync_run?.run_status === "running"
+    ? "syncing"
+    : dataSource?.sync_status ?? null;
   const contentType = detail.asset_content_type?.toLowerCase() ?? "";
   const contentTypeLabel = contentType.includes("pdf")
     ? t("workspace.selectedDocument.contentTypes.pdf")
@@ -138,6 +144,52 @@ export function DocumentDetailsDrawerPanel({
             </div>
           </DialogFormGrid>
         </section>
+
+        {dataSource ? (
+          <section className={sectionClassName}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-slate-950">{t("workspace.selectedDocument.sourceInformation")}</div>
+              {dataSourceStatus ? (
+                <Badge className={cn("border", getStatusBadgeClass(dataSourceStatus))} variant="outline">
+                  {t(`workspace.documentsView.dataSources.status.${dataSourceStatus}`)}
+                </Badge>
+              ) : null}
+            </div>
+            <DialogFormGrid className="gap-3">
+              <div className={metricClassName}>
+                <div className={labelClassName}>{t("workspace.selectedDocument.sourceType")}</div>
+                <div className={valueClassName}>{t(`workspace.documentsView.dataSources.types.${dataSource.source_type}`)}</div>
+              </div>
+              <div className={metricClassName}>
+                <div className={labelClassName}>{t("workspace.selectedDocument.lastSynchronized")}</div>
+                <div className={valueClassName}>
+                  {dataSource.last_synced_at
+                    ? formatTimestamp(dataSource.last_synced_at)
+                    : t("workspace.selectedDocument.neverSynchronized")}
+                </div>
+              </div>
+            </DialogFormGrid>
+            {dataSource.source_uri ? (
+              <div className={metricClassName}>
+                <div className={labelClassName}>{t("workspace.selectedDocument.sourceUrl")}</div>
+                <a
+                  className="mt-2 block break-all text-sm font-medium text-blue-700 underline-offset-4 hover:underline"
+                  href={dataSource.source_uri}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {dataSource.source_uri}
+                </a>
+              </div>
+            ) : null}
+            {dataSource.last_sync_error ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-700">
+                <div className="font-semibold">{t("workspace.selectedDocument.syncError")}</div>
+                <div className="mt-1 break-words">{dataSource.last_sync_error}</div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className={sectionClassName}>
           <div className="text-sm font-semibold text-slate-950">{t("workspace.selectedDocument.processingHealth")}</div>

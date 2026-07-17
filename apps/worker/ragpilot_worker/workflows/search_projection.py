@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 from temporalio import workflow
 
@@ -6,7 +7,7 @@ from temporalio import workflow
 @workflow.defn(name="SearchProjectionWorkflow")
 class SearchProjectionWorkflow:
     @workflow.run
-    async def run(self, payload: dict[str, str]) -> dict[str, object]:
+    async def run(self, payload: dict[str, Any]) -> dict[str, object]:
         return await workflow.execute_activity(
             "project_document_version_to_elasticsearch",
             payload,

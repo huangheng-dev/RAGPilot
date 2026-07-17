@@ -148,7 +148,7 @@ async def stream_question(
                     return
                 try:
                     delta = await asyncio.wait_for(deltas.get(), timeout=0.1)
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     continue
                 yield _sse("delta", {"content": delta})
             response = await response_task

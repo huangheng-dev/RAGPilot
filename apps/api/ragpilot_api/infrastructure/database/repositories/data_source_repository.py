@@ -4,10 +4,10 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ragpilot_api.infrastructure.database.models import DataSource, DataSourceSyncRun
+from ragpilot_api.infrastructure.database.models import DataSource, DataSourceSyncRun, Document
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 
 
@@ -47,6 +47,42 @@ class DataSourceRepository:
             statement = statement.where(DataSource.deleted_at.is_(None))
         result = await self.session.scalars(statement.order_by(DataSource.updated_at.desc()))
         return list(result)
+
+    async def list_with_latest_run(
+        self,
+        *,
+        knowledge_base_id: UUID,
+        include_deleted: bool = False,
+        source_types: set[str] | None = None,
+    ) -> list[tuple[DataSource, DataSourceSyncRun | None, int]]:
+        latest_run_id = (
+            select(DataSourceSyncRun.id)
+            .where(DataSourceSyncRun.data_source_id == DataSource.id)
+            .order_by(DataSourceSyncRun.started_at.desc(), DataSourceSyncRun.id.desc())
+            .limit(1)
+            .correlate(DataSource)
+            .scalar_subquery()
+        )
+        document_count = (
+            select(func.count(Document.id))
+            .where(
+                Document.data_source_id == DataSource.id,
+                Document.deleted_at.is_(None),
+            )
+            .correlate(DataSource)
+            .scalar_subquery()
+        )
+        statement = (
+            select(DataSource, DataSourceSyncRun, document_count)
+            .outerjoin(DataSourceSyncRun, DataSourceSyncRun.id == latest_run_id)
+            .where(DataSource.knowledge_base_id == knowledge_base_id)
+        )
+        if not include_deleted:
+            statement = statement.where(DataSource.deleted_at.is_(None))
+        if source_types:
+            statement = statement.where(DataSource.source_type.in_(source_types))
+        result = await self.session.execute(statement.order_by(DataSource.updated_at.desc()))
+        return [(row[0], row[1], int(row[2] or 0)) for row in result.all()]
 
     async def start_sync(self, *, item: DataSource) -> DataSourceSyncRun:
         item.sync_status = "syncing"

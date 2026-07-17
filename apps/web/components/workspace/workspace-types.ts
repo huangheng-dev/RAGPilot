@@ -452,6 +452,7 @@ export type DocumentRecord = {
   id: string;
   tenant_id: string;
   knowledge_base_id: string;
+  data_source_id: string | null;
   title: string;
   source_uri: string | null;
   source_kind: "file" | "web" | "other";

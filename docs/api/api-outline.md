@@ -104,7 +104,7 @@ The secret is displayed once; only its hash and non-sensitive prefix are stored.
 - `POST /data-sources/{data_source_id}/sync`
 - `GET /data-sources/{data_source_id}/sync-runs`
 
-Data Sources own stable identity, connection/synchronization state, cursor, last error/success, synchronization lease, and synchronization-run history. The current built-in sync adapter is versioned as `public_web_v1` and handles one public page; the contract does not claim full-site crawling.
+Data Sources own stable identity, connection/synchronization state, cursor, last error/success, synchronization lease, and synchronization-run history. `GET /data-sources` accepts repeatable `source_type` filters and embeds the latest synchronization run so operator clients do not need one follow-up request per source. `POST /data-sources/{data_source_id}/sync` takes tenant scope through the required `tenant_id` query parameter. Durable synchronization is limited to Web and connector sources; uploaded file identities remain governed through the Documents lifecycle. The current built-in sync adapter is versioned as `public_web_v1` and handles one public page; the contract does not claim full-site crawling.
 
 ### Retrieval Access Control
 

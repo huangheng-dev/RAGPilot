@@ -17,25 +17,6 @@ class DataSourceCreateRequest(BaseModel):
     metadata_json: dict = Field(default_factory=dict)
 
 
-class DataSourceResponse(BaseModel):
-    id: UUID
-    tenant_id: UUID
-    knowledge_base_id: UUID
-    name: str
-    source_type: str
-    source_uri: str | None
-    identity_key: str
-    connection_status: str
-    sync_status: str
-    sync_cursor: str | None
-    last_synced_at: datetime | None
-    last_sync_error: str | None
-    metadata_json: dict
-    deleted_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
-
-
 class DataSourceSyncRunResponse(BaseModel):
     id: UUID
     data_source_id: UUID
@@ -54,7 +35,22 @@ class DataSourceSyncRunResponse(BaseModel):
     completed_at: datetime | None
 
 
-class DataSourceSyncRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class DataSourceResponse(BaseModel):
+    id: UUID
     tenant_id: UUID
+    knowledge_base_id: UUID
+    name: str
+    source_type: str
+    source_uri: str | None
+    identity_key: str
+    connection_status: str
+    sync_status: str
+    sync_cursor: str | None
+    last_synced_at: datetime | None
+    last_sync_error: str | None
+    metadata_json: dict
+    deleted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    latest_sync_run: DataSourceSyncRunResponse | None = None
+    document_count: int = 0

@@ -8,6 +8,7 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 
 ### Added
 
+- a clearly labeled, disabled Streamable HTTP MCP connector and linked governed tool in the industry demo fixture
 - Redis-backed cross-instance model and MCP concurrency/rate limits with configurable failure behavior
 - privacy-safe JSON logs, OTLP log export, inbound trace extraction, and outbound W3C Trace Context propagation
 - versioned retrieval datasets with deterministic CI/release promotion gates
@@ -39,9 +40,20 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - pull-request release-profile image builds and multi-architecture GHCR publication with SBOMs, provenance attestations, and keyless Cosign signatures
 - versioned staging capacity gates for liveness, database readiness, and authenticated retrieval without recording request or response secrets
 - a protected, manually dispatched staging-capacity workflow with environment-scoped inputs and sanitized evidence retention
+- a loopback-only local capacity wrapper that creates and always revokes an in-process temporary API Key without exposing its secret
+- a loopback-only real-model gate that verifies model identity and Citations while deleting its test conversation and revoking its temporary API Key
 
 ### Changed
 
+- Runtime resources now render as one compact divided list instead of separate stacked cards
+- Runtime resource editing now uses the standard right-side panel with full-width status controls and an explicit approval-policy selector
+- Runtime governance now keeps the worklist and recent history stacked at full width, presents both as compact rows, and localizes resource and action labels
+- Documents now uses one knowledge-asset registry for file-backed documents and external synchronization sources, embeds latest sync state without per-source follow-up requests, surfaces only actionable sync states in the list, and moves full source metadata and synchronization actions into document details
+- Chat streaming now uses a single localized assistant card, defers answer actions and citations until completion, and sizes user messages to their content within responsive bounds
+- authenticated browser release validation now exercises the persisted product loop from password login and tenant scope through file upload, Temporal ingestion, authorized retrieval, streaming Chat, citations, feedback, reload recovery, security settings, and Simplified Chinese controls
+- Temporal Workflow and Activity payload contracts now preserve nested W3C Trace Context across serialization, with converter regression coverage for ingestion, projection, synchronization, and Agent execution
+- Chat streaming now tolerates normal first-token idle intervals, prevents feedback against temporary streaming messages, and preserves a user-selected conversation across concurrent list refreshes
+- Web accessibility and delivery hardening now include localized theme/notification labels, semantic main content landmarks, a disabled framework signature header, HTTPS/HSTS ingress policy, and bounded local telemetry debug output
 - public host-port defaults now follow each component's conventional port; Web uses `3000`, Grafana uses the conflict-free adjacent port `3001`, and environment-variable overrides remain available
 - public README documentation now separates verified architecture characteristics, integration status, version scope, deployment responsibilities, and engineering evolution without generalized competitor comparisons
 - web container delivery now runs a production Next.js server instead of a development server
@@ -62,6 +74,8 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - Platform API Key usage telemetry is write-throttled per process to prevent concurrent requests from serializing on a shared audit row
 - the staging capacity corpus now validates every configured path against the actual FastAPI router, correcting the authenticated retrieval path before environment promotion
 - release qualification now supports detached pull-request checkouts and runs Alembic from an explicit, location-independent project configuration
+- capacity qualification now reports warmup transport failures as sanitized scenario evidence and prevents ambient HTTP proxies from contaminating loopback measurements
+- reliability fault injection now probes a paused Redis dependency from the API network path and handles the expected transport failure without aborting cleanup
 
 ### Security
 

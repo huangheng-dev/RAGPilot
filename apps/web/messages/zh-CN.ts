@@ -30,6 +30,9 @@ const zhCN = {
     },
     actions: {
       openRepository: "打开 GitHub 仓库",
+      themeLight: "切换到浅色模式",
+      themeDark: "切换到深色模式",
+      dismissNotification: "关闭通知",
     },
   },
   accessControl: {
@@ -352,7 +355,7 @@ const zhCN = {
       toolHint: "仅应向该智能体开放已明确授权的页面能力与工具入口。",
       registeredTools: "工具注册绑定",
       registeredToolsHint:
-        "把已经持久化登记的工具绑定到当前智能体，供后续运行时调用。",
+        "把已经持久化登记的工具绑定到当前智能体，并由受治理运行时执行调用。",
       noRegisteredTools: "当前还没有可用的启用工具注册，请先到设置里添加。",
       namePlaceholder: "智能体名称",
       slugPlaceholder: "agent-slug",
@@ -389,7 +392,7 @@ const zhCN = {
     connectivity: {
       title: "已连接页面能力",
       description:
-        "以下页面能力已经在 RAGPilot 中落地，可作为智能体后续接入的基础操作面。",
+        "将 RAGPilot 已有页面作为当前智能体受治理的交接目标。",
       enabled: "已启用",
       disabled: "未启用",
       openSurface: "打开页面",
@@ -1460,7 +1463,7 @@ const zhCN = {
     governance: {
       title: "运行治理",
       description:
-        "把可持久化的模型端点、工具注册和检索策略一起收进平台控制面，为后续对话、智能体与执行链路打底。",
+        "统一治理对话、智能体与执行链路实际使用的模型端点、工具注册和检索策略。",
       overview: {
         title: "治理焦点",
         loading: "正在加载受治理运行态总览...",
@@ -1675,7 +1678,7 @@ const zhCN = {
     tools: {
       title: "工具注册",
       description:
-        "在未来智能体运行时和 MCP 扩展真正消费这些工具之前，先把工具治理登记清楚。",
+        "先登记并治理原生、HTTP 与 MCP 工具，再允许智能体运行时调用。",
       governance: {
         nativeTools: "内置工具",
         httpTools: "HTTP 工具",
@@ -2086,7 +2089,7 @@ const zhCN = {
     architecture: {
       title: "业务构架总览",
       description:
-        "沿着 RAGPilot 的真实业务链路查看治理、知识准备、执行恢复、知识回答与后续智能体扩展。",
+        "沿着 RAGPilot 的真实业务链路查看治理、知识准备、执行恢复、知识回答与受监督自动化。",
       stage: "阶段 {index}",
       openStage: "打开阶段",
       govern: {
@@ -2664,6 +2667,8 @@ const zhCN = {
       search: "按名称、标识或资源 ID 搜索",
       enabled: "已启用",
       disabled: "已停用",
+      approvalRequired: "需要管理员审批",
+      approvalNotRequired: "无需管理员审批",
       runtimeUnavailable: "运行时不可用",
       default: "默认",
       edit: "编辑",
@@ -3218,6 +3223,20 @@ const zhCN = {
       lastToolPreview: "最近工具预检 {status} · {value}",
       lastConnectorPreview: "最近连接器预检 {status} · {value}",
       previewFailures: "{count} 次预检失败",
+      resourceTypes: {
+        modelEndpoint: "模型端点",
+        toolRegistration: "工具注册",
+        mcpConnector: "MCP 连接器",
+      },
+      eventActions: {
+        created: "已创建",
+        updated: "已更新",
+        deleted: "已删除",
+        governanceAction: "治理操作",
+        previewCompleted: "预检完成",
+        previewBlocked: "预检已阻止",
+        previewFailed: "预检失败",
+      },
       filters: {
         category: "类别",
         severity: "严重级别",
@@ -4496,7 +4515,11 @@ const zhCN = {
       answeringAsAgent: "当前以 {name} 作答",
       agentObjective: "智能体目标：",
       agentObjectiveMissing: "当前聊天运行没有附加明确的智能体目标。",
-      generating: "生成中...",
+      messageRoles: {
+        user: "你",
+        assistant: "助手",
+      },
+      generating: "正在生成回答...",
       sendQuestion: "发送问题",
       documentSignals: "文档信号",
       indexedDocuments: "已索引文档",
@@ -4511,23 +4534,17 @@ const zhCN = {
     },
     documentsView: {
       dataSources: {
-        title: "数据源",
-        description: "管理当前知识库的持久化连接器身份、增量游标与最近同步状态。",
-        add: "添加网页源",
-        create: "创建数据源",
-        createTitle: "添加公网网页数据源",
-        refresh: "刷新",
-        empty: "当前知识库还没有连接持久化数据源。",
-        name: "数据源名称",
-        url: "公网 URL",
-        urlHint: "仅接受公网 HTTP(S) 页面；私网、本地、带凭证地址及不安全重定向会被阻止。",
         sync: "立即同步",
         syncing: "同步中...",
-        neverRun: "尚未执行同步",
-        runSummary: "{changed} 个变更 · {unchanged} 个未变 · {deleted} 个删除",
+        syncStatus: "同步：{status}",
         loadFailed: "数据源加载失败。",
-        createFailed: "数据源创建失败。",
         syncFailed: "数据源同步启动失败。",
+        invalidRequest: "同步请求格式不正确，请刷新页面后重试。",
+        unsupportedSource: "该来源不支持连接器同步，请在文档列表中使用重新索引。",
+        types: {
+          web: "网页",
+          connector: "连接器"
+        },
         status: {
           never_synced: "尚未同步",
           syncing: "同步中",
@@ -4757,8 +4774,8 @@ const zhCN = {
       },
     },
     registry: {
-      title: "文档列表",
-      description: "按当前知识库范围搜索、筛选并查看文档处理状态。",
+      title: "知识资产",
+      description: "在同一列表中管理文档处理状态与外部来源同步。",
       activeAgent: "智能体 {name}",
       agentScope: "作用域 {scope}",
       searchPlaceholder: "搜索标题或来源 URI",
@@ -4794,7 +4811,7 @@ const zhCN = {
       openFailedQueue: "失败队列",
       openWorkflowSupervision: "工作流监督",
       selectAllAria: "选择当前页全部文档",
-      document: "文档",
+      document: "知识资产",
       ingestion: "文档接入",
       indexing: "文档索引",
       latestProcessing: "最近处理",
@@ -4809,6 +4826,12 @@ const zhCN = {
     },
     selectedDocument: {
       selectedDocument: "当前文档",
+      sourceInformation: "来源信息",
+      sourceType: "来源类型",
+      sourceUrl: "来源地址",
+      lastSynchronized: "最近同步",
+      neverSynchronized: "尚未同步",
+      syncError: "同步错误",
       recommendedAgents: "推荐智能体",
       recommendedAgentsDescription:
         "根据当前文档状态，直接切换到更匹配的智能体上下文。",
