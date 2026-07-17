@@ -13,6 +13,6 @@ def test_grounded_prompt_binding_is_versioned_and_snapshot_sensitive() -> None:
     second = build_grounded_chat_prompt_binding(second_messages)
 
     assert first["prompt_version_id"] == GROUNDED_CHAT_PROMPT_VERSION_ID
-    assert first["prompt_version"] == "1.0.0"
+    assert first["prompt_version"] == "1.1.0"
     assert first["template_hash"] == second["template_hash"]
     assert first["rendered_snapshot_hash"] != second["rendered_snapshot_hash"]

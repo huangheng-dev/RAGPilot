@@ -4339,21 +4339,6 @@ export default function WorkspaceConsolePage({
     setDocumentLifecycleFilter("active");
   }
 
-  async function handleInspectCitationDocument(citation: Citation) {
-    if (!citation.document_id) {
-      return;
-    }
-    await handleSelectDocument(citation.document_id, {
-      documentVersionId: citation.document_version_id,
-      focusedChunkId: citation.document_chunk_id,
-    });
-    setStatusMessage(
-      citation.chunk_index !== null
-        ? t("workspace.status.sourceChunkLoadedInChat", { index: String(citation.chunk_index) })
-        : t("workspace.status.sourceDocumentLoadedInChat")
-    );
-  }
-
   async function handleOpenCitationDocumentView(citation: Citation) {
     if (!citation.document_id) {
       return;
@@ -5750,7 +5735,6 @@ export default function WorkspaceConsolePage({
               onPermanentlyDeleteDocument={handlePermanentlyDeleteDocument}
               onCancelWorkflowRun={handleCancelWorkflowRun}
               onOpenFeedbackConversation={handleOpenFeedbackConversation}
-              onInspectCitationDocument={handleInspectCitationDocument}
               onOpenDocumentsView={openDocumentsView}
               onOpenCitationDocumentView={handleOpenCitationDocumentView}
               onPrepareValidationQuery={handlePrepareValidationQuery}

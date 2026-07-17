@@ -22,6 +22,34 @@ def test_grounded_prompt_builder_includes_context() -> None:
     assert messages[1]["content"].find("Smoke Document") >= 0
 
 
+def test_grounded_prompt_builder_requires_chinese_for_chinese_question() -> None:
+    messages = build_grounded_chat_messages(
+        question="这个系统如何处理持久化工作流？",
+        retrieval_results=[],
+    )
+
+    assert "Respond in Simplified Chinese" in messages[1]["content"]
+
+
+def test_deterministic_model_gateway_answers_chinese_question_in_chinese() -> None:
+    gateway = ModelGateway(Settings(chat_model_provider="deterministic", chat_model_name="fallback-model"))
+    result = asyncio.run(
+        gateway.generate_grounded_answer(
+            question="哪个系统负责持久化工作流？",
+            retrieval_results=[
+                {
+                    "document_title": "系统说明",
+                    "content": "RAGPilot 使用 Temporal 处理持久化工作流。",
+                    "chunk_index": 0,
+                }
+            ],
+        )
+    )
+
+    assert result.content.startswith("根据知识库检索结果")
+    assert "Temporal" in result.content
+
+
 def test_deterministic_model_gateway_returns_grounded_answer() -> None:
     gateway = ModelGateway(
         Settings(

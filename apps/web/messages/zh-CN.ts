@@ -36,19 +36,45 @@ const zhCN = {
     },
   },
   accessControl: {
+    eyebrow: "企业级数据权限",
     title: "检索访问控制",
-    description: "管理租户用户组，并在真实检索链路中强制执行文档与 Chunk 可见性。",
+    description: "按租户管理读者组与资源授权，并在搜索、对话和智能体的真实检索链路中强制执行。",
     fields: {
       tenant: "租户", groupName: "用户组名称", groupSlug: "用户组标识", description: "说明",
       member: "选择有效租户成员", document: "文档", chunk: "Chunk", resourceId: "资源 UUID",
-      group: "用户组", user: "用户", grantSubject: "选择授权对象"
+      group: "用户组", user: "用户", grantSubject: "选择授权对象", resourceType: "资源类型",
+      workspace: "工作区", knowledgeBase: "知识库", selectKnowledgeBase: "选择知识库",
+      searchDocuments: "筛选文档", searchDocumentsPlaceholder: "按文档名称筛选",
+      selectDocument: "选择文档", selectChunk: "选择 Chunk", accessScope: "读取范围"
     },
-    groups: { title: "访问用户组", description: "用于检索 ACL 的租户级读者组。", empty: "还没有访问用户组。" },
-    members: { title: "用户组成员", description: "只能添加当前租户的有效成员。", selectGroup: "请选择一个用户组管理成员。", empty: "这个用户组还没有成员。" },
-    policy: { title: "资源策略", description: "载入文档或 Chunk UUID，并替换服务端强制执行的读取策略。", noGrants: "没有显式读取授权。" },
+    metrics: {
+      groups: "访问用户组", groupsDetail: "可复用的租户级读者组",
+      members: "有效成员", membersDetail: "可以被加入用户组或直接授权",
+      resources: "有效知识库", resourcesDetail: "文档按所选知识库按需加载"
+    },
+    groups: { title: "访问用户组", description: "创建可复用的租户级读者组，并在右侧维护成员。", createTitle: "新建读者组", empty: "还没有访问用户组。", memberCount: "{count} 人" },
+    members: { title: "用户组成员", description: "只能添加当前租户的有效成员。", selectGroup: "请选择一个用户组管理成员。", empty: "这个用户组还没有成员。", inactiveMember: "该成员当前不可用" },
+    policy: {
+      title: "资源读取策略", description: "按名称选择知识库、文档或 Chunk，无需手动复制 UUID。",
+      noGrants: "没有显式读取授权。", noDocuments: "这个知识库暂无可管理文档", noChunks: "该文档暂无可管理 Chunk",
+      selectHint: "请先选择知识库和需要管理的资源。", loadHint: "资源已选择，载入后即可查看和修改当前读取策略。",
+      grantsTitle: "显式读取授权", grantsDescription: "受限资源只会向下面的用户或用户组开放。",
+      grantsInactive: "当前范围不使用显式授权；切换为“受限”后这些授权才会生效。",
+      unsaved: "存在尚未保存的策略变更。", saved: "当前策略已与服务端同步。"
+    },
     scope: { tenant: "租户内可读", inherit: "继承文档策略", restricted: "受限" },
-    actions: { createGroup: "创建用户组", add: "添加", remove: "移除", loadPolicy: "载入策略", addGrant: "添加授权", savePolicy: "保存策略" },
-    status: { loadFailed: "无法加载访问控制数据。", saveFailed: "访问控制变更失败。", groupCreated: "访问用户组已创建。", memberAdded: "用户组成员已添加。", memberRemoved: "用户组成员已移除。", policyLoadFailed: "无法加载资源策略。", policySaved: "资源策略已保存并对检索生效。" }
+    actions: {
+      createGroup: "创建用户组", add: "添加成员", remove: "移除", loadPolicy: "载入策略", addGrant: "添加授权", savePolicy: "保存策略",
+      refresh: "刷新数据", discard: "放弃更改", removeMember: "移除成员 {name}", removeGrant: "移除授权"
+    },
+    status: {
+      loadFailed: "无法加载访问控制数据。", saveFailed: "访问控制变更失败。", groupCreated: "访问用户组已创建并立即显示。",
+      memberAdded: "用户组成员已添加。", memberRemoved: "用户组成员已移除。", policyLoadFailed: "无法加载资源策略。",
+      policySaved: "资源策略已保存并对检索生效。", refreshed: "访问控制数据已刷新。", refreshing: "正在同步访问组、成员和资源目录…",
+      ready: "访问控制数据已同步。页面重新获得焦点时会自动刷新。", lastRefreshed: "最近刷新：{time}",
+      documentLoadFailed: "无法加载知识库文档。", loadingDocuments: "正在加载文档…",
+      chunkLoadFailed: "无法加载文档 Chunk。", loadingChunks: "正在加载 Chunk…"
+    }
   },
   agents: {
     access: {
@@ -4375,6 +4401,12 @@ const zhCN = {
         "当前知识库还没有可检索文档，请先上传内容并完成索引，再进行知识问答。",
       citations: "引用",
       citationCount: "{count} 条引用",
+      referenceFiles: "参考文件",
+      referenceFileCount: "{count} 个文件",
+      referenceHitCount: "命中 {count} 处",
+      fileSource: "文件来源",
+      unknownFile: "未知文件",
+      openFile: "打开文件",
       runtimeDetails: "运行信息",
       reviewContext: "复核上下文",
       sourcesCount: "{count} 个来源",

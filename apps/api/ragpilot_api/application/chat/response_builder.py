@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from ragpilot_api.application.model_gateway.prompt_builder import question_prefers_simplified_chinese
+
 
 COMMON_TITLE_PREFIXES = (
     "please ",
@@ -60,7 +62,10 @@ def build_suggested_conversation_title(question: str) -> str:
 
 
 def build_grounded_answer(*, question: str, retrieval_results: list[dict]) -> str:
+    use_chinese = question_prefers_simplified_chinese(question)
     if not retrieval_results:
+        if use_chinese:
+            return "当前知识库中没有找到与这个问题直接相关的内容。请上传相关文件，或扩大知识库范围后再试。"
         return (
             "I could not find grounded context in the selected knowledge base for this question. "
             "Please upload relevant documents or broaden the knowledge base scope."
@@ -70,6 +75,12 @@ def build_grounded_answer(*, question: str, retrieval_results: list[dict]) -> st
     supporting_documents = ", ".join(
         sorted({result["document_title"] for result in retrieval_results[:3]})
     )
+    if use_chinese:
+        return (
+            f"根据知识库检索结果，回答主要依据《{lead['document_title']}》。"
+            f"最相关的内容是：{lead['content'][:400]}\n\n"
+            f"参考文件：{supporting_documents}。"
+        )
     return (
         f"Based on the retrieved knowledge base content, the best answer to '{question}' is grounded in "
         f"'{lead['document_title']}'. The most relevant passage says: {lead['content'][:400]}\n\n"

@@ -36,7 +36,8 @@ Tenant and identity scope
 - `Chat` — streaming grounded answers, Citations, feedback, and conversation history
 - `Documents` — file and single-page Web intake, Data Sources, indexing, lifecycle, and recovery
 - `Agents` — governed definitions, model and Tool bindings, execution constraints, approval, and replay
-- `Admin` — tenant, Workspace, Knowledge Base, member, access, model, Tool, connector, and retrieval governance
+- `Access Control` — tenant Access Groups plus Document and Chunk user/group grants
+- `Admin` — tenant, Workspace, Knowledge Base, member, model, Tool, connector, and retrieval governance
 - `Operations` — Workflow and Agent execution queues, failures, retry, cancellation, lineage, and diagnostics
 - `Settings` — profile, password, active sessions, and personal security actions
 
@@ -60,6 +61,8 @@ Tenant and identity scope
 - native SSE deltas for Ollama and OpenAI-compatible providers
 - explicit completion-chunk fallback and disconnect cancellation
 - persisted final Messages, Citations, feedback, usage evidence, and streaming mode
+- Citations grouped into reference files with direct handoff to the selected Document detail
+- answers use the question language by default, with an explicit Simplified Chinese policy for Chinese questions
 - immutable Prompt version and rendered-snapshot hash bindings on Chat and Agent history
 
 ### Agents, Tools, and Workflows

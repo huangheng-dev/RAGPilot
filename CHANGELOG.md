@@ -50,6 +50,10 @@ The format follows a Keep a Changelog style with SemVer-style release tags.
 - Runtime governance now keeps the worklist and recent history stacked at full width, presents both as compact rows, and localizes resource and action labels
 - Documents now uses one knowledge-asset registry for file-backed documents and external synchronization sources, embeds latest sync state without per-source follow-up requests, surfaces only actionable sync states in the list, and moves full source metadata and synchronization actions into document details
 - Chat streaming now uses a single localized assistant card, defers answer actions and citations until completion, and sizes user messages to their content within responsive bounds
+- completed Chat citations now render as deduplicated reference files without quote-preview clutter, and opening a file hands off to its selected Document detail
+- citation response assembly now normalizes retrieval Chunk identities so streamed completions retain Document titles, versions, and source navigation without requiring a reload
+- grounded Chat Prompt `1.1.0` now follows the user's question language and explicitly answers Chinese questions in Simplified Chinese; the deterministic fallback follows the same policy
+- Access Control is documented as a dedicated product surface for tenant groups and restricted Document/Chunk grants
 - authenticated browser release validation now exercises the persisted product loop from password login and tenant scope through file upload, Temporal ingestion, authorized retrieval, streaming Chat, citations, feedback, reload recovery, security settings, and Simplified Chinese controls
 - Temporal Workflow and Activity payload contracts now preserve nested W3C Trace Context across serialization, with converter regression coverage for ingestion, projection, synchronization, and Agent execution
 - Chat streaming now tolerates normal first-token idle intervals, prevents feedback against temporary streaming messages, and preserves a user-selected conversation across concurrent list refreshes

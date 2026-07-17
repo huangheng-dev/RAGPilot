@@ -10,7 +10,23 @@ import {
 export function buildApiBaseUrl() {
   const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
   if (configuredBaseUrl && configuredBaseUrl.length > 0) {
-    return configuredBaseUrl.endsWith("/api/v1") ? configuredBaseUrl : `${configuredBaseUrl}/api/v1`;
+    let resolvedBaseUrl = configuredBaseUrl;
+    if (typeof window !== "undefined") {
+      try {
+        const configuredUrl = new URL(configuredBaseUrl);
+        const configuredHost = configuredUrl.hostname.toLowerCase();
+        const browserHost = window.location.hostname.toLowerCase();
+        const configuredIsLoopback = configuredHost === "localhost" || configuredHost === "127.0.0.1";
+        const browserIsLoopback = browserHost === "localhost" || browserHost === "127.0.0.1";
+        if (configuredIsLoopback && browserIsLoopback && configuredHost !== browserHost) {
+          configuredUrl.hostname = browserHost;
+          resolvedBaseUrl = configuredUrl.toString().replace(/\/$/, "");
+        }
+      } catch {
+        resolvedBaseUrl = configuredBaseUrl;
+      }
+    }
+    return resolvedBaseUrl.endsWith("/api/v1") ? resolvedBaseUrl : `${resolvedBaseUrl}/api/v1`;
   }
 
   if (typeof window !== "undefined") {

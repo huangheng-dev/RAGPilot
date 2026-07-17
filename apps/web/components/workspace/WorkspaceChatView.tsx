@@ -2,7 +2,7 @@
 
 import { type ComponentProps, type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Copy, Info, LoaderCircle, MessageSquareText, Send, ShieldAlert } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Copy, FileText, Info, LoaderCircle, MessageSquareText, Send, ShieldAlert } from "lucide-react";
 import { ConsoleEmptyState } from "@/components/console/ConsolePrimitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,7 +100,6 @@ type WorkspaceChatViewProps = {
   onDeleteDocument: () => void | Promise<void>;
   onPermanentlyDeleteDocument: (confirmationTitle: string) => void | Promise<void>;
   onOpenFeedbackConversation: (conversationId: string) => void;
-  onInspectCitationDocument: (citation: Citation) => void | Promise<void>;
   onOpenDocumentsView: () => void;
   onOpenCitationDocumentView: (citation: Citation) => void | Promise<void>;
   onRefreshWorkspace: () => void | Promise<void>;
@@ -147,6 +146,44 @@ type WorkspaceChatViewProps = {
   workflowRuns: WorkflowRun[];
 };
 
+type CitationFileGroup = {
+  key: string;
+  title: string | null;
+  primaryCitation: Citation;
+  locations: string[];
+  citationCount: number;
+};
+
+function groupCitationsByDocument(citations: Citation[]): CitationFileGroup[] {
+  const groups = new Map<string, CitationFileGroup>();
+
+  [...citations]
+    .sort((left, right) => left.rank - right.rank)
+    .forEach((citation) => {
+      const key = citation.document_id ?? citation.document_chunk_id ?? citation.id;
+      const existing = groups.get(key);
+      const location = citation.source_location_label?.trim() || null;
+
+      if (existing) {
+        existing.citationCount += 1;
+        if (location && !existing.locations.includes(location)) {
+          existing.locations.push(location);
+        }
+        return;
+      }
+
+      groups.set(key, {
+        key,
+        title: citation.document_title,
+        primaryCitation: citation,
+        locations: location ? [location] : [],
+        citationCount: 1,
+      });
+    });
+
+  return [...groups.values()];
+}
+
 export function WorkspaceChatView({
   activeAgentContext,
   bootstrap,
@@ -183,7 +220,6 @@ export function WorkspaceChatView({
   onDeleteDocument,
   onPermanentlyDeleteDocument,
   onOpenFeedbackConversation,
-  onInspectCitationDocument,
   onOpenDocumentsView,
   onOpenCitationDocumentView,
   onRefreshWorkspace,
@@ -556,6 +592,16 @@ export function WorkspaceChatView({
     return hasNumericScore(value) ? value.toFixed(3) : null;
   }
 
+  function formatCitationFileMeta(source: CitationFileGroup) {
+    if (source.locations.length === 1) {
+      return source.locations[0];
+    }
+    if (source.citationCount > 1) {
+      return t("workspace.chatView.referenceHitCount", { count: source.citationCount });
+    }
+    return t("workspace.chatView.fileSource");
+  }
+
   function formatProviderLabel(providerType: string | null) {
     if (!providerType) {
       return null;
@@ -862,56 +908,46 @@ export function WorkspaceChatView({
                       <div className="mt-4 space-y-2.5 border-t border-slate-200 pt-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            {t("workspace.chatView.citations")}
+                          {t("workspace.chatView.referenceFiles")}
                           </div>
                           <Badge
                             className="border-slate-200 bg-slate-50 text-slate-600"
                             variant="outline"
                           >
-                            {t("workspace.chatView.sourcesCount", {
-                              count: String(message.citations.length),
+                            {t("workspace.chatView.referenceFileCount", {
+                              count: String(groupCitationsByDocument(message.citations).length),
                             })}
                           </Badge>
                         </div>
                         <div className="space-y-2">
-                          {message.citations.map((citation) => (
+                          {groupCitationsByDocument(message.citations).map((source) => (
                             <div
-                              key={citation.id}
-                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
+                              key={source.key}
+                              className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
                             >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate font-medium text-slate-900">
-                                    {citation.document_title ??
-                                      t("workspace.chatView.sourceRank", {
-                                        rank: String(citation.rank),
-                                      })}
-                                    {citation.source_location_label ? ` · ${citation.source_location_label}` : ""}
-                                  </div>
-                                  {citation.quote ? (
-                                    <p className="mt-1 truncate text-xs leading-5 text-slate-600">
-                                      {citation.quote}
-                                    </p>
-                                  ) : (
-                                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                                      {t("workspace.chatView.citationWithoutQuote")}
-                                    </p>
-                                  )}
-                                </div>
-                                {citation.document_id ? (
-                                  <Button
-                                    className="h-8 shrink-0 bg-white px-3"
-                                    onClick={() =>
-                                      void onInspectCitationDocument(citation)
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {t("workspace.chatView.inspectSource")}
-                                  </Button>
-                                ) : null}
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500">
+                                <FileText className="h-4 w-4" />
                               </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium text-slate-900">
+                                  {source.title ?? t("workspace.chatView.unknownFile")}
+                                </div>
+                                <div className="mt-0.5 truncate text-xs text-slate-500">
+                                  {formatCitationFileMeta(source)}
+                                </div>
+                              </div>
+                              {source.primaryCitation.document_id ? (
+                                <Button
+                                  className="h-8 shrink-0 bg-white px-3"
+                                  onClick={() => void onOpenCitationDocumentView(source.primaryCitation)}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  {t("workspace.chatView.openFile")}
+                                  <ArrowUpRight className="h-3.5 w-3.5" />
+                                </Button>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -1402,20 +1438,26 @@ export function WorkspaceChatView({
                   </div>
                 );
               })()}
-              <AgentAlignedDrawerSection badge={<Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">{t("workspace.chatView.citationCount", { count: String(detailMessage.citations.length) })}</Badge>} title={t("workspace.chatView.citations")}>
+              <AgentAlignedDrawerSection badge={<Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">{t("workspace.chatView.referenceFileCount", { count: String(groupCitationsByDocument(detailMessage.citations).length) })}</Badge>} title={t("workspace.chatView.referenceFiles")}>
                 <div className="space-y-2">
-                  {detailMessage.citations.length > 0 ? detailMessage.citations.map((citation) => (
+                  {detailMessage.citations.length > 0 ? groupCitationsByDocument(detailMessage.citations).map((source) => (
                     <button
-                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
-                      key={citation.id}
-                      onClick={() => void onInspectCitationDocument(citation)}
+                      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
+                      key={source.key}
+                      onClick={() => void onOpenCitationDocumentView(source.primaryCitation)}
                       type="button"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{citation.document_title ?? `Chunk ${citation.document_chunk_id.slice(0, 8)}`}{citation.source_location_label ? ` · ${citation.source_location_label}` : ""}</span>
-                        <span className="shrink-0 text-xs text-slate-500">{hasNumericScore(citation.score) ? formatNumericScore(citation.score) : t("workspace.chatView.unscored")}</span>
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800">
+                        <FileText className="h-4 w-4" />
                       </div>
-                      {citation.quote ? <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{citation.quote}</p> : null}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{source.title ?? t("workspace.chatView.unknownFile")}</div>
+                        <div className="mt-1 truncate text-xs text-slate-500">{formatCitationFileMeta(source)}</div>
+                      </div>
+                      <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-300">
+                        {t("workspace.chatView.openFile")}
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                      </span>
                     </button>
                   )) : (
                     <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">

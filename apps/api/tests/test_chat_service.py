@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from ragpilot_api.application.chat.chat_service import ChatService
+from ragpilot_api.application.chat.chat_service import ChatService, build_citation_context_by_chunk_id
 from ragpilot_api.application.model_gateway.contracts import RuntimeModelBinding
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
 from ragpilot_api.contracts.http.chat_contracts import (
@@ -41,6 +41,28 @@ def build_message(**overrides):
         "created_at": datetime.now(timezone.utc),
     }
     return SimpleNamespace(**{**defaults, **overrides})
+
+
+def test_citation_context_normalizes_string_chunk_ids() -> None:
+    chunk_id = uuid4()
+    document_id = uuid4()
+    contexts = build_citation_context_by_chunk_id(
+        [
+            {
+                "document_chunk_id": str(chunk_id),
+                "document_id": document_id,
+                "document_title": "客户投诉受理流程",
+                "document_version_id": uuid4(),
+                "knowledge_base_id": uuid4(),
+                "chunk_index": 2,
+                "metadata_json": {"source_location_label": "第 3 页"},
+            }
+        ]
+    )
+
+    assert contexts[chunk_id].document_id == document_id
+    assert contexts[chunk_id].document_title == "客户投诉受理流程"
+    assert contexts[chunk_id].source_location_label == "第 3 页"
 
 
 @pytest.mark.anyio
@@ -836,4 +858,3 @@ async def test_ask_question_uses_persisted_retrieval_engine_and_includes_citatio
         "tool_registration_count": 0,
     }
     assert assistant_create_call.kwargs["usage_json"]["retrieval_diagnostics"][0]["retrieval_method"] == "hybrid"
-

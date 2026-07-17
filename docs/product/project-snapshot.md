@@ -37,7 +37,8 @@ The Web console exposes:
 - `Documents` — intake, lifecycle, activity, filtering, batch operations, and recovery handoff
 - `Operations` — workflow queues, detail, events, notes, retry, cancellation, and lineage
 - `Agents` — governed definitions, executions, approvals, evidence, and runtime handoff
-- `Admin` — tenant, Workspace, Knowledge Base, member, access, and cross-scope governance
+- `Access Control` — tenant Access Groups and user/group grants for restricted Documents and Chunks
+- `Admin` — tenant, Workspace, Knowledge Base, member, and cross-scope governance
 - `Settings` — profile/session security and focused runtime-governance follow-up
 - `Workspace` — compatibility route for context-preserving deep links
 
@@ -82,6 +83,8 @@ PostgreSQL remains the business source of truth. pgvector and Elasticsearch are 
 - versioned contract datasets with ranking, latency, groundedness, citation, isolation, and cost gates in CI and release preflight
 - grounded conversations, Messages, Citations, feedback, history, search, metrics, rename, and deletion
 - provider-native SSE Chat deltas for Ollama and OpenAI-compatible runtimes, explicit completion-chunk fallback, disconnect cancellation, and persisted final Messages
+- completed Citations grouped by Document into compact reference-file rows, with handoff to the selected Document detail
+- response-language policy that follows the question language by default and explicitly selects Simplified Chinese for Chinese questions
 
 Streaming mode is persisted in Message usage evidence as `provider_native` or `completion_chunked_fallback`, so operators can distinguish real provider deltas from compatibility behavior.
 
@@ -93,6 +96,7 @@ Streaming mode is persisted in Message usage evidence as `provider_native` or `c
 - timeout, retry, fallback, usage/cost evidence, and Redis-backed cross-instance concurrency/request-rate controls
 - versioned Prompt Templates and Prompt Versions
 - immutable Prompt version and content-hash binding on Messages, Agent Runs, and Agent Executions
+- active grounded-Chat Prompt `1.1.0`, which binds the response-language policy into the immutable rendered snapshot
 
 The `packages/prompts` package remains the authored-asset/import-export boundary; the active runtime catalog is persisted in PostgreSQL.
 

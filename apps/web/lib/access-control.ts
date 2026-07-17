@@ -1,6 +1,6 @@
 "use client";
 
-import { authenticatedApiRequest } from "@/lib/authenticated-api";
+import { authenticatedApiRequest, authenticatedApiRequestWithHeaders } from "@/lib/authenticated-api";
 
 export type AccessGroup = {
   id: string;
@@ -26,6 +26,52 @@ export type ResourceAccessPolicy = {
   resource_id: string;
   access_scope: "tenant" | "inherit" | "restricted";
   grants: AccessGrant[];
+};
+
+export type AccessControlWorkspace = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  slug: string;
+  is_archived?: boolean;
+};
+
+export type AccessControlKnowledgeBase = {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  name: string;
+  slug: string;
+};
+
+export type AccessControlDocument = {
+  id: string;
+  tenant_id: string;
+  knowledge_base_id: string;
+  title: string;
+  source_kind: "file" | "web" | "other";
+  ingestion_status: string;
+  indexing_status: string;
+  updated_at: string;
+};
+
+export type AccessControlDocumentChunk = {
+  id: string;
+  document_version_id: string;
+  chunk_index: number;
+  content: string;
+  token_count: number | null;
+};
+
+export type AccessControlDocumentDetail = {
+  document: AccessControlDocument;
+  chunks: AccessControlDocumentChunk[];
+};
+
+export type AccessControlResourceCatalog = {
+  workspaces: AccessControlWorkspace[];
+  knowledgeBases: AccessControlKnowledgeBase[];
+  documents: AccessControlDocument[];
 };
 
 export function listAccessGroups(tenantId: string) {
@@ -66,5 +112,54 @@ export function updateResourceAccessPolicy(
         grants: grants.map(({ user_id, group_id }) => ({ user_id, group_id }))
       })
     }
+  );
+}
+
+export async function listAccessControlDocuments(knowledgeBaseId: string) {
+  const pageSize = 200;
+  const documents: AccessControlDocument[] = [];
+  let offset = 0;
+  let totalCount = Number.POSITIVE_INFINITY;
+
+  while (documents.length < totalCount) {
+    const query = new URLSearchParams({
+      knowledge_base_id: knowledgeBaseId,
+      lifecycle: "active",
+      sort: "title-asc",
+      limit: String(pageSize),
+      offset: String(offset)
+    });
+    const response = await authenticatedApiRequestWithHeaders<AccessControlDocument[]>(`/documents?${query.toString()}`);
+    documents.push(...response.data);
+    totalCount = Number.parseInt(response.headers.get("X-Total-Count") ?? String(response.data.length), 10);
+    if (response.data.length === 0) break;
+    offset += response.data.length;
+  }
+
+  return documents;
+}
+
+export async function loadAccessControlResourceCatalog(tenantId: string): Promise<AccessControlResourceCatalog> {
+  const workspaces = await authenticatedApiRequest<AccessControlWorkspace[]>(
+    `/workspaces?tenant_id=${encodeURIComponent(tenantId)}&is_archived=false`
+  );
+  const knowledgeBaseLists = await Promise.all(
+    workspaces.map((workspace) => authenticatedApiRequest<AccessControlKnowledgeBase[]>(
+      `/knowledge-bases?workspace_id=${encodeURIComponent(workspace.id)}`
+    ))
+  );
+  const knowledgeBases = knowledgeBaseLists.flat();
+
+  return {
+    workspaces,
+    knowledgeBases,
+    documents: []
+  };
+}
+
+export function getAccessControlDocumentDetail(documentId: string, knowledgeBaseId: string) {
+  const query = new URLSearchParams({ knowledge_base_id: knowledgeBaseId });
+  return authenticatedApiRequest<AccessControlDocumentDetail>(
+    `/documents/${encodeURIComponent(documentId)}?${query.toString()}`
   );
 }
