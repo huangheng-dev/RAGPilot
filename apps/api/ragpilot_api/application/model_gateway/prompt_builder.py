@@ -5,15 +5,26 @@ import json
 
 
 GROUNDED_CHAT_PROMPT_KEY = "grounded-chat"
-GROUNDED_CHAT_PROMPT_VERSION = "1.0.0"
-GROUNDED_CHAT_PROMPT_VERSION_ID = "10000000-0000-0000-0000-000000000001"
+GROUNDED_CHAT_PROMPT_VERSION = "1.1.0"
+GROUNDED_CHAT_PROMPT_VERSION_ID = "10000000-0000-0000-0000-000000000003"
 GROUNDED_CHAT_SYSTEM_TEMPLATE = (
     "You are RAGPilot. Answer only from the provided knowledge base context. "
+    "Always answer in the same language as the user's question unless the user explicitly requests another language. "
     "First decide whether the retrieved context is directly relevant to the user's question. "
     "Never summarize or reuse context that does not answer the question. "
     "If the context is irrelevant or insufficient, say that the current knowledge base does not contain enough relevant information. "
     "When agent context is provided, follow its objective and instructions without inventing facts beyond the retrieved evidence."
 )
+
+
+def question_prefers_simplified_chinese(question: str) -> bool:
+    return any("\u3400" <= character <= "\u9fff" for character in question)
+
+
+def build_response_language_instruction(question: str) -> str:
+    if question_prefers_simplified_chinese(question):
+        return "Respond in Simplified Chinese. Keep product names, code, and identifiers unchanged when appropriate."
+    return "Respond in the same language as the user's question unless they explicitly request another language."
 
 
 def build_grounded_chat_messages(
@@ -61,6 +72,7 @@ def build_grounded_chat_messages(
             "role": "user",
             "content": (
                 f"Question:\n{question}\n\n"
+                f"Response language:\n{build_response_language_instruction(question)}\n\n"
                 f"Agent context:\n{agent_context_text}\n\n"
                 f"Retrieved context:\n{context_text}\n\n"
                 "Write a concise grounded answer. Use only evidence that directly addresses the question."

@@ -86,7 +86,8 @@ Temporal owns durable retries, timers, cancellation, approval waiting, and workf
 
 ### Web
 
-- exposes `Home`, `Chat`, `Documents`, `Agents`, `Admin`, `Operations`, `Settings`, and Login surfaces;
+- exposes `Home`, `Chat`, `Documents`, `Agents`, `Access Control`, `Admin`, `Operations`, `Settings`, and Login surfaces;
+- uses dedicated `Access Control` administration for tenant Access Groups and restricted Document/Chunk grants;
 - keeps the primary user navigation separate from governance and execution supervision;
 - renders backend-owned authorization and runtime-governance contracts;
 - preserves tenant, Workspace, Knowledge Base, and selected-resource context in URLs where handoff requires it;

@@ -36,19 +36,45 @@ const en = {
     },
   },
   accessControl: {
+    eyebrow: "Enterprise data permissions",
     title: "Retrieval Access Control",
-    description: "Manage tenant groups and enforce document or Chunk visibility in the retrieval path.",
+    description: "Manage tenant reader groups and resource grants enforced across Search, Chat, and Agent retrieval.",
     fields: {
       tenant: "Tenant", groupName: "Group name", groupSlug: "Group slug", description: "Description",
       member: "Select an active tenant member", document: "Document", chunk: "Chunk", resourceId: "Resource UUID",
-      group: "Group", user: "User", grantSubject: "Select a grant subject"
+      group: "Group", user: "User", grantSubject: "Select a grant subject", resourceType: "Resource type",
+      workspace: "Workspace", knowledgeBase: "Knowledge base", selectKnowledgeBase: "Select a knowledge base",
+      searchDocuments: "Filter documents", searchDocumentsPlaceholder: "Filter by document title",
+      selectDocument: "Select a document", selectChunk: "Select a Chunk", accessScope: "Read scope"
     },
-    groups: { title: "Access groups", description: "Tenant-scoped reader groups used by retrieval ACLs.", empty: "No access groups yet." },
-    members: { title: "Group members", description: "Only active tenant members can be added.", selectGroup: "Select a group to manage members.", empty: "This group has no members." },
-    policy: { title: "Resource policy", description: "Load a document or Chunk UUID and replace its server-enforced read policy.", noGrants: "No explicit read grants." },
+    metrics: {
+      groups: "Access groups", groupsDetail: "Reusable tenant-scoped reader groups",
+      members: "Active members", membersDetail: "Eligible for group membership or direct grants",
+      resources: "Knowledge bases", resourcesDetail: "Documents load on demand for the selected knowledge base"
+    },
+    groups: { title: "Access groups", description: "Create reusable tenant reader groups and manage their members alongside them.", createTitle: "New reader group", empty: "No access groups yet.", memberCount: "{count} members" },
+    members: { title: "Group members", description: "Only active tenant members can be added.", selectGroup: "Select a group to manage members.", empty: "This group has no members.", inactiveMember: "This member is currently unavailable" },
+    policy: {
+      title: "Resource read policy", description: "Choose a knowledge base, document, or Chunk by name instead of copying UUIDs.",
+      noGrants: "No explicit read grants.", noDocuments: "No manageable documents in this knowledge base", noChunks: "No manageable Chunks in this document",
+      selectHint: "Select a knowledge base and resource to begin.", loadHint: "The resource is selected. Load it to inspect and change its current read policy.",
+      grantsTitle: "Explicit read grants", grantsDescription: "Restricted resources are readable only by the users and groups below.",
+      grantsInactive: "The current scope does not use explicit grants; they become active when the scope is Restricted.",
+      unsaved: "There are unsaved policy changes.", saved: "The current policy is synchronized with the server."
+    },
     scope: { tenant: "Tenant readable", inherit: "Inherit document policy", restricted: "Restricted" },
-    actions: { createGroup: "Create group", add: "Add", remove: "Remove", loadPolicy: "Load policy", addGrant: "Add grant", savePolicy: "Save policy" },
-    status: { loadFailed: "Access control data could not be loaded.", saveFailed: "Access control change failed.", groupCreated: "Access group created.", memberAdded: "Group member added.", memberRemoved: "Group member removed.", policyLoadFailed: "Resource policy could not be loaded.", policySaved: "Resource policy saved and is active for retrieval." }
+    actions: {
+      createGroup: "Create group", add: "Add member", remove: "Remove", loadPolicy: "Load policy", addGrant: "Add grant", savePolicy: "Save policy",
+      refresh: "Refresh data", discard: "Discard changes", removeMember: "Remove member {name}", removeGrant: "Remove grant"
+    },
+    status: {
+      loadFailed: "Access control data could not be loaded.", saveFailed: "Access control change failed.", groupCreated: "Access group created and displayed immediately.",
+      memberAdded: "Group member added.", memberRemoved: "Group member removed.", policyLoadFailed: "Resource policy could not be loaded.",
+      policySaved: "Resource policy saved and active for retrieval.", refreshed: "Access control data refreshed.", refreshing: "Synchronizing access groups, members, and resources…",
+      ready: "Access control data is synchronized. Returning to this page refreshes it automatically.", lastRefreshed: "Last refreshed: {time}",
+      documentLoadFailed: "Knowledge base documents could not be loaded.", loadingDocuments: "Loading documents…",
+      chunkLoadFailed: "Document Chunks could not be loaded.", loadingChunks: "Loading Chunks…"
+    }
   },
   agents: {
     access: {
@@ -4717,6 +4743,12 @@ const en = {
         "No indexed documents are available in this knowledge base yet. Upload content first so grounded answers have retrieval context.",
       citations: "Citations",
       citationCount: "{count} citations",
+      referenceFiles: "Reference files",
+      referenceFileCount: "{count} files",
+      referenceHitCount: "{count} matching passages",
+      fileSource: "File source",
+      unknownFile: "Unknown file",
+      openFile: "Open file",
       runtimeDetails: "Runtime details",
       reviewContext: "Review context",
       sourcesCount: "{count} sources",

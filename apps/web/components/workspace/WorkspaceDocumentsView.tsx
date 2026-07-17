@@ -207,6 +207,15 @@ export function WorkspaceDocumentsView({
     (selectedExternalSource.sync_status === "syncing" || selectedExternalSource.latest_sync_run?.run_status === "running"),
   );
 
+  useEffect(() => {
+    if (
+      selectedDocumentDetail &&
+      selectedDocumentId === selectedDocumentDetail.document.id
+    ) {
+      setIsDocumentDetailOpen(true);
+    }
+  }, [selectedDocumentDetail, selectedDocumentId]);
+
   async function handleSyncSource(source: DataSource) {
     if (!tenantId) return;
     setRunningSourceId(source.id);

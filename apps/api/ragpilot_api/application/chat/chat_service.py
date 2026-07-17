@@ -537,7 +537,11 @@ def build_citation_context_by_chunk_id(retrieved_chunks: list[dict[str, Any]]) -
         document_chunk_id = row.get("document_chunk_id")
         if document_chunk_id is None:
             continue
-        contexts[document_chunk_id] = CitationSourceContext(
+        try:
+            parsed_chunk_id = document_chunk_id if isinstance(document_chunk_id, UUID) else UUID(str(document_chunk_id))
+        except (TypeError, ValueError):
+            continue
+        contexts[parsed_chunk_id] = CitationSourceContext(
             document_id=row.get("document_id"),
             document_title=row.get("document_title"),
             document_version_id=row.get("document_version_id"),
