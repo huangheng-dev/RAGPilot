@@ -41,6 +41,19 @@ function Wait-HealthCondition {
   throw $FailureMessage
 }
 
+function Invoke-NativeAllowFailure {
+  param([scriptblock]$Command)
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = & $Command 2>$null
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+}
+
 $baseline = Get-ApiHealth
 if ($baseline.status -ne "ok") { throw "API baseline health failed." }
 if (-not $baseline.search_projection.enabled -or -not $baseline.search_projection.reachable) {
@@ -73,8 +86,13 @@ try {
   & docker @composeArgs pause redis | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "Pausing Redis failed." }
   $redisPaused = $true
-  $redisDuringOutage = & docker @composeArgs exec -T redis redis-cli ping 2>$null
-  if ($LASTEXITCODE -eq 0 -and (($redisDuringOutage -join "").Trim() -eq "PONG")) {
+  $redisDuringOutage = Invoke-NativeAllowFailure -Command {
+    & docker @composeArgs exec -T api python -c (
+      "import redis,sys; r=redis.Redis(host='redis',port=6379," +
+      "socket_connect_timeout=1,socket_timeout=1); sys.exit(0 if r.ping() else 2)"
+    )
+  }
+  if ($redisDuringOutage.ExitCode -eq 0) {
     throw "Redis remained reachable after the outage was injected."
   }
   if ((Get-ApiHealth).status -ne "ok") { throw "API did not survive the Redis outage." }
@@ -87,8 +105,10 @@ try {
 $redisRecovered = $false
 $deadline = [DateTime]::UtcNow.AddSeconds($RecoveryTimeoutSeconds)
 do {
-  $redisPing = & docker @composeArgs exec -T redis redis-cli ping 2>$null
-  if ($LASTEXITCODE -eq 0 -and (($redisPing -join "").Trim() -eq "PONG")) {
+  $redisPing = Invoke-NativeAllowFailure -Command {
+    & docker @composeArgs exec -T redis redis-cli ping
+  }
+  if ($redisPing.ExitCode -eq 0 -and (($redisPing.Output -join "").Trim() -eq "PONG")) {
     $redisRecovered = $true
     break
   }

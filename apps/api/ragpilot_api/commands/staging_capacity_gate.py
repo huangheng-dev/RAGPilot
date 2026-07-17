@@ -75,7 +75,21 @@ async def run_scenario(
     warmup_runs = int(scenario.get("warmup_runs", 0))
 
     for _ in range(warmup_runs):
-        response = await client.request(method, path, headers=headers, json=body)
+        try:
+            response = await client.request(method, path, headers=headers, json=body)
+        except httpx.HTTPError as exc:
+            return {
+                "scenario_id": scenario["scenario_id"],
+                "method": method,
+                "path": path,
+                "status": "failed",
+                "promotion": {
+                    "passed": False,
+                    "failures": [
+                        f"warmup transport failed with {type(exc).__name__}"
+                    ],
+                },
+            }
         if not response_contract_passed(response, scenario):
             return {
                 "scenario_id": scenario["scenario_id"],
@@ -154,7 +168,7 @@ async def run_scenario(
 
 async def evaluate_capacity(
     *, dataset: dict[str, Any], base_url: str, scenario_ids: set[str] | None = None,
-    transport: httpx.AsyncBaseTransport | None = None,
+    transport: httpx.AsyncBaseTransport | None = None, trust_env: bool = True,
 ) -> dict[str, Any]:
     validate_dataset(dataset)
     parsed_url = urlsplit(base_url)
@@ -179,7 +193,8 @@ async def evaluate_capacity(
         max_keepalive_connections=max(int(item["concurrency"]) for item in selected),
     )
     async with httpx.AsyncClient(
-        base_url=base_url.rstrip("/"), timeout=timeout_seconds, limits=limits, transport=transport
+        base_url=base_url.rstrip("/"), timeout=timeout_seconds, limits=limits,
+        transport=transport, trust_env=trust_env,
     ) as client:
         for scenario in selected:
             required_environment = list(scenario.get("required_environment") or [])

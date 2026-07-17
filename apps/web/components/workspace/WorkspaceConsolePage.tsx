@@ -3810,14 +3810,13 @@ export default function WorkspaceConsolePage({
     setHasMoreConversations(conversationItems.length === CONVERSATION_PAGE_SIZE);
     setConversationMetrics(nextConversationMetrics);
 
-    const nextConversationId =
+    setSelectedConversationId((currentConversationId) =>
       preferredConversationId && conversationItems.some((item) => item.id === preferredConversationId)
         ? preferredConversationId
-        : selectedConversationId && conversationItems.some((item) => item.id === selectedConversationId)
-          ? selectedConversationId
-          : null;
-
-    setSelectedConversationId(nextConversationId);
+        : currentConversationId && conversationItems.some((item) => item.id === currentConversationId)
+          ? currentConversationId
+          : null
+    );
   }
 
   async function loadMoreConversations() {
@@ -5791,6 +5790,9 @@ export default function WorkspaceConsolePage({
             documentPage={documentPage}
             documentPageCount={documentPageCount}
             documentLifecycleFilter={documentLifecycleFilter}
+            documentQuery={documentQuery}
+            documentSourceFilter={documentSourceFilter}
+            documentStatusFilter={documentStatusFilter}
             documentTotalCount={documentTotalCount}
             documents={documents}
             tenantId={bootstrap?.tenant.id ?? null}

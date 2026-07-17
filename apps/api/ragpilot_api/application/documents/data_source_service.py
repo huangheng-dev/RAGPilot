@@ -20,10 +20,26 @@ class DataSourceService:
         )
         return build_data_source_response(item)
 
-    async def list(self, *, knowledge_base_id: UUID, include_deleted: bool = False) -> list[DataSourceResponse]:
-        return [build_data_source_response(item) for item in await self.repository.list(
-            knowledge_base_id=knowledge_base_id, include_deleted=include_deleted,
-        )]
+    async def list(
+        self,
+        *,
+        knowledge_base_id: UUID,
+        include_deleted: bool = False,
+        source_types: set[str] | None = None,
+    ) -> list[DataSourceResponse]:
+        items = await self.repository.list_with_latest_run(
+            knowledge_base_id=knowledge_base_id,
+            include_deleted=include_deleted,
+            source_types=source_types,
+        )
+        return [
+            build_data_source_response(
+                item,
+                latest_run=latest_run,
+                document_count=document_count,
+            )
+            for item, latest_run, document_count in items
+        ]
 
     async def list_runs(self, *, data_source_id: UUID, tenant_id: UUID, limit: int) -> list[DataSourceSyncRunResponse]:
         return [build_sync_run_response(item) for item in await self.repository.list_runs(
@@ -51,7 +67,12 @@ class DataSourceService:
         return build_sync_run_response(run)
 
 
-def build_data_source_response(item: DataSource) -> DataSourceResponse:
+def build_data_source_response(
+    item: DataSource,
+    *,
+    latest_run: DataSourceSyncRun | None = None,
+    document_count: int = 0,
+) -> DataSourceResponse:
     return DataSourceResponse(
         id=item.id, tenant_id=item.tenant_id, knowledge_base_id=item.knowledge_base_id, name=item.name,
         source_type=item.source_type, source_uri=item.source_uri, identity_key=item.identity_key,
@@ -59,6 +80,8 @@ def build_data_source_response(item: DataSource) -> DataSourceResponse:
         last_synced_at=item.last_synced_at, last_sync_error=item.last_sync_error,
         metadata_json=dict(item.metadata_json or {}), deleted_at=item.deleted_at,
         created_at=item.created_at, updated_at=item.updated_at,
+        latest_sync_run=build_sync_run_response(latest_run) if latest_run else None,
+        document_count=document_count,
     )
 
 

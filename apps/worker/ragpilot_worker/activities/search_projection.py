@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
@@ -17,7 +19,7 @@ from ragpilot_worker.infrastructure.observability import traced_activity
 
 @activity.defn(name="project_document_version_to_elasticsearch")
 @traced_activity("worker.elasticsearch_projection")
-async def project_document_version_to_elasticsearch(payload: dict[str, str]) -> dict[str, object]:
+async def project_document_version_to_elasticsearch(payload: dict[str, Any]) -> dict[str, object]:
     event_id = payload["projection_event_id"]
     settings = get_settings()
     if not settings.elasticsearch_projection_enabled:

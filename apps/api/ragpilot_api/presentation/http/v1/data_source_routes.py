@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -5,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ragpilot_api.application.documents.data_source_service import DataSourceService
 from ragpilot_api.application.errors import ResourceConflictError, ResourceNotFoundError
-from ragpilot_api.contracts.http.data_source_contracts import DataSourceCreateRequest, DataSourceResponse, DataSourceSyncRequest, DataSourceSyncRunResponse
+from ragpilot_api.contracts.http.data_source_contracts import DataSourceCreateRequest, DataSourceResponse, DataSourceSyncRunResponse
 from ragpilot_api.infrastructure.database.repositories.data_source_repository import DataSourceRepository
 from ragpilot_api.infrastructure.database.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from ragpilot_api.infrastructure.database.repositories.role_permission_repository import RolePermissionRepository
@@ -24,17 +25,17 @@ router = APIRouter()
 @router.post("/{data_source_id}/sync", response_model=DataSourceSyncRunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_data_source_sync(
     data_source_id: UUID,
-    request: DataSourceSyncRequest,
+    tenant_id: UUID = Query(...),
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> DataSourceSyncRunResponse:
     require_authenticated_actor(actor)
     await require_actor_capability_from_policy(actor, "manage_documents", RolePermissionRepository(session))
-    require_actor_tenant_access(actor, request.tenant_id)
+    require_actor_tenant_access(actor, tenant_id)
     try:
         return await DataSourceService(DataSourceRepository(session)).start_sync(
             data_source_id=data_source_id,
-            tenant_id=request.tenant_id,
+            tenant_id=tenant_id,
             workflow_client=TemporalWorkflowClient(get_settings()),
         )
     except ResourceNotFoundError as error:
@@ -61,6 +62,7 @@ async def create_data_source(
 async def list_data_sources(
     knowledge_base_id: UUID = Query(...),
     include_deleted: bool = Query(False),
+    source_type: list[Literal["file", "web", "connector", "manual"]] | None = Query(None),
     actor: RequestActor = Depends(get_request_actor),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[DataSourceResponse]:
@@ -68,7 +70,9 @@ async def list_data_sources(
     await require_actor_capability_from_policy(actor, "access_documents", RolePermissionRepository(session))
     await require_actor_knowledge_base_access(actor, knowledge_base_id, KnowledgeBaseRepository(session))
     return await DataSourceService(DataSourceRepository(session)).list(
-        knowledge_base_id=knowledge_base_id, include_deleted=include_deleted,
+        knowledge_base_id=knowledge_base_id,
+        include_deleted=include_deleted,
+        source_types=set(source_type) if source_type else None,
     )
 
 

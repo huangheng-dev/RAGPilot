@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("authenticated core surfaces load and security is populated", async ({ page }) => {
+test("authenticated product loop runs through UI, Temporal, retrieval, Chat, and feedback", async ({ page }) => {
+  test.setTimeout(120_000);
+
   const apiBaseUrl = process.env.RAGPILOT_E2E_API_BASE_URL ?? "http://localhost:8000/api/v1";
   const email = process.env.RAGPILOT_E2E_EMAIL ?? "admin@ragpilot.local";
   const password = process.env.RAGPILOT_E2E_PASSWORD;
@@ -16,41 +18,68 @@ test("authenticated core surfaces load and security is populated", async ({ page
     expect(bootstrapResponse.ok()).toBeTruthy();
   }
 
-  const loginResponse = await page.request.post(`${apiBaseUrl}/users/login`, {
-    data: { email, display_name: "RAGPilot E2E Admin", password },
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const authenticated = await loginResponse.json();
+  await page.goto("/login");
+  await page.getByPlaceholder("Enter your email address").fill(email);
+  await page.getByPlaceholder("Enter your password").fill(password!);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("Welcome back, RAGPilot E2E Admin", { exact: false })).toBeVisible();
 
-  await page.addInitScript((session) => {
-    window.localStorage.setItem("ragpilot-auth-session", JSON.stringify(session));
-  }, {
-    userId: authenticated.user.id,
-    displayName: authenticated.user.display_name,
-    email: authenticated.user.email,
-    role: authenticated.user.role,
-    sessionToken: authenticated.session.session_token,
-    sessionExpiresAt: authenticated.session.expires_at,
-    lastSignedInAt: authenticated.user.last_signed_in_at,
-    memberships: authenticated.user.memberships,
-    permissions: authenticated.permissions,
-  });
+  const currentUserResponse = await page.request.get(`${apiBaseUrl}/users/me`);
+  expect(currentUserResponse.ok()).toBeTruthy();
+  const currentUser = await currentUserResponse.json();
 
-  for (const path of ["/", "/chat", "/documents", "/agents", "/operations", "/admin"]) {
-    await page.goto(path);
-    await expect(page.locator("body")).not.toContainText("Failed to fetch");
-  }
-
-  const authorizationHeaders = { Authorization: `Bearer ${authenticated.session.session_token}` };
-  const modelResponse = await page.request.get(`${apiBaseUrl}/model-endpoints`, {
-    headers: authorizationHeaders,
+  const tenantResponse = await page.request.post(`${apiBaseUrl}/tenants`, {
+    data: { name: "RAGPilot E2E Tenant", slug: "ragpilot-e2e" },
   });
+  expect(tenantResponse.status()).toBe(201);
+  const tenant = await tenantResponse.json();
+  const tenantId = tenant.id;
+
+  const membershipResponse = await page.request.post(`${apiBaseUrl}/users/${currentUser.id}/memberships`, {
+    data: { tenant_id: tenantId, membership_status: "active" },
+  });
+  expect(membershipResponse.status()).toBe(201);
+
+  const workspaceResponse = await page.request.post(`${apiBaseUrl}/workspaces`, {
+    data: {
+      tenant_id: tenantId,
+      name: "RAGPilot E2E Workspace",
+      slug: "ragpilot-e2e-workspace",
+      description: "Isolated browser release gate.",
+    },
+  });
+  expect(workspaceResponse.status()).toBe(201);
+  const workspace = await workspaceResponse.json();
+
+  const knowledgeBaseResponse = await page.request.post(`${apiBaseUrl}/knowledge-bases`, {
+    data: {
+      tenant_id: tenantId,
+      workspace_id: workspace.id,
+      name: "RAGPilot E2E Knowledge Base",
+      slug: "ragpilot-e2e-knowledge-base",
+      description: "Isolated browser release gate.",
+    },
+  });
+  expect(knowledgeBaseResponse.status()).toBe(201);
+
+  const signOutResponse = await page.request.post(`${apiBaseUrl}/users/me/sign-out`, {
+    data: { reason: "Refresh the E2E session after assigning tenant membership." },
+  });
+  expect(signOutResponse.status()).toBe(204);
+  await page.evaluate(() => window.localStorage.removeItem("ragpilot-auth-session"));
+  await page.goto("/login");
+  await page.getByPlaceholder("Enter your email address").fill(email);
+  await page.getByPlaceholder("Enter your password").fill(password!);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText("Welcome back, RAGPilot E2E Admin", { exact: false })).toBeVisible();
+
+  const modelResponse = await page.request.get(`${apiBaseUrl}/model-endpoints`);
   expect(modelResponse.ok()).toBeTruthy();
   const models = await modelResponse.json();
   let model = models.find((candidate: { slug: string }) => candidate.slug === "ragpilot-e2e-deterministic");
   if (!model) {
     const createModelResponse = await page.request.post(`${apiBaseUrl}/model-endpoints`, {
-      headers: authorizationHeaders,
       data: {
         name: "RAGPilot E2E Deterministic",
         slug: "ragpilot-e2e-deterministic",
@@ -69,11 +98,64 @@ test("authenticated core surfaces load and security is populated", async ({ page
     model = await createModelResponse.json();
   }
   expect(model).toBeTruthy();
+
   await page.goto(`/admin?section=runtime&runtime_resource=model_endpoint&model_endpoint_id=${model.id}`);
   await expect(page.getByRole("main").getByText("AI runtime configuration", { exact: true })).toBeVisible();
   await expect(page.getByText("Edit runtime resource", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Runtime resource saved.", { exact: true })).toBeVisible();
+
+  await page.goto("/documents");
+  await page.getByRole("button", { name: "Add document", exact: true }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "ragpilot-temporal-contract-e2e.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from(
+      "# RAGPilot Temporal Contract E2E\n\nThe release verification code is cobalt-heron-742.\n",
+    ),
+  });
+
+  const uploadResponsePromise = page.waitForResponse(
+    (response) => response.url().endsWith("/documents/upload") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: /Upload 1/ }).click();
+  const uploadResponse = await uploadResponsePromise;
+  expect(uploadResponse.status()).toBe(201);
+  const uploaded = await uploadResponse.json();
+  expect(uploaded.workflow_run_id).toBeTruthy();
+
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(
+          `${apiBaseUrl}/workflow-runs/${uploaded.workflow_run_id}?tenant_id=${tenantId}`,
+        );
+        if (!response.ok()) {
+          return `http-${response.status()}`;
+        }
+        const workflow = await response.json();
+        return workflow.workflow_status;
+      },
+      { timeout: 90_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBe("completed");
+
+  await page.goto("/chat");
+  const question = "What is the release verification code?";
+  await page.getByPlaceholder(/Ask a question|Ask a grounded question/).fill(question);
+  await page.getByRole("button", { name: "Send Question", exact: true }).click();
+  await expect(page.getByText("cobalt-heron-742", { exact: false })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("RAGPilot Temporal Contract E2E", { exact: false }).first()).toBeVisible();
+  const feedbackResponsePromise = page.waitForResponse(
+    (response) => response.url().includes("/feedback?tenant_id=") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Mark helpful", exact: true }).click();
+  const feedbackResponse = await feedbackResponsePromise;
+  expect(feedbackResponse.status()).toBe(200);
+  await expect(page.getByRole("button", { name: "Helpful", exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: /release verification code/i }).first().click();
+  await expect(page.getByRole("button", { name: "Helpful", exact: true })).toBeVisible();
 
   await page.goto("/settings");
   await page.getByRole("button", { name: "Sessions", exact: true }).click();

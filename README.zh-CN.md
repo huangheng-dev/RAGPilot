@@ -200,7 +200,7 @@ npm run release:preflight
 - API、Worker 测试和迁移完整性
 - 确定性与真实数据库检索回归门禁
 - MCP 构建和协议测试
-- 登录后的浏览器 E2E 行为
+- 覆盖登录、范围化上传、Temporal 摄取、检索、流式 Chat、引用、反馈持久化、会话安全和双语控件的浏览器 E2E
 - 发布镜像配置、公开交付资产和常见密钥泄漏模式
 
 API 路由和 ORM 数据表文档还会与实际 FastAPI、SQLAlchemy 契约进行自动核对。

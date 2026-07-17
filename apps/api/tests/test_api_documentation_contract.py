@@ -52,3 +52,21 @@ def test_platform_data_model_lists_every_current_orm_table() -> None:
         f"Missing from docs: {sorted(actual_tables - documented_tables)}; "
         f"documented but absent: {sorted(documented_tables - actual_tables)}"
     )
+
+
+def test_data_source_sync_uses_query_scope_and_list_supports_type_filters() -> None:
+    paths = app.openapi()["paths"]
+    sync_operation = paths["/api/v1/data-sources/{data_source_id}/sync"]["post"]
+    sync_parameters = {
+        (parameter["name"], parameter["in"])
+        for parameter in sync_operation["parameters"]
+    }
+    assert ("tenant_id", "query") in sync_parameters
+    assert "requestBody" not in sync_operation
+
+    list_operation = paths["/api/v1/data-sources"]["get"]
+    list_parameters = {
+        (parameter["name"], parameter["in"])
+        for parameter in list_operation["parameters"]
+    }
+    assert ("source_type", "query") in list_parameters

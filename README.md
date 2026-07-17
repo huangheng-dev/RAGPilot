@@ -200,7 +200,7 @@ The preflight validates:
 - API and Worker tests plus migration completeness
 - deterministic and real-database retrieval regression gates
 - MCP build and protocol tests
-- authenticated browser E2E behavior
+- authenticated browser E2E across login, scoped upload, Temporal ingestion, retrieval, streaming Chat, citations, persisted feedback, session security, and bilingual controls
 - release-profile container definitions, public delivery assets, and common secret-leakage patterns
 
 API route and ORM table documentation are also checked against the running FastAPI and SQLAlchemy contracts.

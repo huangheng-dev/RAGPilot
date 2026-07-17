@@ -282,7 +282,7 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
 
           <div className="flex items-center gap-1.5 sm:gap-2">
             <Button
-              aria-label={themeMode === "dark" ? "Light mode" : "Dark mode"}
+              aria-label={themeMode === "dark" ? t("shell.actions.themeLight") : t("shell.actions.themeDark")}
               className="h-9 w-9 rounded-lg border-transparent bg-transparent text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-900 dark:bg-transparent dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-50"
               onClick={toggleThemeMode}
               size="icon"
@@ -481,7 +481,11 @@ export function ConsoleShell({ activeHref, children }: ConsoleShellProps) {
         </div>
       </header>
 
-      <div className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 sm:py-5 md:px-8 md:py-6">{children}</div>
+      {pathname === "/admin" || pathname === "/operations" ? (
+        <div className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 sm:py-5 md:px-8 md:py-6">{children}</div>
+      ) : (
+        <main className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 sm:py-5 md:px-8 md:py-6">{children}</main>
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n/provider";
 
 export type NotificationTone = "success" | "error" | "info";
 
@@ -46,6 +47,7 @@ function readNotificationInput(
 }
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const timerMapRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -135,7 +137,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                   onClick={() => dismiss(notification.id)}
                   type="button"
                 >
-                  <span className="sr-only">Dismiss notification</span>
+                  <span className="sr-only">{t("shell.actions.dismissNotification")}</span>
                   <span aria-hidden="true" className="text-base leading-none">
                     ×
                   </span>

@@ -1,5 +1,6 @@
 import asyncio
 from datetime import timedelta
+from typing import Any
 
 from temporalio import workflow
 
@@ -15,7 +16,7 @@ class AgentExecutionWorkflow:
             self.approval_decision = decision
 
     @workflow.run
-    async def run(self, payload: dict[str, str | None]) -> dict[str, str]:
+    async def run(self, payload: dict[str, Any]) -> dict[str, str]:
         result = await workflow.execute_activity(
             "execute_agent_execution",
             payload,

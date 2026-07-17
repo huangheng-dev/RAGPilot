@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -216,6 +217,9 @@ def test_chat_stream_route_emits_sse_deltas_and_completion(monkeypatch) -> None:
         async def ask_question(self, request, *, on_delta=None, retrieval_acl_bypass=False):
             assert retrieval_acl_bypass is False
             assert on_delta is not None
+            # A model may legitimately take longer than the SSE disconnect poll
+            # interval before producing its first token.
+            await asyncio.sleep(0.15)
             await on_delta("Temporal provides ")
             await on_delta("durable workflows.")
             return FakeResponse()

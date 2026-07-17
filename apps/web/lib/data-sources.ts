@@ -17,6 +17,8 @@ export type DataSource = {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  latest_sync_run: DataSourceSyncRun | null;
+  document_count: number;
 };
 
 export type DataSourceSyncRun = {
@@ -37,38 +39,23 @@ export type DataSourceSyncRun = {
   completed_at: string | null;
 };
 
-export function listDataSources(knowledgeBaseId: string) {
+export function listDataSources(
+  knowledgeBaseId: string,
+  sourceTypes: Array<"web" | "connector"> = ["web", "connector"],
+) {
+  const params = new URLSearchParams({ knowledge_base_id: knowledgeBaseId });
+  sourceTypes.forEach((sourceType) => params.append("source_type", sourceType));
   return authenticatedApiRequest<DataSource[]>(
-    `/data-sources?knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}`
+    `/data-sources?${params.toString()}`,
   );
 }
 
-export function createPublicWebDataSource(payload: {
-  tenantId: string;
-  knowledgeBaseId: string;
-  name: string;
-  sourceUri: string;
-}) {
-  return authenticatedApiRequest<DataSource>("/data-sources", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tenant_id: payload.tenantId,
-      knowledge_base_id: payload.knowledgeBaseId,
-      name: payload.name,
-      source_type: "web",
-      source_uri: payload.sourceUri,
-      metadata_json: { connector_kind: "public_web_v1" }
-    })
-  });
-}
-
 export function startDataSourceSync(dataSourceId: string, tenantId: string) {
-  return authenticatedApiRequest<DataSourceSyncRun>(`/data-sources/${dataSourceId}/sync`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tenant_id: tenantId })
-  });
+  const params = new URLSearchParams({ tenant_id: tenantId });
+  return authenticatedApiRequest<DataSourceSyncRun>(
+    `/data-sources/${dataSourceId}/sync?${params.toString()}`,
+    { method: "POST" },
+  );
 }
 
 export function listDataSourceSyncRuns(dataSourceId: string, tenantId: string, limit = 10) {

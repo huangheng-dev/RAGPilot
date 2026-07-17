@@ -10,7 +10,7 @@ from temporalio.common import RetryPolicy
 @workflow.defn(name="DataSourceSyncWorkflow")
 class DataSourceSyncWorkflow:
     @workflow.run
-    async def run(self, payload: dict[str, str]) -> dict[str, Any]:
+    async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             prepared = await workflow.execute_activity(
                 "prepare_data_source_sync",

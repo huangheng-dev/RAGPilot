@@ -1,11 +1,15 @@
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
 from fastapi import FastAPI
 
 from ragpilot_api.commands.staging_capacity_gate import evaluate_capacity
+from ragpilot_api.commands.local_staging_capacity_gate import evaluate_local_capacity
 from ragpilot_api.presentation.http.v1.api_router import api_router
 
 
@@ -96,3 +100,137 @@ async def test_capacity_gate_marks_missing_staging_inputs_incomplete() -> None:
     assert report["promotion"]["passed"] is False
     assert report["completed_scenario_count"] == 0
     assert report["scenarios"][0]["status"] == "skipped"
+
+
+@pytest.mark.anyio
+async def test_local_capacity_gate_revokes_temporary_key_and_restores_environment() -> None:
+    tenant_id = uuid4()
+    knowledge_base_id = uuid4()
+    actor_user_id = uuid4()
+    api_key_id = uuid4()
+    calls: list[tuple[str, object]] = []
+
+    class FakeApiKeyService:
+        async def create(self, request, *, actor_user_id):
+            calls.append(("create", request))
+            return SimpleNamespace(id=api_key_id, secret="rpk_temporary_secret")
+
+        async def revoke(self, **kwargs):
+            calls.append(("revoke", kwargs))
+
+    async def evaluator(**kwargs):
+        assert kwargs["trust_env"] is False
+        assert os.environ["RAGPILOT_CAPACITY_API_KEY"] == "rpk_temporary_secret"
+        assert os.environ["RAGPILOT_CAPACITY_TENANT_ID"] == str(tenant_id)
+        assert os.environ["RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID"] == str(knowledge_base_id)
+        return {"promotion": {"passed": True}}
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("RAGPILOT_CAPACITY_API_KEY", "existing-key")
+        report = await evaluate_local_capacity(
+            dataset={"schema_version": "1"},
+            base_url="http://localhost:8000",
+            tenant_id=tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            actor_user_id=actor_user_id,
+            api_key_service=FakeApiKeyService(),
+            evaluator=evaluator,
+        )
+        assert os.environ["RAGPILOT_CAPACITY_API_KEY"] == "existing-key"
+        assert "RAGPILOT_CAPACITY_TENANT_ID" not in os.environ
+        assert "RAGPILOT_CAPACITY_KNOWLEDGE_BASE_ID" not in os.environ
+
+    assert report["promotion"]["passed"] is True
+    assert [name for name, _ in calls] == ["create", "revoke"]
+    create_request = calls[0][1]
+    assert create_request.role == "reviewer"
+    assert create_request.scopes == ["access_chat"]
+    assert calls[1][1]["api_key_id"] == api_key_id
+
+
+@pytest.mark.anyio
+async def test_local_capacity_gate_revokes_key_when_evaluation_fails() -> None:
+    tenant_id = uuid4()
+    api_key_id = uuid4()
+    revoked: list[object] = []
+
+    class FakeApiKeyService:
+        async def create(self, request, *, actor_user_id):
+            return SimpleNamespace(id=api_key_id, secret="rpk_temporary_secret")
+
+        async def revoke(self, **kwargs):
+            revoked.append(kwargs)
+
+    async def evaluator(**kwargs):
+        raise RuntimeError("capacity transport failed")
+
+    with pytest.raises(RuntimeError, match="capacity transport failed"):
+        await evaluate_local_capacity(
+            dataset={"schema_version": "1"},
+            base_url="http://127.0.0.1:8000",
+            tenant_id=tenant_id,
+            knowledge_base_id=uuid4(),
+            actor_user_id=uuid4(),
+            api_key_service=FakeApiKeyService(),
+            evaluator=evaluator,
+        )
+
+    assert revoked[0]["api_key_id"] == api_key_id
+
+
+@pytest.mark.anyio
+async def test_local_capacity_gate_rejects_non_loopback_target() -> None:
+    class UnexpectedApiKeyService:
+        async def create(self, request, *, actor_user_id):
+            raise AssertionError("A credential must not be created for a remote target.")
+
+    with pytest.raises(ValueError, match="loopback"):
+        await evaluate_local_capacity(
+            dataset={"schema_version": "1"},
+            base_url="https://staging.example.com",
+            tenant_id=uuid4(),
+            knowledge_base_id=uuid4(),
+            actor_user_id=uuid4(),
+            api_key_service=UnexpectedApiKeyService(),
+        )
+
+
+@pytest.mark.anyio
+async def test_capacity_gate_reports_warmup_transport_failure_without_raising() -> None:
+    dataset = {
+        "schema_version": "1",
+        "dataset_id": "capacity-warmup-failure",
+        "version": "1.0.0",
+        "request_timeout_seconds": 0.01,
+        "scenarios": [
+            {
+                "scenario_id": "slow-warmup",
+                "method": "GET",
+                "path": "/slow",
+                "requests": 1,
+                "concurrency": 1,
+                "warmup_runs": 1,
+                "expected_status_codes": [200],
+                "gates": {
+                    "max_error_rate": 0.0,
+                    "max_p95_latency_ms": 500,
+                    "min_throughput_rps": 1,
+                },
+            }
+        ],
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("warmup timed out", request=request)
+
+    report = await evaluate_capacity(
+        dataset=dataset,
+        base_url="https://staging.example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert report["promotion"]["passed"] is False
+    assert report["scenarios"][0]["status"] == "failed"
+    assert report["scenarios"][0]["promotion"]["failures"] == [
+        "warmup transport failed with ReadTimeout"
+    ]

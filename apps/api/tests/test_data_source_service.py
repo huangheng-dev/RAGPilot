@@ -34,7 +34,39 @@ async def test_data_source_create_returns_durable_identity_and_sync_state() -> N
     ))
     assert response.id == source.id
     assert response.sync_status == "completed"
+    assert response.latest_sync_run is None
     repository.get_or_create.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_data_source_list_returns_latest_run_and_forwards_source_filter() -> None:
+    source = build_source()
+    run = SimpleNamespace(
+        id=uuid4(), data_source_id=source.id, tenant_id=source.tenant_id, run_status="completed",
+        cursor_before=None, cursor_after="hash-v1", documents_discovered=1, documents_changed=1,
+        documents_unchanged=0, documents_deleted=0, temporal_workflow_id=f"data-source-sync-{uuid4()}",
+        heartbeat_at=datetime.now(timezone.utc), error_message=None,
+        started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+    )
+    repository = SimpleNamespace(
+        list_with_latest_run=AsyncMock(return_value=[(source, run, 3)]),
+    )
+
+    response = await DataSourceService(repository).list(
+        knowledge_base_id=source.knowledge_base_id,
+        source_types={"web", "connector"},
+    )
+
+    assert len(response) == 1
+    assert response[0].id == source.id
+    assert response[0].latest_sync_run is not None
+    assert response[0].latest_sync_run.id == run.id
+    assert response[0].document_count == 3
+    repository.list_with_latest_run.assert_awaited_once_with(
+        knowledge_base_id=source.knowledge_base_id,
+        include_deleted=False,
+        source_types={"web", "connector"},
+    )
 
 
 def test_data_source_identity_is_stable_and_knowledge_base_scoped() -> None:

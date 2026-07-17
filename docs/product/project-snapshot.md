@@ -127,7 +127,7 @@ The standalone `apps/mcp-server` package is an active read-only outbound-server 
 - Collector, Prometheus, Tempo, Grafana, dashboards, alert baselines, and operator reliability runbook
 - health-gated Docker dependency stack, stable host-managed API/Web mode, hardened Kubernetes baseline, and release preflight
 - exact Python/Node dependency locks, digest-pinned container bases, pull-request image builds, and signed multi-architecture release-image publication with SBOM and provenance
-- API, Worker, Web build, MCP build/protocol tests, versioned deterministic/database retrieval gates, Native-versus-LlamaIndex quality gates, Native-versus-LangGraph branch-contract gates, versioned staging-capacity contracts, and authenticated browser E2E validation
+- API, Worker, Web build, MCP build/protocol tests, versioned deterministic/database retrieval gates, Native-versus-LlamaIndex quality gates, Native-versus-LangGraph branch-contract gates, versioned staging-capacity contracts, and an authenticated browser gate covering scoped upload, Temporal ingestion, retrieval, streaming Chat, citations, persisted feedback, reload recovery, session security, and bilingual controls
 
 ## Technology Boundaries
 

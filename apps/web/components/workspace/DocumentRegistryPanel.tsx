@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CheckSquare, RotateCcw, Square, Trash2, Undo2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CheckSquare, DatabaseZap, RotateCcw, Square, Trash2, Undo2 } from "lucide-react";
 
 import { PaginationControls } from "./PaginationControls";
 import {
@@ -16,10 +16,16 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
-import type { DocumentLifecycleFilter, WorkspaceAgentContext } from "@/components/workspace/workspace-types";
+import type { DataSource } from "@/lib/data-sources";
+import type {
+  DocumentLifecycleFilter,
+  DocumentSourceFilter,
+  WorkspaceAgentContext,
+} from "@/components/workspace/workspace-types";
 
 type DocumentRecord = {
   id: string;
+  data_source_id: string | null;
   title: string;
   source_uri: string | null;
   source_kind: "file" | "web" | "other";
@@ -46,6 +52,10 @@ type DocumentRegistryPanelProps = {
   documentPage: number;
   documentPageCount: number;
   documentLifecycleFilter: DocumentLifecycleFilter;
+  documentQuery: string;
+  documentSourceFilter: DocumentSourceFilter;
+  documentStatusFilter: string;
+  externalSources: DataSource[];
   filteredDocumentCount: number;
   canManageDocuments: boolean;
   isRunningDocumentAction: boolean;
@@ -53,6 +63,7 @@ type DocumentRegistryPanelProps = {
   paginatedDocuments: DocumentRecord[];
   selectedDocumentId: string | null;
   selectedDocumentIds: string[];
+  sourceError: string | null;
   onBulkDeleteDocuments: () => void | Promise<void>;
   onBulkReindexDocuments: () => void | Promise<void>;
   onBulkRestoreDocuments: () => void | Promise<void>;
@@ -82,11 +93,22 @@ function getDocumentCoreStatus(document: DocumentRecord) {
     (statuses.every((status) => status === "completed") ? "completed" : statuses[0] ?? "pending");
 }
 
+function getDataSourceStatusClassName(status: string) {
+  if (status === "completed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "failed") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (status === "syncing" || status === "running") return "border-sky-200 bg-sky-50 text-sky-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 export function DocumentRegistryPanel({
   activeAgentContext,
   documentPage,
   documentPageCount,
   documentLifecycleFilter,
+  documentQuery,
+  documentSourceFilter,
+  documentStatusFilter,
+  externalSources,
   filteredDocumentCount,
   canManageDocuments,
   isRunningDocumentAction,
@@ -94,6 +116,7 @@ export function DocumentRegistryPanel({
   paginatedDocuments,
   selectedDocumentId,
   selectedDocumentIds,
+  sourceError,
   onBulkDeleteDocuments,
   onBulkReindexDocuments,
   onBulkRestoreDocuments,
@@ -106,7 +129,7 @@ export function DocumentRegistryPanel({
   onToggleDocumentSelection,
   onToggleSelectAllDocumentsOnPage
 }: DocumentRegistryPanelProps) {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isBulkReindexConfirmOpen, setIsBulkReindexConfirmOpen] = useState(false);
   const [isBulkRestoreConfirmOpen, setIsBulkRestoreConfirmOpen] = useState(false);
@@ -115,14 +138,40 @@ export function DocumentRegistryPanel({
   const activeAgentModeLabel = activeAgentContext ? t(`agents.modes.${activeAgentContext.mode}`) : null;
   const isDeletedView = documentLifecycleFilter === "deleted";
   const isAllLifecycleView = documentLifecycleFilter === "all";
+  const dataSourceById = useMemo(
+    () => new Map(externalSources.map((source) => [source.id, source])),
+    [externalSources],
+  );
+  const normalizedQuery = documentQuery.trim().toLowerCase();
+  const standaloneSources = useMemo(
+    () =>
+      externalSources.filter((source) => {
+        if (source.document_count > 0) return false;
+        if (documentLifecycleFilter === "deleted") return false;
+        if (documentSourceFilter === "file") return false;
+        if (documentSourceFilter === "web" && source.source_type !== "web") return false;
+        if (documentSourceFilter === "other" && source.source_type !== "connector") return false;
+        if (documentStatusFilter !== "all") return false;
+        if (!normalizedQuery) return true;
+        return `${source.name} ${source.source_uri ?? ""}`.toLowerCase().includes(normalizedQuery);
+      }),
+    [
+      documentLifecycleFilter,
+      documentSourceFilter,
+      documentStatusFilter,
+      externalSources,
+      normalizedQuery,
+    ],
+  );
+  const displayedStandaloneSources = documentPage === 1 ? standaloneSources : [];
 
   return (
     <Card className="overflow-visible border-0 bg-transparent shadow-none">
       <CardHeader className="mb-4 !p-0">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-              <CardTitle className="text-lg leading-normal text-slate-950 dark:text-slate-50">{t("workspace.registry.title")}</CardTitle>
-              <p className="mt-1 text-sm text-slate-500">{t("workspace.registry.description")}</p>
+            <CardTitle className="text-lg leading-normal text-slate-950 dark:text-slate-50">{t("workspace.registry.title")}</CardTitle>
+            <p className="mt-1 text-sm text-slate-500">{t("workspace.registry.description")}</p>
               {activeAgentContext ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge className="border-blue-200 bg-blue-50 text-blue-700" variant="outline">
@@ -200,8 +249,13 @@ export function DocumentRegistryPanel({
       </CardHeader>
 
       <CardContent className="bg-white !p-0">
+        {sourceError ? (
+          <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {sourceError}
+          </div>
+        ) : null}
         <div className="overflow-hidden rounded-xl border border-slate-200">
-          <Table className="border-separate border-spacing-0">
+          <Table className="min-w-[640px] border-separate border-spacing-0 lg:min-w-[840px]">
           <TableHeader>
             <TableRow className="bg-slate-50">
               <TableHead className="w-12 px-3">
@@ -215,44 +269,118 @@ export function DocumentRegistryPanel({
               <TableHead className="px-5">{t("workspace.registry.document")}</TableHead>
               <TableHead>{t("workspace.registry.status")}</TableHead>
               <TableHead>{t("workspace.registry.source")}</TableHead>
-              <TableHead>{t("workspace.registry.updated")}</TableHead>
+              <TableHead className="hidden lg:table-cell">{t("workspace.registry.updated")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="bg-white text-sm text-slate-700">
-            {paginatedDocuments.map((document) => (
-              <TableRow
-                key={document.id}
-                className={cn(
-                  "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 [&>td]:py-[14px]",
-                  document.id === selectedDocumentId ? "bg-blue-50/70" : "bg-white"
-                )}
-                onClick={() => void onSelectDocument(document.id)}
-              >
-                <TableCell className="px-3 align-middle">
-                  <button
-                    aria-label={`${t("workspace.registry.selectPage")} ${document.title}`}
-                    className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition hover:bg-slate-100", selectedDocumentIds.includes(document.id) ? "text-blue-600" : "text-slate-400 hover:text-slate-600")}
-                    onClick={(event) => { event.stopPropagation(); onToggleDocumentSelection(document.id); }}
-                    type="button"
-                  >
-                    {selectedDocumentIds.includes(document.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-                  </button>
-                </TableCell>
-                <TableCell className="px-5 align-middle">
-                  <div className="font-medium text-slate-900">{document.title}</div>
-                </TableCell>
-                <TableCell className="align-middle">
-                  {(() => {
-                    const coreStatus = getDocumentCoreStatus(document);
-                    const badge = <Badge className={cn("border", getStatusBadgeClass(coreStatus))} variant="outline">{coreStatus === "deleted" ? t("workspace.registry.deletedBadge") : formatStatusLabel(coreStatus)}</Badge>;
-                    return document.latest_workflow_run_id && coreStatus === document.latest_workflow_status ? <button onClick={(event) => { event.stopPropagation(); void onInspectWorkflowRun(document.latest_workflow_run_id!); }} type="button">{badge}</button> : badge;
-                  })()}
-                </TableCell>
-                <TableCell className="align-middle text-xs text-muted-foreground"><Badge className="border-slate-200 bg-white text-slate-700" variant="outline">{document.source_kind === "web" ? t("workspace.registry.sourceWeb") : document.source_kind === "file" ? t("workspace.registry.sourceFile") : t("workspace.registry.sourceOther")}</Badge></TableCell>
-                <TableCell className="align-middle text-xs leading-5 text-muted-foreground">{formatDateTimeWithYear(document.updated_at)}</TableCell>
-              </TableRow>
-            ))}
-            {paginatedDocuments.length === 0 && (
+            {displayedStandaloneSources.map((source) => {
+              const active =
+                source.sync_status === "syncing" ||
+                source.latest_sync_run?.run_status === "running";
+              return (
+                <TableRow className="border-b border-slate-100 bg-blue-50/30 [&>td]:py-[14px]" key={`source-${source.id}`}>
+                  <TableCell className="px-3 align-middle text-blue-600">
+                    <DatabaseZap className="mx-auto h-4 w-4" />
+                  </TableCell>
+                  <TableCell className="px-5 align-middle">
+                    <div className="font-medium text-slate-900">{source.name}</div>
+                  </TableCell>
+                  <TableCell className="align-middle">
+                    <Badge className={getDataSourceStatusClassName(active ? "syncing" : source.sync_status)} variant="outline">
+                      {t("workspace.documentsView.dataSources.syncStatus", {
+                        status: t(`workspace.documentsView.dataSources.status.${active ? "syncing" : source.sync_status}`),
+                      })}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="align-middle">
+                    <Badge className="border-blue-200 bg-blue-50 text-blue-700" title={source.source_uri ?? undefined} variant="outline">
+                      {t(`workspace.documentsView.dataSources.types.${source.source_type}`)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden align-middle text-xs leading-5 text-muted-foreground lg:table-cell">
+                    {formatDateTimeWithYear(source.last_synced_at ?? source.updated_at)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {paginatedDocuments.map((document) => {
+              const source = document.data_source_id ? dataSourceById.get(document.data_source_id) ?? null : null;
+              const sourceActive = Boolean(
+                source &&
+                (source.sync_status === "syncing" || source.latest_sync_run?.run_status === "running"),
+              );
+              const sourceStatus = sourceActive ? "syncing" : source?.sync_status ?? null;
+              const shouldShowSourceStatus = Boolean(
+                source && (sourceStatus !== "completed" || source.last_sync_error),
+              );
+              const coreStatus = getDocumentCoreStatus(document);
+              const statusBadge = (
+                <Badge className={cn("border", getStatusBadgeClass(coreStatus))} variant="outline">
+                  {coreStatus === "deleted" ? t("workspace.registry.deletedBadge") : formatStatusLabel(coreStatus)}
+                </Badge>
+              );
+
+              return (
+                <TableRow
+                  key={document.id}
+                  className={cn(
+                    "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 [&>td]:py-[14px]",
+                    document.id === selectedDocumentId ? "bg-blue-50/70" : "bg-white"
+                  )}
+                  onClick={() => void onSelectDocument(document.id)}
+                >
+                  <TableCell className="px-3 align-middle">
+                    <button
+                      aria-label={`${t("workspace.registry.selectPage")} ${document.title}`}
+                      className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition hover:bg-slate-100", selectedDocumentIds.includes(document.id) ? "text-blue-600" : "text-slate-400 hover:text-slate-600")}
+                      onClick={(event) => { event.stopPropagation(); onToggleDocumentSelection(document.id); }}
+                      type="button"
+                    >
+                      {selectedDocumentIds.includes(document.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                    </button>
+                  </TableCell>
+                  <TableCell className="px-5 align-middle">
+                    <div className="font-medium text-slate-900">{document.title}</div>
+                  </TableCell>
+                  <TableCell className="align-middle">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {document.latest_workflow_run_id && coreStatus === document.latest_workflow_status ? (
+                        <button onClick={(event) => { event.stopPropagation(); void onInspectWorkflowRun(document.latest_workflow_run_id!); }} type="button">
+                          {statusBadge}
+                        </button>
+                      ) : statusBadge}
+                      {source && sourceStatus && shouldShowSourceStatus ? (
+                        <Badge className={getDataSourceStatusClassName(sourceStatus)} variant="outline">
+                          {t("workspace.documentsView.dataSources.syncStatus", {
+                            status: t(`workspace.documentsView.dataSources.status.${sourceStatus}`),
+                          })}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {source?.last_sync_error ? (
+                      <div className="mt-1 max-w-xs truncate text-xs text-rose-600" title={source.last_sync_error}>{source.last_sync_error}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="align-middle text-xs text-muted-foreground">
+                    <Badge
+                      className={cn("border", source ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700")}
+                      title={source?.source_uri ?? undefined}
+                      variant="outline"
+                    >
+                      {source
+                        ? t(`workspace.documentsView.dataSources.types.${source.source_type}`)
+                        : document.source_kind === "web"
+                          ? t("workspace.registry.sourceWeb")
+                          : document.source_kind === "file"
+                            ? t("workspace.registry.sourceFile")
+                            : t("workspace.registry.sourceOther")}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden align-middle text-xs leading-5 text-muted-foreground lg:table-cell">{formatDateTimeWithYear(document.updated_at)}</TableCell>
+                </TableRow>
+              );
+            })}
+            {paginatedDocuments.length === 0 && displayedStandaloneSources.length === 0 && (
               <TableRow>
                 <TableCell className="px-5 py-10 text-center text-sm text-muted-foreground" colSpan={5}>
                   {t("workspace.registry.noDocumentsMatch")}

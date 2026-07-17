@@ -1308,6 +1308,41 @@ function formatGovernanceTokenLabel(value: string) {
     .join(" ");
 }
 
+function getRuntimeGovernanceResourceTypeLabel(
+  resourceType: string,
+  t: (key: string, variables?: Record<string, string>) => string,
+) {
+  if (resourceType === "model_endpoint") {
+    return t("admin.runtimeQueue.resourceTypes.modelEndpoint");
+  }
+  if (resourceType === "tool_registration") {
+    return t("admin.runtimeQueue.resourceTypes.toolRegistration");
+  }
+  if (resourceType === "mcp_connector") {
+    return t("admin.runtimeQueue.resourceTypes.mcpConnector");
+  }
+  return formatGovernanceTokenLabel(resourceType);
+}
+
+function getRuntimeGovernanceEventActionLabel(
+  actionType: string,
+  t: (key: string, variables?: Record<string, string>) => string,
+) {
+  const translationKeyByAction: Record<string, string> = {
+    created: "created",
+    updated: "updated",
+    deleted: "deleted",
+    governance_action: "governanceAction",
+    preview_completed: "previewCompleted",
+    preview_blocked: "previewBlocked",
+    preview_failed: "previewFailed",
+  };
+  const translationKey = translationKeyByAction[actionType];
+  return translationKey
+    ? t(`admin.runtimeQueue.eventActions.${translationKey}`)
+    : formatGovernanceTokenLabel(actionType);
+}
+
 function getRuntimeGovernanceWorklistCategoryLabel(
   category: RuntimeGovernanceWorklist["items"][number]["category"],
   t: (key: string, variables?: Record<string, string>) => string,
@@ -8048,13 +8083,22 @@ export default function AdminConsolePage() {
                               {t("admin.runtimeQueue.filters.allResources")}
                             </SelectItem>
                             <SelectItem value="model_endpoint">
-                              {formatGovernanceTokenLabel("model_endpoint")}
+                              {getRuntimeGovernanceResourceTypeLabel(
+                                "model_endpoint",
+                                t,
+                              )}
                             </SelectItem>
                             <SelectItem value="tool_registration">
-                              {formatGovernanceTokenLabel("tool_registration")}
+                              {getRuntimeGovernanceResourceTypeLabel(
+                                "tool_registration",
+                                t,
+                              )}
                             </SelectItem>
                             <SelectItem value="mcp_connector">
-                              {formatGovernanceTokenLabel("mcp_connector")}
+                              {getRuntimeGovernanceResourceTypeLabel(
+                                "mcp_connector",
+                                t,
+                              )}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -8074,19 +8118,37 @@ export default function AdminConsolePage() {
                               {t("admin.runtimeQueue.filters.allActions")}
                             </SelectItem>
                             <SelectItem value="created">
-                              {formatGovernanceTokenLabel("created")}
+                              {getRuntimeGovernanceEventActionLabel("created", t)}
                             </SelectItem>
                             <SelectItem value="updated">
-                              {formatGovernanceTokenLabel("updated")}
+                              {getRuntimeGovernanceEventActionLabel("updated", t)}
                             </SelectItem>
                             <SelectItem value="deleted">
-                              {formatGovernanceTokenLabel("deleted")}
+                              {getRuntimeGovernanceEventActionLabel("deleted", t)}
                             </SelectItem>
                             <SelectItem value="governance_action">
-                              {formatGovernanceTokenLabel("governance_action")}
+                              {getRuntimeGovernanceEventActionLabel(
+                                "governance_action",
+                                t,
+                              )}
                             </SelectItem>
-                            <SelectItem value="previewed">
-                              {formatGovernanceTokenLabel("previewed")}
+                            <SelectItem value="preview_completed">
+                              {getRuntimeGovernanceEventActionLabel(
+                                "preview_completed",
+                                t,
+                              )}
+                            </SelectItem>
+                            <SelectItem value="preview_blocked">
+                              {getRuntimeGovernanceEventActionLabel(
+                                "preview_blocked",
+                                t,
+                              )}
+                            </SelectItem>
+                            <SelectItem value="preview_failed">
+                              {getRuntimeGovernanceEventActionLabel(
+                                "preview_failed",
+                                t,
+                              )}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -8183,13 +8245,13 @@ export default function AdminConsolePage() {
                       </div>
                     </div>
 
-                    <div className="grid gap-4 2xl:grid-cols-2">
+                    <div className="grid gap-6">
                       <div className="space-y-3">
                         <div className="text-sm font-semibold text-slate-950">
                           {t("admin.runtimeQueue.worklistTitle")}
                         </div>
                         {runtimeGovernanceWorklist?.items.length ? (
-                          <div className="space-y-3">
+                          <div className="rounded-[20px] border border-slate-200 bg-white shadow-sm">
                             {runtimeGovernanceWorklist.items.map((item) => {
                               const followUp =
                                 buildRuntimeGovernanceWorklistFollowUp(
@@ -8223,9 +8285,10 @@ export default function AdminConsolePage() {
 
                               return (
                                 <div
-                                  className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                                  className="grid gap-4 border-b border-slate-100 px-4 py-3.5 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
                                   key={`${item.resource_type}-${item.resource_id}`}
                                 >
+                                  <div className="min-w-0">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <Badge
                                       className={
@@ -8335,7 +8398,8 @@ export default function AdminConsolePage() {
                                       {previewStatusLabel}
                                     </div>
                                   ) : null}
-                                  <div className="mt-4 flex flex-wrap gap-2">
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 lg:justify-end">
                                     {quickActionKey ? (
                                       <Button
                                         className="bg-white"
@@ -8405,7 +8469,7 @@ export default function AdminConsolePage() {
                           {t("admin.runtimeQueue.eventsTitle")}
                         </div>
                         {runtimeGovernanceEvents.length ? (
-                          <div className="space-y-3">
+                          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
                             {runtimeGovernanceEvents.map((event) => {
                               const followUp =
                                 buildRuntimeGovernanceEventFollowUp(
@@ -8423,49 +8487,50 @@ export default function AdminConsolePage() {
 
                               return (
                                 <div
-                                  className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4"
+                                  className="grid gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
                                   key={event.id}
                                 >
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge
-                                      className="border-slate-200 bg-white text-slate-700"
-                                      variant="outline"
-                                    >
-                                      {formatGovernanceTokenLabel(
-                                        event.resource_type,
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge
+                                        className="border-slate-200 bg-slate-50 text-slate-700"
+                                        variant="outline"
+                                      >
+                                        {getRuntimeGovernanceResourceTypeLabel(
+                                          event.resource_type,
+                                          t,
+                                        )}
+                                      </Badge>
+                                      <span className="text-xs text-slate-400">
+                                        {event.actor_role
+                                          ? getRoleLabel(
+                                              event.actor_role as
+                                                | "super_admin"
+                                                | "operator"
+                                                | "reviewer",
+                                              t,
+                                            )
+                                          : t("admin.runtimeQueue.systemActor")}
+                                      </span>
+                                      <span className="text-xs text-slate-300">·</span>
+                                      <span className="text-xs text-slate-400">
+                                        {formatTimestamp(event.created_at)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 truncate text-sm font-semibold text-slate-950">
+                                      {event.resource_name ??
+                                        event.resource_slug ??
+                                        t("settings.activity.notAvailable")}
+                                    </div>
+                                    <div className="mt-1 text-xs font-medium text-slate-500">
+                                      {getRuntimeGovernanceEventActionLabel(
+                                        event.action_type,
+                                        t,
                                       )}
-                                    </Badge>
-                                    <Badge
-                                      className="border-slate-200 bg-white text-slate-700"
-                                      variant="outline"
-                                    >
-                                      {event.actor_role
-                                        ? getRoleLabel(
-                                            event.actor_role as
-                                              | "super_admin"
-                                              | "operator"
-                                              | "reviewer",
-                                            t,
-                                          )
-                                        : t("admin.runtimeQueue.systemActor")}
-                                    </Badge>
+                                    </div>
                                   </div>
-                                  <div className="mt-3 text-base font-semibold text-slate-950">
-                                    {event.resource_name ??
-                                      event.resource_slug ??
-                                      t("settings.activity.notAvailable")}
-                                  </div>
-                                  <div className="mt-1 text-sm text-slate-500">
-                                    {formatGovernanceTokenLabel(
-                                      event.action_type,
-                                    )}
-                                  </div>
-                                  <div className="mt-3 text-xs text-slate-400">
-                                    {formatTimestamp(event.created_at)}
-                                  </div>
-                                  {followUp.settingsHref ||
-                                  followUp.definitionsHref ? (
-                                    <div className="mt-4 flex flex-wrap gap-2">
+                                  {followUp.settingsHref || followUp.definitionsHref ? (
+                                    <div className="flex flex-wrap gap-2 lg:justify-end">
                                       {quickActionKey && event.resource_id ? (
                                         <Button
                                           className="bg-white"

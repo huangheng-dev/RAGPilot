@@ -21,7 +21,7 @@ from ragpilot_worker.infrastructure.observability import traced_activity
 
 @activity.defn(name="prepare_data_source_sync")
 @traced_activity("worker.data_source_sync.prepare")
-async def prepare_data_source_sync(payload: dict[str, str]) -> dict[str, Any]:
+async def prepare_data_source_sync(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         async with async_session_factory() as session:
             service = DataSourceSyncService(session)
@@ -127,7 +127,7 @@ async def finalize_data_source_sync(payload: dict[str, Any]) -> dict[str, str]:
 
 @activity.defn(name="fail_data_source_sync")
 @traced_activity("worker.data_source_sync.fail")
-async def fail_data_source_sync(payload: dict[str, str]) -> dict[str, str]:
+async def fail_data_source_sync(payload: dict[str, Any]) -> dict[str, str]:
     async with async_session_factory() as session:
         await DataSourceSyncService(session).fail(
             data_source_id=payload["data_source_id"], sync_run_id=payload["sync_run_id"],

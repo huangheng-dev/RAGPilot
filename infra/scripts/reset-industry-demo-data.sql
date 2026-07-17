@@ -30,9 +30,11 @@ DECLARE
   kb_delivery uuid := gen_random_uuid();
   retrieval_id uuid := gen_random_uuid();
   model_id uuid := gen_random_uuid();
+  mcp_connector_id uuid := gen_random_uuid();
   tool_search uuid := gen_random_uuid();
   tool_docs uuid := gen_random_uuid();
   tool_workflow uuid := gen_random_uuid();
+  tool_mcp_ticket uuid := gen_random_uuid();
   doc_id uuid;
   version_id uuid;
   conversation_id uuid;
@@ -53,10 +55,37 @@ BEGIN
   INSERT INTO model_endpoints (id, name, slug, provider_type, model_name, base_url, credential_mode, capabilities_json, is_enabled, is_default, notes)
   VALUES (model_id, '本地企业助手模型', 'local-enterprise-assistant', 'ollama', 'qwen3.5:latest', 'http://host.docker.internal:11434', 'none', '["chat"]', true, true, '用于企业知识问答和智能体任务执行。');
 
+  INSERT INTO mcp_connectors (id, name, slug, connector_type, base_url, auth_mode, notes, is_enabled, governance_status)
+  VALUES (
+    mcp_connector_id,
+    '企业工单 MCP 连接器（示例）',
+    'enterprise-ticket-mcp-example',
+    'streamable_http',
+    'http://host.docker.internal:3100/mcp',
+    'none',
+    '演示用 Streamable HTTP MCP 配置，默认停用且不代表远端服务已部署。部署兼容服务后，应替换地址并完成审批、预检，再启用连接器和关联工具。',
+    false,
+    'reviewing'
+  );
+
   INSERT INTO tool_registrations (id, name, slug, transport_type, surface_area, description, capabilities_json, is_enabled) VALUES
     (tool_search, '企业知识检索', 'enterprise-knowledge-search', 'native', 'chat', '检索已发布的企业知识库并返回可引用证据。', '["retrieve","cite"]', true),
     (tool_docs, '文档生命周期管理', 'document-lifecycle-manager', 'native', 'documents', '查看文档状态并发起重新索引。', '["inspect","reindex"]', true),
     (tool_workflow, '运营工作流监督', 'workflow-supervisor', 'native', 'operations', '查看失败任务、运行状态和受控重试。', '["inspect","retry","cancel"]', true);
+
+  INSERT INTO tool_registrations (id, name, slug, transport_type, surface_area, connector_reference, description, capabilities_json, requires_admin_approval, is_enabled)
+  VALUES (
+    tool_mcp_ticket,
+    '企业工单查询（MCP 示例）',
+    'enterprise-ticket-search-mcp-example',
+    'mcp_reserved',
+    'agents',
+    'enterprise-ticket-mcp-example',
+    '通过示例 MCP 连接器查询工单；远端服务部署并通过治理验证前保持停用。',
+    '["ticket.search","ticket.read"]',
+    true,
+    false
+  );
 
   INSERT INTO workspaces (id, tenant_id, name, slug, description) VALUES
     (ws_customer, tenant_id, '客户运营中心', 'customer-operations', '统一管理产品知识、客服标准和客户问题处理。'),
